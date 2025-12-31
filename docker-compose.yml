@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - BACKEND_URL=http://backend:8000
+      - DATABASE_PATH=/data/instagram.db
+      - NODE_ENV=production
+    volumes:
+      - ./data:/data
+    depends_on:
+      - backend
+
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      - BLOSSOM_SERVER=https://blossom.primal.net
+      - DATABASE_PATH=/data/instagram.db
+    volumes:
+      - ./data:/data
+
+  worker:
+    build: ./worker
+    environment:
+      - DATABASE_PATH=/data/instagram.db
+      - BACKEND_URL=http://backend:8000
+      - BLOSSOM_SERVER=https://blossom.primal.net
+      - CONCURRENCY=3
+      - MAX_RETRIES=3
+      - NOSTR_RELAYS=wss://relay.primal.net,wss://relay.damus.io,wss://nos.lol
+    volumes:
+      - ./data:/data
+    depends_on:
+      - backend
+
+volumes:
+  data:
