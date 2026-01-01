@@ -1,8 +1,92 @@
 <script lang="ts">
+  import { onMount, onDestroy } from 'svelte';
   import { wizard } from '$lib/stores/wizard';
+  import {
+    createConnectionURI,
+    generateQRCode,
+    generateSecret,
+    generateLocalKeypair,
+    waitForConnection,
+    hexToNpub,
+    closeConnection,
+    type NIP46Connection
+  } from '$lib/nip46';
 
   let handle = '';
   let loading = false;
+
+  // NIP-46 state
+  let qrCodeDataUrl = '';
+  let connectionSecret = '';
+  let localKeypair: { secretKey: string; publicKey: string } | null = null;
+  let connectionStatus: 'idle' | 'waiting' | 'connected' | 'error' = 'idle';
+  let connectionError = '';
+  let pendingConnection: NIP46Connection | null = null;
+
+  onMount(async () => {
+    await initNIP46Connection();
+  });
+
+  onDestroy(() => {
+    // Cleanup connection if not used
+    if (pendingConnection && $wizard.authMode !== 'nip46') {
+      closeConnection(pendingConnection);
+    }
+  });
+
+  async function initNIP46Connection() {
+    try {
+      connectionStatus = 'waiting';
+      connectionError = '';
+
+      // Generate local keypair for NIP-46 client
+      localKeypair = generateLocalKeypair();
+      connectionSecret = generateSecret();
+
+      // Create connection URI
+      const uri = createConnectionURI(localKeypair.publicKey, connectionSecret);
+
+      // Generate QR code
+      qrCodeDataUrl = await generateQRCode(uri);
+
+      // Start listening for connection in background
+      waitForPrimalConnection();
+    } catch (err) {
+      connectionStatus = 'error';
+      connectionError = err instanceof Error ? err.message : 'Failed to initialize';
+    }
+  }
+
+  async function waitForPrimalConnection() {
+    if (!localKeypair) return;
+
+    try {
+      const connection = await waitForConnection(
+        localKeypair.secretKey,
+        connectionSecret,
+        () => { connectionStatus = 'waiting'; }
+      );
+
+      pendingConnection = connection;
+      connectionStatus = 'connected';
+
+      // Store connection in wizard
+      wizard.setAuthMode('nip46');
+      wizard.setNIP46Connection(connection, connection.remotePubkey);
+    } catch (err) {
+      connectionStatus = 'error';
+      connectionError = err instanceof Error ? err.message : 'Connection failed';
+    }
+  }
+
+  async function retryConnection() {
+    if (pendingConnection) {
+      closeConnection(pendingConnection);
+      pendingConnection = null;
+    }
+    wizard.clearNIP46();
+    await initNIP46Connection();
+  }
 
   async function handleSubmit() {
     if (!handle.trim()) return;
@@ -75,6 +159,38 @@
       {/if}
     </button>
   </form>
+
+  <div class="divider">
+    <span>or login with your existing Nostr identity</span>
+  </div>
+
+  <div class="primal-login">
+    <h3>Login with Primal</h3>
+    <p class="qr-description">Scan this QR code with your Primal app to connect</p>
+
+    <div class="qr-container">
+      {#if connectionStatus === 'connected'}
+        <div class="connected-state">
+          <div class="checkmark">✓</div>
+          <p class="connected-text">Connected to Primal</p>
+          <code class="pubkey">{hexToNpub($wizard.nip46Pubkey || '').slice(0, 20)}...</code>
+        </div>
+      {:else if connectionStatus === 'error'}
+        <div class="error-state">
+          <p class="error-text">{connectionError}</p>
+          <button class="retry-btn" on:click={retryConnection}>Try Again</button>
+        </div>
+      {:else if qrCodeDataUrl}
+        <img src={qrCodeDataUrl} alt="Scan with Primal" class="qr-code" />
+        <p class="waiting-text">Waiting for connection...</p>
+      {:else}
+        <div class="loading-qr">
+          <span class="spinner"></span>
+          <p>Generating QR code...</p>
+        </div>
+      {/if}
+    </div>
+  </div>
 
   <div class="info">
     <h3>How it works</h3>
@@ -181,6 +297,139 @@
     to {
       transform: rotate(360deg);
     }
+  }
+
+  .divider {
+    display: flex;
+    align-items: center;
+    margin: 2rem auto;
+    max-width: 400px;
+  }
+
+  .divider::before,
+  .divider::after {
+    content: '';
+    flex: 1;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .divider span {
+    padding: 0 1rem;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+  }
+
+  .primal-login {
+    max-width: 400px;
+    margin: 0 auto 2rem;
+    padding: 1.5rem;
+    background: var(--bg-tertiary);
+    border-radius: 0.75rem;
+    border: 1px solid var(--border);
+  }
+
+  .primal-login h3 {
+    font-size: 1.125rem;
+    margin-bottom: 0.5rem;
+    color: var(--text-primary);
+  }
+
+  .qr-description {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    margin-bottom: 1.5rem;
+  }
+
+  .qr-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 300px;
+    justify-content: center;
+  }
+
+  .qr-code {
+    border-radius: 0.5rem;
+    background: white;
+    padding: 0.5rem;
+  }
+
+  .waiting-text {
+    margin-top: 1rem;
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+  }
+
+  .loading-qr {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+    color: var(--text-secondary);
+  }
+
+  .loading-qr .spinner {
+    width: 2rem;
+    height: 2rem;
+    border-color: var(--border);
+    border-top-color: var(--accent);
+  }
+
+  .connected-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .checkmark {
+    width: 4rem;
+    height: 4rem;
+    background: #22c55e;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2rem;
+    color: white;
+  }
+
+  .connected-text {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: #22c55e;
+  }
+
+  .pubkey {
+    font-size: 0.75rem;
+    background: var(--bg-primary);
+    padding: 0.5rem 1rem;
+    border-radius: 0.25rem;
+    color: var(--text-secondary);
+  }
+
+  .error-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .error-text {
+    color: #ef4444;
+    font-size: 0.875rem;
+  }
+
+  .retry-btn {
+    width: auto;
+    padding: 0.5rem 1.5rem;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+  }
+
+  .retry-btn:hover {
+    border-color: var(--accent);
   }
 
   .info {

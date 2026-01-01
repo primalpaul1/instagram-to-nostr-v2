@@ -1,4 +1,3 @@
-import { sha256 } from '@noble/hashes/sha256';
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils';
 import * as secp256k1 from '@noble/secp256k1';
 

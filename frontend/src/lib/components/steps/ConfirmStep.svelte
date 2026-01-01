@@ -1,7 +1,13 @@
 <script lang="ts">
   import { wizard, selectedVideos } from '$lib/stores/wizard';
+  import { hexToNpub } from '$lib/nip46';
 
   let loading = false;
+
+  $: isNip46Mode = $wizard.authMode === 'nip46';
+  $: displayNpub = isNip46Mode
+    ? ($wizard.nip46Pubkey ? hexToNpub($wizard.nip46Pubkey) : '')
+    : $wizard.keyPair?.npub || '';
 
   function handleBack() {
     wizard.setStep('videos');
@@ -15,37 +21,44 @@
     wizard.setError(null);
 
     try {
-      const videos = $selectedVideos.map(v => ({
-        url: v.url,
-        filename: v.filename,
-        caption: v.caption,
-        original_date: v.original_date,
-        width: v.width,
-        height: v.height,
-        duration: v.duration,
-        thumbnail_url: v.thumbnail_url
-      }));
+      if (isNip46Mode) {
+        // NIP-46 mode: Frontend handles migration directly
+        // No need to create a job - go straight to progress-nip46
+        wizard.setStep('progress-nip46');
+      } else {
+        // Generate keys mode: Create job for worker to process
+        const videos = $selectedVideos.map(v => ({
+          url: v.url,
+          filename: v.filename,
+          caption: v.caption,
+          original_date: v.original_date,
+          width: v.width,
+          height: v.height,
+          duration: v.duration,
+          thumbnail_url: v.thumbnail_url
+        }));
 
-      const response = await fetch('/api/jobs', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          handle: $wizard.handle,
-          publicKey: $wizard.keyPair?.publicKey,
-          secretKey: $wizard.keyPair?.secretKey,
-          videos,
-          profile: $wizard.profile
-        })
-      });
+        const response = await fetch('/api/jobs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            handle: $wizard.handle,
+            publicKey: $wizard.keyPair?.publicKey,
+            secretKey: $wizard.keyPair?.secretKey,
+            videos,
+            profile: $wizard.profile
+          })
+        });
 
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Failed to create job');
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.message || 'Failed to create job');
+        }
+
+        const data = await response.json();
+        wizard.setJobId(data.jobId);
+        wizard.setStep('progress');
       }
-
-      const data = await response.json();
-      wizard.setJobId(data.jobId);
-      wizard.setStep('progress');
     } catch (err) {
       wizard.setError(err instanceof Error ? err.message : 'An error occurred');
     } finally {
@@ -69,8 +82,15 @@
 
     <div class="summary-row">
       <span class="label">Nostr Public Key</span>
-      <code class="value">{$wizard.keyPair?.npub.slice(0, 20)}...</code>
+      <code class="value">{displayNpub.slice(0, 20)}...</code>
     </div>
+
+    {#if isNip46Mode}
+      <div class="summary-row">
+        <span class="label">Auth Mode</span>
+        <span class="value mode-badge">Connected via Primal</span>
+      </div>
+    {/if}
 
     <div class="summary-row highlight">
       <span class="label">Videos to migrate</span>
@@ -98,7 +118,12 @@
       <li>Each video will be downloaded from Instagram</li>
       <li>Videos are uploaded to Blossom media server</li>
       <li>Posts are published to multiple Nostr relays</li>
-      <li>This may take several minutes depending on video count</li>
+      {#if isNip46Mode}
+        <li>Your Primal wallet will sign each post</li>
+        <li><strong>Keep this browser tab open during migration</strong></li>
+      {:else}
+        <li>This may take several minutes depending on video count</li>
+      {/if}
     </ul>
   </div>
 
@@ -177,6 +202,15 @@
     font-weight: 700;
   }
 
+  .mode-badge {
+    background: rgba(34, 197, 94, 0.2);
+    color: #22c55e;
+    padding: 0.25rem 0.75rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+  }
+
   code.value {
     font-family: monospace;
     font-size: 0.75rem;
@@ -247,6 +281,11 @@
 
   .info-box li {
     margin: 0.25rem 0;
+  }
+
+  .info-box li strong {
+    display: inline;
+    color: var(--warning);
   }
 
   .actions {
