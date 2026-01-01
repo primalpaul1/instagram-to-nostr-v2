@@ -84,6 +84,7 @@ async def fetch_videos(request: FetchVideosRequest):
     """
     Fetch Instagram video metadata using RapidAPI Instagram120.
     Returns list of available videos without downloading them.
+    Paginates through all posts to get complete video list.
     """
     handle = request.handle.lstrip("@")
 
@@ -92,107 +93,119 @@ async def fetch_videos(request: FetchVideosRequest):
 
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
-            # Profile will be extracted from first post's user data
             profile = None
-
-            # Fetch posts from Instagram120 API (POST request)
-            response = await client.post(
-                "https://instagram120.p.rapidapi.com/api/instagram/posts",
-                json={"username": handle, "maxId": ""},
-                headers={
-                    "Content-Type": "application/json",
-                    "x-rapidapi-key": RAPIDAPI_KEY,
-                    "x-rapidapi-host": "instagram120.p.rapidapi.com"
-                }
-            )
-
-            if response.status_code == 404:
-                raise HTTPException(status_code=404, detail=f"Instagram user '{handle}' not found")
-
-            if response.status_code != 200:
-                raise HTTPException(status_code=response.status_code, detail=f"API error: {response.text}")
-
-            data = response.json()
             videos = []
+            max_id = ""
+            max_pages = 10  # Safety limit to prevent infinite loops
+            page = 0
 
-            # Instagram120 API returns: { "result": { "edges": [...] } }
-            edges = data.get("result", {}).get("edges", [])
+            while page < max_pages:
+                # Fetch posts from Instagram120 API (POST request)
+                response = await client.post(
+                    "https://instagram120.p.rapidapi.com/api/instagram/posts",
+                    json={"username": handle, "maxId": max_id},
+                    headers={
+                        "Content-Type": "application/json",
+                        "x-rapidapi-key": RAPIDAPI_KEY,
+                        "x-rapidapi-host": "instagram120.p.rapidapi.com"
+                    }
+                )
 
-            # Extract profile from first post's user data
-            if edges:
-                first_node = edges[0].get("node", {})
-                user_data = first_node.get("user") or first_node.get("owner") or {}
-                if user_data:
-                    # Get HD profile pic if available, otherwise regular
-                    profile_pic = None
-                    hd_pic_info = user_data.get("hd_profile_pic_url_info", {})
-                    if hd_pic_info and hd_pic_info.get("url"):
-                        profile_pic = hd_pic_info.get("url")
-                    else:
-                        profile_pic = user_data.get("profile_pic_url")
+                if response.status_code == 404:
+                    raise HTTPException(status_code=404, detail=f"Instagram user '{handle}' not found")
 
-                    profile = ProfileMetadata(
-                        username=user_data.get("username", handle),
-                        display_name=user_data.get("full_name"),
-                        profile_picture_url=profile_pic,
-                    )
+                if response.status_code != 200:
+                    raise HTTPException(status_code=response.status_code, detail=f"API error: {response.text}")
+
+                data = response.json()
+
+                # Instagram120 API returns: { "result": { "edges": [...], "page_info": {...} } }
+                result = data.get("result", {})
+                edges = result.get("edges", [])
+
+                if not edges:
+                    break  # No more posts
+
+                # Extract profile from first post's user data (only on first page)
+                if page == 0 and edges:
+                    first_node = edges[0].get("node", {})
+                    user_data = first_node.get("user") or first_node.get("owner") or {}
+                    if user_data:
+                        profile_pic = None
+                        hd_pic_info = user_data.get("hd_profile_pic_url_info", {})
+                        if hd_pic_info and hd_pic_info.get("url"):
+                            profile_pic = hd_pic_info.get("url")
+                        else:
+                            profile_pic = user_data.get("profile_pic_url")
+
+                        profile = ProfileMetadata(
+                            username=user_data.get("username", handle),
+                            display_name=user_data.get("full_name"),
+                            profile_picture_url=profile_pic,
+                        )
+
+                # Process edges for videos
+                for edge in edges:
+                    node = edge.get("node", {})
+
+                    # Check if it has video_versions (means it's a video)
+                    video_versions = node.get("video_versions", [])
+                    if not video_versions:
+                        continue
+
+                    video_url = video_versions[0].get("url") if video_versions else None
+                    if not video_url:
+                        continue
+
+                    width = video_versions[0].get("width")
+                    height = video_versions[0].get("height")
+
+                    caption = None
+                    caption_obj = node.get("caption")
+                    if caption_obj:
+                        caption = caption_obj.get("text") if isinstance(caption_obj, dict) else caption_obj
+
+                    taken_at = node.get("taken_at")
+                    original_date = None
+                    if taken_at:
+                        from datetime import datetime
+                        try:
+                            original_date = datetime.fromtimestamp(int(taken_at)).isoformat()
+                        except (ValueError, TypeError):
+                            pass
+
+                    thumbnail_url = None
+                    image_versions = node.get("image_versions2", {}).get("candidates", [])
+                    if image_versions:
+                        thumbnail_url = image_versions[0].get("url")
+
+                    code = node.get("code", node.get("pk", "video"))
+
+                    videos.append(VideoMetadata(
+                        url=video_url,
+                        filename=f"{code}.mp4",
+                        caption=caption,
+                        original_date=original_date,
+                        width=width,
+                        height=height,
+                        duration=node.get("video_duration"),
+                        thumbnail_url=thumbnail_url,
+                    ))
+
+                # Check for next page
+                page_info = result.get("page_info", {})
+                has_next = page_info.get("has_next_page", False)
+                end_cursor = page_info.get("end_cursor", "")
+
+                if not has_next or not end_cursor:
+                    break  # No more pages
+
+                max_id = end_cursor
+                page += 1
 
             # Fallback if no profile extracted
             if not profile:
                 profile = ProfileMetadata(username=handle)
-
-            for edge in edges:
-                node = edge.get("node", {})
-
-                # Check if it has video_versions (means it's a video)
-                video_versions = node.get("video_versions", [])
-                if not video_versions:
-                    continue
-
-                # Get the best video URL (first one is usually highest quality)
-                video_url = video_versions[0].get("url") if video_versions else None
-                if not video_url:
-                    continue
-
-                # Get dimensions from video_versions
-                width = video_versions[0].get("width")
-                height = video_versions[0].get("height")
-
-                # Get caption
-                caption = None
-                caption_obj = node.get("caption")
-                if caption_obj:
-                    caption = caption_obj.get("text") if isinstance(caption_obj, dict) else caption_obj
-
-                # Get timestamp
-                taken_at = node.get("taken_at")
-                original_date = None
-                if taken_at:
-                    from datetime import datetime
-                    try:
-                        original_date = datetime.fromtimestamp(int(taken_at)).isoformat()
-                    except (ValueError, TypeError):
-                        pass
-
-                # Get thumbnail from image_versions2
-                thumbnail_url = None
-                image_versions = node.get("image_versions2", {}).get("candidates", [])
-                if image_versions:
-                    thumbnail_url = image_versions[0].get("url")
-
-                # Get post code for filename
-                code = node.get("code", node.get("pk", "video"))
-
-                videos.append(VideoMetadata(
-                    url=video_url,
-                    filename=f"{code}.mp4",
-                    caption=caption,
-                    original_date=original_date,
-                    width=width,
-                    height=height,
-                    duration=node.get("video_duration"),
-                    thumbnail_url=thumbnail_url,
-                ))
 
             return FetchVideosResponse(videos=videos, handle=handle, profile=profile)
 
