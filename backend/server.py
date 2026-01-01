@@ -79,6 +79,142 @@ async def health_check():
     return {"status": "healthy"}
 
 
+@app.get("/videos-stream/{handle}")
+async def fetch_videos_stream(handle: str):
+    """
+    Stream video fetch progress using Server-Sent Events.
+    Sends progress updates after each page, then final data.
+    """
+    handle = handle.lstrip("@")
+
+    async def generate():
+        if not RAPIDAPI_KEY:
+            yield f"data: {json.dumps({'error': 'RAPIDAPI_KEY not configured'})}\n\n"
+            return
+
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                profile = None
+                videos = []
+                max_id = ""
+                max_pages = 50
+                page = 0
+
+                while page < max_pages:
+                    response = await client.post(
+                        "https://instagram120.p.rapidapi.com/api/instagram/posts",
+                        json={"username": handle, "maxId": max_id},
+                        headers={
+                            "Content-Type": "application/json",
+                            "x-rapidapi-key": RAPIDAPI_KEY,
+                            "x-rapidapi-host": "instagram120.p.rapidapi.com"
+                        }
+                    )
+
+                    if response.status_code == 404:
+                        yield f"data: {json.dumps({'error': f'Instagram user {handle} not found'})}\n\n"
+                        return
+
+                    if response.status_code != 200:
+                        yield f"data: {json.dumps({'error': f'API error: {response.text}'})}\n\n"
+                        return
+
+                    data = response.json()
+                    result = data.get("result", {})
+                    edges = result.get("edges", [])
+
+                    if not edges:
+                        break
+
+                    # Extract profile from first page
+                    if page == 0 and edges:
+                        first_node = edges[0].get("node", {})
+                        user_data = first_node.get("user") or first_node.get("owner") or {}
+                        if user_data:
+                            profile_pic = None
+                            hd_pic_info = user_data.get("hd_profile_pic_url_info", {})
+                            if hd_pic_info and hd_pic_info.get("url"):
+                                profile_pic = hd_pic_info.get("url")
+                            else:
+                                profile_pic = user_data.get("profile_pic_url")
+                            profile = {
+                                "username": user_data.get("username", handle),
+                                "display_name": user_data.get("full_name"),
+                                "profile_picture_url": profile_pic,
+                            }
+
+                    # Process edges for videos
+                    for edge in edges:
+                        node = edge.get("node", {})
+                        video_versions = node.get("video_versions", [])
+                        if not video_versions:
+                            continue
+
+                        video_url = video_versions[0].get("url") if video_versions else None
+                        if not video_url:
+                            continue
+
+                        width = video_versions[0].get("width")
+                        height = video_versions[0].get("height")
+
+                        caption = None
+                        caption_obj = node.get("caption")
+                        if caption_obj:
+                            caption = caption_obj.get("text") if isinstance(caption_obj, dict) else caption_obj
+
+                        taken_at = node.get("taken_at")
+                        original_date = None
+                        if taken_at:
+                            from datetime import datetime
+                            try:
+                                original_date = datetime.fromtimestamp(int(taken_at)).isoformat()
+                            except (ValueError, TypeError):
+                                pass
+
+                        thumbnail_url = None
+                        image_versions = node.get("image_versions2", {}).get("candidates", [])
+                        if image_versions:
+                            thumbnail_url = image_versions[0].get("url")
+
+                        code = node.get("code", node.get("pk", "video"))
+
+                        videos.append({
+                            "url": video_url,
+                            "filename": f"{code}.mp4",
+                            "caption": caption,
+                            "original_date": original_date,
+                            "width": width,
+                            "height": height,
+                            "duration": node.get("video_duration"),
+                            "thumbnail_url": thumbnail_url,
+                        })
+
+                    # Send progress update
+                    yield f"data: {json.dumps({'progress': True, 'count': len(videos)})}\n\n"
+
+                    # Check for next page
+                    page_info = result.get("page_info", {})
+                    has_next = page_info.get("has_next_page", False)
+                    end_cursor = page_info.get("end_cursor", "")
+
+                    if not has_next or not end_cursor:
+                        break
+
+                    max_id = end_cursor
+                    page += 1
+
+                # Send final result
+                if not profile:
+                    profile = {"username": handle}
+
+                yield f"data: {json.dumps({'done': True, 'videos': videos, 'handle': handle, 'profile': profile})}\n\n"
+
+        except Exception as e:
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
+
+
 @app.post("/videos", response_model=FetchVideosResponse)
 async def fetch_videos(request: FetchVideosRequest):
     """

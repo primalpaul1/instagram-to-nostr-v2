@@ -14,6 +14,7 @@
 
   let handle = '';
   let loading = false;
+  let videoCount = 0;
 
   // NIP-46 state
   let qrCodeDataUrl = '';
@@ -94,36 +95,74 @@
     if (!handle.trim()) return;
 
     loading = true;
+    videoCount = 0;
     wizard.setLoading(true);
     wizard.setError(null);
 
     try {
       const cleanHandle = handle.replace('@', '').trim();
 
-      // Fetch videos from backend
-      const response = await fetch('/api/videos', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ handle: cleanHandle })
-      });
+      // Use SSE to stream video fetch progress
+      const response = await fetch(`/api/videos-stream/${encodeURIComponent(cleanHandle)}`);
 
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Failed to fetch videos');
+        throw new Error('Failed to fetch videos');
       }
 
-      const data = await response.json();
-
-      if (data.videos.length === 0) {
-        throw new Error('No videos found for this account');
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error('Streaming not supported');
       }
 
-      wizard.setHandle(cleanHandle);
-      wizard.setVideos(data.videos.map((v: any) => ({ ...v, selected: false })));
-      if (data.profile) {
-        wizard.setProfile(data.profile);
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const jsonStr = line.slice(6);
+            try {
+              const data = JSON.parse(jsonStr);
+
+              if (data.error) {
+                throw new Error(data.error);
+              }
+
+              if (data.progress) {
+                videoCount = data.count;
+              }
+
+              if (data.done) {
+                if (data.videos.length === 0) {
+                  throw new Error('No videos found for this account');
+                }
+
+                wizard.setHandle(cleanHandle);
+                wizard.setVideos(data.videos.map((v: any) => ({ ...v, selected: false })));
+                if (data.profile) {
+                  wizard.setProfile(data.profile);
+                }
+                wizard.setStep('keys');
+                return;
+              }
+            } catch (parseErr) {
+              if (parseErr instanceof Error && parseErr.message !== 'Unexpected end of JSON input') {
+                throw parseErr;
+              }
+            }
+          }
+        }
       }
-      wizard.setStep('keys');
+
+      // If we get here without 'done', something went wrong
+      throw new Error('Stream ended unexpectedly');
     } catch (err) {
       wizard.setError(err instanceof Error ? err.message : 'An error occurred');
     } finally {
@@ -155,7 +194,11 @@
     <button type="submit" disabled={!handle.trim() || loading}>
       {#if loading}
         <span class="spinner"></span>
-        Fetching videos...
+        {#if videoCount > 0}
+          Fetching videos... {videoCount} found
+        {:else}
+          Fetching videos...
+        {/if}
       {:else}
         Continue
       {/if}
