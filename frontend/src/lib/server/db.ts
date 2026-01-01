@@ -5,12 +5,13 @@ import path from 'path';
 
 const DATABASE_PATH = env.DATABASE_PATH || '/data/instagram.db';
 
-let db: Database | null = null;
+let SQL: Awaited<ReturnType<typeof initSqlJs>> | null = null;
 
 async function getDb(): Promise<Database> {
-  if (db) return db;
-
-  const SQL = await initSqlJs();
+  // Initialize sql.js once
+  if (!SQL) {
+    SQL = await initSqlJs();
+  }
 
   // Ensure data directory exists
   const dataDir = path.dirname(DATABASE_PATH);
@@ -18,35 +19,35 @@ async function getDb(): Promise<Database> {
     fs.mkdirSync(dataDir, { recursive: true });
   }
 
-  // Load existing database or create new one
+  // Always read fresh from disk to see worker updates
+  let db: Database;
   if (fs.existsSync(DATABASE_PATH)) {
     const buffer = fs.readFileSync(DATABASE_PATH);
     db = new SQL.Database(buffer);
   } else {
     db = new SQL.Database();
-  }
+    // Initialize schema for new database
+    const schemaPath = path.join(process.cwd(), 'schema.sql');
+    const parentSchemaPath = path.join(process.cwd(), '..', 'schema.sql');
 
-  // Initialize schema
-  const schemaPath = path.join(process.cwd(), 'schema.sql');
-  const parentSchemaPath = path.join(process.cwd(), '..', 'schema.sql');
+    let schema = '';
+    if (fs.existsSync(schemaPath)) {
+      schema = fs.readFileSync(schemaPath, 'utf-8');
+    } else if (fs.existsSync(parentSchemaPath)) {
+      schema = fs.readFileSync(parentSchemaPath, 'utf-8');
+    }
 
-  let schema = '';
-  if (fs.existsSync(schemaPath)) {
-    schema = fs.readFileSync(schemaPath, 'utf-8');
-  } else if (fs.existsSync(parentSchemaPath)) {
-    schema = fs.readFileSync(parentSchemaPath, 'utf-8');
-  }
-
-  if (schema) {
-    db.run(schema);
-    saveDb();
+    if (schema) {
+      db.run(schema);
+      const data = db.export();
+      fs.writeFileSync(DATABASE_PATH, Buffer.from(data));
+    }
   }
 
   return db;
 }
 
-function saveDb(): void {
-  if (!db) return;
+function saveDb(db: Database): void {
   const data = db.export();
   const buffer = Buffer.from(data);
   fs.writeFileSync(DATABASE_PATH, buffer);
@@ -101,7 +102,7 @@ export async function createJob(
      VALUES (?, ?, ?, ?, 'pending')`,
     [id, handle, publicKeyHex, secretKeyHex]
   );
-  saveDb();
+  saveDb(database);
   return (await getJob(id))!;
 }
 
@@ -119,7 +120,7 @@ export async function updateJobStatus(id: string, status: Job['status']): Promis
      WHERE id = ?`,
     [status, id]
   );
-  saveDb();
+  saveDb(database);
 }
 
 export async function createVideoTask(
@@ -154,7 +155,7 @@ export async function createVideoTask(
       thumbnailUrl || null
     ]
   );
-  saveDb();
+  saveDb(database);
   return (await getVideoTask(id))!;
 }
 

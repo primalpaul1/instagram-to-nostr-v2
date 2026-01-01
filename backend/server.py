@@ -78,11 +78,13 @@ async def fetch_videos(request: FetchVideosRequest):
     instagram_url = f"https://www.instagram.com/{handle}/"
 
     try:
+        # Use Chrome cookies (Safari not accessible on macOS due to sandboxing)
+        # Use -J for resolved JSON with full metadata
         result = subprocess.run(
             [
                 "gallery-dl",
-                "--dump-json",
-                "--no-download",
+                "--cookies-from-browser", "chrome",
+                "-J",  # Resolved JSON output with full metadata
                 instagram_url,
             ],
             capture_output=True,
@@ -95,46 +97,41 @@ async def fetch_videos(request: FetchVideosRequest):
             raise HTTPException(status_code=400, detail=error_msg)
 
         videos = []
-        for line in result.stdout.strip().split("\n"):
-            if not line:
-                continue
-            try:
-                data = json.loads(line)
+        try:
+            # -J outputs a single JSON array
+            data = json.loads(result.stdout)
 
-                # gallery-dl returns nested structure, extract video info
-                if isinstance(data, list) and len(data) >= 3:
-                    # Format: [directory, filename, url, metadata...]
-                    url = data[2] if len(data) > 2 else None
-                    metadata = data[3] if len(data) > 3 else {}
+            if isinstance(data, list):
+                for entry in data:
+                    # Format: [type, url_or_data, metadata]
+                    # type 3 = media item with URL
+                    if isinstance(entry, list) and len(entry) >= 3:
+                        entry_type = entry[0]
+                        url = entry[1] if len(entry) > 1 else None
+                        metadata = entry[2] if len(entry) > 2 else {}
 
-                    # Only include videos (mp4)
-                    if url and (url.endswith(".mp4") or "video" in str(metadata.get("_type", ""))):
-                        videos.append(VideoMetadata(
-                            url=url,
-                            filename=data[1] if len(data) > 1 else "video.mp4",
-                            caption=metadata.get("description") or metadata.get("caption"),
-                            original_date=metadata.get("date"),
-                            width=metadata.get("width"),
-                            height=metadata.get("height"),
-                            duration=metadata.get("duration"),
-                            thumbnail_url=metadata.get("thumbnail"),
-                        ))
-                elif isinstance(data, dict):
-                    # Alternative format: direct dict
-                    url = data.get("url") or data.get("_fallback_url")
-                    if url and (".mp4" in url or data.get("extension") == "mp4"):
-                        videos.append(VideoMetadata(
-                            url=url,
-                            filename=data.get("filename", "video") + ".mp4",
-                            caption=data.get("description") or data.get("caption"),
-                            original_date=data.get("date"),
-                            width=data.get("width"),
-                            height=data.get("height"),
-                            duration=data.get("duration"),
-                            thumbnail_url=data.get("thumbnail"),
-                        ))
-            except json.JSONDecodeError:
-                continue
+                        # Type 3 is media with URL
+                        if entry_type == 3 and isinstance(url, str) and isinstance(metadata, dict):
+                            extension = metadata.get("extension", "")
+
+                            # Check if it's a video
+                            if extension == "mp4":
+                                filename = metadata.get("filename", "video")
+                                if not filename.endswith(".mp4"):
+                                    filename = f"{filename}.mp4"
+
+                                videos.append(VideoMetadata(
+                                    url=url,
+                                    filename=filename,
+                                    caption=metadata.get("description"),
+                                    original_date=metadata.get("date"),
+                                    width=metadata.get("width"),
+                                    height=metadata.get("height"),
+                                    duration=metadata.get("duration"),
+                                    thumbnail_url=metadata.get("display_url"),
+                                ))
+        except json.JSONDecodeError:
+            pass
 
         return FetchVideosResponse(videos=videos, handle=handle)
 
@@ -142,6 +139,27 @@ async def fetch_videos(request: FetchVideosRequest):
         raise HTTPException(status_code=504, detail="Timeout fetching Instagram data")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+def resolve_ytdl_url(ytdl_url: str) -> str:
+    """Resolve a ytdl: URL to actual video URL using yt-dlp."""
+    # Remove ytdl: prefix
+    actual_url = ytdl_url[5:] if ytdl_url.startswith("ytdl:") else ytdl_url
+
+    try:
+        result = subprocess.run(
+            ["yt-dlp", "--cookies-from-browser", "chrome", "-g", actual_url],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            # yt-dlp -g returns the direct video URL
+            return result.stdout.strip().split("\n")[0]
+    except Exception:
+        pass
+
+    return actual_url
 
 
 @app.post("/stream-upload", response_model=StreamUploadResponse)
@@ -152,6 +170,10 @@ async def stream_upload(request: StreamUploadRequest):
     """
     video_url = request.video_url
     auth_header = request.auth_header
+
+    # Resolve ytdl: URLs using yt-dlp
+    if video_url.startswith("ytdl:"):
+        video_url = resolve_ytdl_url(video_url)
 
     async with httpx.AsyncClient(timeout=300.0) as client:
         # First, get the video stream from Instagram

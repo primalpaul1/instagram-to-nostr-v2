@@ -4,10 +4,12 @@ Handles concurrent video uploads, Nostr event creation, and relay publishing.
 """
 
 import asyncio
+import base64
 import hashlib
 import hmac
 import json
 import os
+import subprocess
 import time
 from typing import Optional
 
@@ -33,6 +35,28 @@ POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "5"))
 NOSTR_RELAYS = os.getenv(
     "NOSTR_RELAYS", "wss://relay.primal.net,wss://relay.damus.io,wss://nos.lol"
 ).split(",")
+
+
+def resolve_ytdl_url(ytdl_url: str) -> str:
+    """Resolve a ytdl: URL to actual video URL using yt-dlp."""
+    # Remove ytdl: prefix
+    actual_url = ytdl_url[5:] if ytdl_url.startswith("ytdl:") else ytdl_url
+
+    try:
+        result = subprocess.run(
+            ["yt-dlp", "--cookies-from-browser", "chrome", "-g", actual_url],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            # yt-dlp -g returns the direct video URL
+            return result.stdout.strip().split("\n")[0]
+    except Exception as e:
+        print(f"Failed to resolve ytdl URL: {e}")
+
+    return actual_url
+
 
 # secp256k1 curve parameters
 CURVE = SECP256k1
@@ -174,7 +198,10 @@ def create_blossom_auth_event(
     }
 
     signed = sign_event(event, secret_key_hex)
-    return "Nostr " + json.dumps(signed)
+    # Base64 encode the JSON event as per Blossom spec
+    event_json = json.dumps(signed)
+    event_base64 = base64.b64encode(event_json.encode()).decode()
+    return "Nostr " + event_base64
 
 
 def create_video_event(
@@ -281,11 +308,18 @@ async def process_task(task: dict) -> None:
         secret_key_hex = task["secret_key_hex"]
         public_key_hex = task["public_key_hex"]
 
+        # Resolve ytdl: URLs to actual video URLs
+        video_url = task["instagram_url"]
+        if video_url.startswith("ytdl:"):
+            print(f"Resolving ytdl URL: {video_url}")
+            video_url = resolve_ytdl_url(video_url)
+            print(f"Resolved to: {video_url}")
+
         # We need to first fetch the video to get its hash for Blossom auth
         # The backend will handle the streaming upload
         async with httpx.AsyncClient(timeout=300.0) as client:
             # First, download the video to calculate hash
-            video_response = await client.get(task["instagram_url"], follow_redirects=True)
+            video_response = await client.get(video_url, follow_redirects=True)
             video_response.raise_for_status()
             video_content = video_response.content
             file_hash = hashlib.sha256(video_content).hexdigest()
@@ -298,7 +332,7 @@ async def process_task(task: dict) -> None:
             upload_response = await client.post(
                 f"{BACKEND_URL}/stream-upload",
                 json={
-                    "video_url": task["instagram_url"],
+                    "video_url": video_url,  # Use resolved URL
                     "auth_header": auth_header,
                 },
                 timeout=300.0,
