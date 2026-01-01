@@ -34,6 +34,9 @@
 
       wizard.setHandle(cleanHandle);
       wizard.setVideos(data.videos.map((v: any) => ({ ...v, selected: false })));
+      if (data.profile) {
+        wizard.setProfile(data.profile);
+      }
       wizard.setStep('keys');
     } catch (err) {
       wizard.setError(err instanceof Error ? err.message : 'An error occurred');

@@ -17,14 +17,22 @@ interface VideoInput {
   thumbnail_url?: string;
 }
 
+interface ProfileInput {
+  username?: string;
+  display_name?: string;
+  bio?: string;
+  profile_picture_url?: string;
+}
+
 export const POST: RequestHandler = async ({ request }) => {
   try {
     const body = await request.json();
-    const { handle, publicKey, secretKey, videos } = body as {
+    const { handle, publicKey, secretKey, videos, profile } = body as {
       handle: string;
       publicKey: string;
       secretKey: string;
       videos: VideoInput[];
+      profile?: ProfileInput;
     };
 
     if (!handle || !publicKey || !secretKey || !videos?.length) {
@@ -34,9 +42,17 @@ export const POST: RequestHandler = async ({ request }) => {
       );
     }
 
-    // Create job
+    // Create job with profile data
     const jobId = generateId();
-    await createJob(jobId, handle, publicKey, secretKey);
+    await createJob(
+      jobId,
+      handle,
+      publicKey,
+      secretKey,
+      profile?.display_name || profile?.username || handle,
+      profile?.bio,
+      profile?.profile_picture_url
+    );
 
     // Create video tasks
     for (const video of videos) {

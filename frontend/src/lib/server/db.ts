@@ -59,6 +59,11 @@ export interface Job {
   public_key_hex: string;
   secret_key_hex: string;
   status: 'pending' | 'processing' | 'complete' | 'error';
+  profile_name: string | null;
+  profile_bio: string | null;
+  profile_picture_url: string | null;
+  profile_blossom_url: string | null;
+  profile_published: number;
   created_at: string;
   updated_at: string;
 }
@@ -94,13 +99,16 @@ export async function createJob(
   id: string,
   handle: string,
   publicKeyHex: string,
-  secretKeyHex: string
+  secretKeyHex: string,
+  profileName?: string,
+  profileBio?: string,
+  profilePictureUrl?: string
 ): Promise<Job> {
   const database = await getDb();
   database.run(
-    `INSERT INTO jobs (id, handle, public_key_hex, secret_key_hex, status)
-     VALUES (?, ?, ?, ?, 'pending')`,
-    [id, handle, publicKeyHex, secretKeyHex]
+    `INSERT INTO jobs (id, handle, public_key_hex, secret_key_hex, status, profile_name, profile_bio, profile_picture_url)
+     VALUES (?, ?, ?, ?, 'pending', ?, ?, ?)`,
+    [id, handle, publicKeyHex, secretKeyHex, profileName || null, profileBio || null, profilePictureUrl || null]
   );
   saveDb(database);
   return (await getJob(id))!;

@@ -33,7 +33,8 @@
           handle: $wizard.handle,
           publicKey: $wizard.keyPair?.publicKey,
           secretKey: $wizard.keyPair?.secretKey,
-          videos
+          videos,
+          profile: $wizard.profile
         })
       });
 

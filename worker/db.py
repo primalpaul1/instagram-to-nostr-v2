@@ -134,3 +134,39 @@ def update_job_status(job_id: str):
             """,
             (new_status, job_id),
         )
+
+
+def get_jobs_with_unpublished_profiles(limit: int = 10) -> list[dict]:
+    """Get jobs that have profile data but haven't published the profile event yet."""
+    with get_connection() as conn:
+        cursor = conn.execute(
+            """
+            SELECT id, handle, public_key_hex, secret_key_hex,
+                   profile_name, profile_bio, profile_picture_url, profile_blossom_url
+            FROM jobs
+            WHERE profile_published = 0
+              AND profile_name IS NOT NULL
+            ORDER BY created_at ASC
+            LIMIT ?
+            """,
+            (limit,),
+        )
+        return [dict(row) for row in cursor.fetchall()]
+
+
+def update_job_profile_published(
+    job_id: str,
+    profile_blossom_url: Optional[str] = None,
+):
+    """Mark job's profile as published."""
+    with get_connection() as conn:
+        conn.execute(
+            """
+            UPDATE jobs
+            SET profile_published = 1,
+                profile_blossom_url = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (profile_blossom_url, job_id),
+        )

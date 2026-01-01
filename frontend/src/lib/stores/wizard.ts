@@ -27,11 +27,21 @@ export interface KeyPair {
   nsec: string;
 }
 
+export interface ProfileInfo {
+  username: string;
+  display_name?: string;
+  bio?: string;
+  profile_picture_url?: string;
+  followers?: number;
+  following?: number;
+}
+
 export interface WizardState {
   step: WizardStep;
   handle: string;
   keyPair: KeyPair | null;
   videos: VideoInfo[];
+  profile: ProfileInfo | null;
   jobId: string | null;
   error: string | null;
   loading: boolean;
@@ -42,6 +52,7 @@ const initialState: WizardState = {
   handle: '',
   keyPair: null,
   videos: [],
+  profile: null,
   jobId: null,
   error: null,
   loading: false
@@ -57,6 +68,7 @@ function createWizardStore() {
     setHandle: (handle: string) => update(s => ({ ...s, handle })),
     setKeyPair: (keyPair: KeyPair) => update(s => ({ ...s, keyPair })),
     setVideos: (videos: VideoInfo[]) => update(s => ({ ...s, videos })),
+    setProfile: (profile: ProfileInfo | null) => update(s => ({ ...s, profile })),
     toggleVideo: (url: string) => update(s => ({
       ...s,
       videos: s.videos.map(v =>

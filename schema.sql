@@ -5,6 +5,11 @@ CREATE TABLE IF NOT EXISTS jobs (
   public_key_hex TEXT NOT NULL,
   secret_key_hex TEXT NOT NULL,
   status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'complete', 'error')),
+  profile_name TEXT,
+  profile_bio TEXT,
+  profile_picture_url TEXT,
+  profile_blossom_url TEXT,
+  profile_published INTEGER DEFAULT 0,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );

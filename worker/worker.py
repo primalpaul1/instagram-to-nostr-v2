@@ -21,8 +21,10 @@ import websockets
 from db import (
     get_pending_tasks,
     get_task_retry_count,
+    get_jobs_with_unpublished_profiles,
     init_db,
     update_job_status,
+    update_job_profile_published,
     update_task_status,
 )
 
@@ -257,6 +259,33 @@ def create_video_event(
     return sign_event(event, secret_key_hex)
 
 
+def create_profile_event(
+    public_key_hex: str,
+    secret_key_hex: str,
+    name: str,
+    about: Optional[str],
+    picture_url: Optional[str],
+) -> dict:
+    """Create a Kind 0 Nostr profile metadata event."""
+    content = {
+        "name": name,
+    }
+    if about:
+        content["about"] = about
+    if picture_url:
+        content["picture"] = picture_url
+
+    event = {
+        "kind": 0,
+        "pubkey": public_key_hex,
+        "created_at": int(time.time()),
+        "tags": [],
+        "content": json.dumps(content),
+    }
+
+    return sign_event(event, secret_key_hex)
+
+
 async def publish_to_relay(event: dict, relay_url: str) -> bool:
     """Publish a Nostr event to a relay."""
     try:
@@ -405,6 +434,81 @@ async def process_task(task: dict) -> None:
         update_job_status(job_id)
 
 
+async def process_profile(job: dict) -> None:
+    """Process a job's profile - upload picture to Blossom and publish Kind 0 event."""
+    job_id = job["id"]
+    print(f"Processing profile for job {job_id}")
+
+    try:
+        secret_key_hex = job["secret_key_hex"]
+        public_key_hex = job["public_key_hex"]
+        profile_name = job["profile_name"]
+        profile_bio = job.get("profile_bio")
+        profile_picture_url = job.get("profile_picture_url")
+
+        blossom_picture_url = None
+
+        # If there's a profile picture, upload it to Blossom
+        if profile_picture_url:
+            try:
+                async with httpx.AsyncClient(timeout=120.0) as client:
+                    # Download the profile picture
+                    pic_response = await client.get(profile_picture_url, follow_redirects=True)
+                    pic_response.raise_for_status()
+                    pic_content = pic_response.content
+                    pic_hash = hashlib.sha256(pic_content).hexdigest()
+
+                    # Determine content type
+                    content_type = pic_response.headers.get("content-type", "image/jpeg")
+                    if "image" not in content_type:
+                        content_type = "image/jpeg"
+
+                    # Create Blossom auth header
+                    auth_header = create_blossom_auth_event(public_key_hex, secret_key_hex, pic_hash)
+
+                    # Upload to Blossom
+                    upload_response = await client.put(
+                        f"{BLOSSOM_SERVER}/upload",
+                        content=pic_content,
+                        headers={
+                            "Authorization": auth_header,
+                            "Content-Type": content_type,
+                            "X-SHA-256": pic_hash,
+                        },
+                    )
+
+                    if upload_response.status_code in (200, 201):
+                        upload_data = upload_response.json()
+                        blossom_picture_url = upload_data.get("url") or f"{BLOSSOM_SERVER}/{pic_hash}"
+                        print(f"Profile picture uploaded to {blossom_picture_url}")
+                    else:
+                        print(f"Failed to upload profile picture: {upload_response.text}")
+            except Exception as e:
+                print(f"Error uploading profile picture: {e}")
+                # Continue without the profile picture
+
+        # Create and publish Kind 0 profile event
+        event = create_profile_event(
+            public_key_hex=public_key_hex,
+            secret_key_hex=secret_key_hex,
+            name=profile_name,
+            about=profile_bio,
+            picture_url=blossom_picture_url,
+        )
+
+        # Publish to relays
+        successful_relays = await publish_to_relays(event)
+
+        if successful_relays:
+            print(f"Profile published to {len(successful_relays)} relays for job {job_id}")
+            update_job_profile_published(job_id, blossom_picture_url)
+        else:
+            print(f"Failed to publish profile to any relay for job {job_id}")
+
+    except Exception as e:
+        print(f"Error processing profile for job {job_id}: {e}")
+
+
 async def worker_loop():
     """Main worker loop - polls for tasks and processes them."""
     print(f"Worker started with concurrency={CONCURRENCY}, max_retries={MAX_RETRIES}")
@@ -424,6 +528,13 @@ async def worker_loop():
 
     while True:
         try:
+            # Get and process pending profile events first
+            profiles = get_jobs_with_unpublished_profiles(limit=5)
+            if profiles:
+                print(f"Found {len(profiles)} profiles to publish")
+                for profile in profiles:
+                    await process_profile(profile)
+
             # Get pending tasks
             tasks = get_pending_tasks(limit=CONCURRENCY * 2)
 
@@ -435,8 +546,8 @@ async def worker_loop():
                     *[process_with_semaphore(task) for task in tasks],
                     return_exceptions=True,
                 )
-            else:
-                # No tasks, wait before polling again
+            elif not profiles:
+                # No tasks or profiles, wait before polling again
                 await asyncio.sleep(POLL_INTERVAL)
 
         except Exception as e:
