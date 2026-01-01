@@ -92,32 +92,9 @@ async def fetch_videos(request: FetchVideosRequest):
 
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
-            # First, fetch user profile info
-            profile = None
-            try:
-                profile_response = await client.post(
-                    "https://instagram120.p.rapidapi.com/api/instagram/user",
-                    json={"username": handle},
-                    headers={
-                        "Content-Type": "application/json",
-                        "x-rapidapi-key": RAPIDAPI_KEY,
-                        "x-rapidapi-host": "instagram120.p.rapidapi.com"
-                    }
-                )
-                if profile_response.status_code == 200:
-                    profile_data = profile_response.json()
-                    user = profile_data.get("result", {})
-                    profile = ProfileMetadata(
-                        username=user.get("username", handle),
-                        display_name=user.get("full_name"),
-                        bio=user.get("biography"),
-                        profile_picture_url=user.get("profile_pic_url_hd") or user.get("profile_pic_url"),
-                        followers=user.get("follower_count"),
-                        following=user.get("following_count"),
-                    )
-            except Exception as e:
-                print(f"Failed to fetch profile: {e}")
-                # Continue without profile data
+            # Initialize profile with handle as username
+            # (Instagram120 API doesn't have a separate profile endpoint)
+            profile = ProfileMetadata(username=handle)
 
             # Fetch posts from Instagram120 API (POST request)
             response = await client.post(
