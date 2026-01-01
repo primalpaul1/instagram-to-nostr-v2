@@ -92,9 +92,8 @@ async def fetch_videos(request: FetchVideosRequest):
 
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
-            # Initialize profile with handle as username
-            # (Instagram120 API doesn't have a separate profile endpoint)
-            profile = ProfileMetadata(username=handle)
+            # Profile will be extracted from first post's user data
+            profile = None
 
             # Fetch posts from Instagram120 API (POST request)
             response = await client.post(
@@ -118,6 +117,29 @@ async def fetch_videos(request: FetchVideosRequest):
 
             # Instagram120 API returns: { "result": { "edges": [...] } }
             edges = data.get("result", {}).get("edges", [])
+
+            # Extract profile from first post's user data
+            if edges:
+                first_node = edges[0].get("node", {})
+                user_data = first_node.get("user") or first_node.get("owner") or {}
+                if user_data:
+                    # Get HD profile pic if available, otherwise regular
+                    profile_pic = None
+                    hd_pic_info = user_data.get("hd_profile_pic_url_info", {})
+                    if hd_pic_info and hd_pic_info.get("url"):
+                        profile_pic = hd_pic_info.get("url")
+                    else:
+                        profile_pic = user_data.get("profile_pic_url")
+
+                    profile = ProfileMetadata(
+                        username=user_data.get("username", handle),
+                        display_name=user_data.get("full_name"),
+                        profile_picture_url=profile_pic,
+                    )
+
+            # Fallback if no profile extracted
+            if not profile:
+                profile = ProfileMetadata(username=handle)
 
             for edge in edges:
                 node = edge.get("node", {})
