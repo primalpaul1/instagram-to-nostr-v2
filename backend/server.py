@@ -28,6 +28,7 @@ app.add_middleware(
 )
 
 BLOSSOM_SERVER = os.getenv("BLOSSOM_SERVER", "https://blossom.primal.net")
+RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY", "")
 
 
 class VideoMetadata(BaseModel):
@@ -71,72 +72,98 @@ async def health_check():
 @app.post("/videos", response_model=FetchVideosResponse)
 async def fetch_videos(request: FetchVideosRequest):
     """
-    Fetch Instagram video metadata using gallery-dl.
+    Fetch Instagram video metadata using RapidAPI Instagram120.
     Returns list of available videos without downloading them.
     """
     handle = request.handle.lstrip("@")
-    instagram_url = f"https://www.instagram.com/{handle}/"
+
+    if not RAPIDAPI_KEY:
+        raise HTTPException(status_code=500, detail="RAPIDAPI_KEY not configured")
 
     try:
-        # Use Chrome cookies (Safari not accessible on macOS due to sandboxing)
-        # Use -J for resolved JSON with full metadata
-        result = subprocess.run(
-            [
-                "gallery-dl",
-                "--cookies-from-browser", "chrome",
-                "-J",  # Resolved JSON output with full metadata
-                instagram_url,
-            ],
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            # Fetch posts from Instagram120 API (POST request)
+            response = await client.post(
+                "https://instagram120.p.rapidapi.com/api/instagram/posts",
+                json={"username": handle, "maxId": ""},
+                headers={
+                    "Content-Type": "application/json",
+                    "x-rapidapi-key": RAPIDAPI_KEY,
+                    "x-rapidapi-host": "instagram120.p.rapidapi.com"
+                }
+            )
 
-        if result.returncode != 0:
-            error_msg = result.stderr or "Failed to fetch Instagram data"
-            raise HTTPException(status_code=400, detail=error_msg)
+            if response.status_code == 404:
+                raise HTTPException(status_code=404, detail=f"Instagram user '{handle}' not found")
 
-        videos = []
-        try:
-            # -J outputs a single JSON array
-            data = json.loads(result.stdout)
+            if response.status_code != 200:
+                raise HTTPException(status_code=response.status_code, detail=f"API error: {response.text}")
 
-            if isinstance(data, list):
-                for entry in data:
-                    # Format: [type, url_or_data, metadata]
-                    # type 3 = media item with URL
-                    if isinstance(entry, list) and len(entry) >= 3:
-                        entry_type = entry[0]
-                        url = entry[1] if len(entry) > 1 else None
-                        metadata = entry[2] if len(entry) > 2 else {}
+            data = response.json()
+            videos = []
 
-                        # Type 3 is media with URL
-                        if entry_type == 3 and isinstance(url, str) and isinstance(metadata, dict):
-                            extension = metadata.get("extension", "")
+            # Instagram120 API returns: { "result": { "edges": [...] } }
+            edges = data.get("result", {}).get("edges", [])
 
-                            # Check if it's a video
-                            if extension == "mp4":
-                                filename = metadata.get("filename", "video")
-                                if not filename.endswith(".mp4"):
-                                    filename = f"{filename}.mp4"
+            for edge in edges:
+                node = edge.get("node", {})
 
-                                videos.append(VideoMetadata(
-                                    url=url,
-                                    filename=filename,
-                                    caption=metadata.get("description"),
-                                    original_date=metadata.get("date"),
-                                    width=metadata.get("width"),
-                                    height=metadata.get("height"),
-                                    duration=metadata.get("duration"),
-                                    thumbnail_url=metadata.get("display_url"),
-                                ))
-        except json.JSONDecodeError:
-            pass
+                # Check if it has video_versions (means it's a video)
+                video_versions = node.get("video_versions", [])
+                if not video_versions:
+                    continue
 
-        return FetchVideosResponse(videos=videos, handle=handle)
+                # Get the best video URL (first one is usually highest quality)
+                video_url = video_versions[0].get("url") if video_versions else None
+                if not video_url:
+                    continue
 
-    except subprocess.TimeoutExpired:
+                # Get dimensions from video_versions
+                width = video_versions[0].get("width")
+                height = video_versions[0].get("height")
+
+                # Get caption
+                caption = None
+                caption_obj = node.get("caption")
+                if caption_obj:
+                    caption = caption_obj.get("text") if isinstance(caption_obj, dict) else caption_obj
+
+                # Get timestamp
+                taken_at = node.get("taken_at")
+                original_date = None
+                if taken_at:
+                    from datetime import datetime
+                    try:
+                        original_date = datetime.fromtimestamp(int(taken_at)).isoformat()
+                    except (ValueError, TypeError):
+                        pass
+
+                # Get thumbnail from image_versions2
+                thumbnail_url = None
+                image_versions = node.get("image_versions2", {}).get("candidates", [])
+                if image_versions:
+                    thumbnail_url = image_versions[0].get("url")
+
+                # Get post code for filename
+                code = node.get("code", node.get("pk", "video"))
+
+                videos.append(VideoMetadata(
+                    url=video_url,
+                    filename=f"{code}.mp4",
+                    caption=caption,
+                    original_date=original_date,
+                    width=width,
+                    height=height,
+                    duration=node.get("video_duration"),
+                    thumbnail_url=thumbnail_url,
+                ))
+
+            return FetchVideosResponse(videos=videos, handle=handle)
+
+    except httpx.TimeoutException:
         raise HTTPException(status_code=504, detail="Timeout fetching Instagram data")
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
