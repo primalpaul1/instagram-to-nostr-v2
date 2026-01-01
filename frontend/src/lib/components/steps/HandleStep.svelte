@@ -18,6 +18,7 @@
   // NIP-46 state
   let qrCodeDataUrl = '';
   let connectionSecret = '';
+  let connectionURI = '';
   let localKeypair: { secretKey: string; publicKey: string } | null = null;
   let connectionStatus: 'idle' | 'waiting' | 'connected' | 'error' = 'idle';
   let connectionError = '';
@@ -44,10 +45,10 @@
       connectionSecret = generateSecret();
 
       // Create connection URI
-      const uri = createConnectionURI(localKeypair.publicKey, connectionSecret);
+      connectionURI = createConnectionURI(localKeypair.publicKey, connectionSecret);
 
       // Generate QR code
-      qrCodeDataUrl = await generateQRCode(uri);
+      qrCodeDataUrl = await generateQRCode(connectionURI);
 
       // Start listening for connection in background
       waitForPrimalConnection();
@@ -58,12 +59,13 @@
   }
 
   async function waitForPrimalConnection() {
-    if (!localKeypair) return;
+    if (!localKeypair || !connectionURI) return;
 
     try {
       const connection = await waitForConnection(
         localKeypair.secretKey,
         connectionSecret,
+        connectionURI,
         () => { connectionStatus = 'waiting'; }
       );
 

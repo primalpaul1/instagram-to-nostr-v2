@@ -4,9 +4,9 @@
  */
 
 import { generateSecretKey, getPublicKey, nip19, type Event } from 'nostr-tools';
-import { BunkerSigner } from 'nostr-tools/nip46';
+import { BunkerSigner, parseBunkerInput } from 'nostr-tools/nip46';
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils';
-import * as QRCode from 'qrcode';
+import QRCode from 'qrcode';
 
 // Default relays for NIP-46 communication
 const NIP46_RELAYS = [
@@ -72,39 +72,30 @@ export function generateLocalKeypair(): { secretKey: string; publicKey: string }
 export async function waitForConnection(
   localSecretKey: string,
   secret: string,
+  connectionURI: string,
   onConnecting?: () => void,
   timeoutMs: number = 300000 // 5 minutes
 ): Promise<NIP46Connection> {
   const localSecretKeyBytes = hexToBytes(localSecretKey);
-  const localPubkey = getPublicKey(localSecretKeyBytes);
-
-  // Create the bunker signer which will listen for incoming connection
-  const bunkerSigner = new BunkerSigner(
-    localSecretKeyBytes,
-    NIP46_RELAYS
-  );
 
   onConnecting?.();
 
-  // Wait for connection with timeout
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    setTimeout(() => reject(new Error('Connection timeout - please try again')), timeoutMs);
-  });
+  // Use BunkerSigner.fromURI which handles waiting for the connection
+  const signer = await BunkerSigner.fromURI(
+    localSecretKeyBytes,
+    connectionURI,
+    {}, // params
+    timeoutMs
+  );
 
-  const connectionPromise = bunkerSigner.waitForBunkerAuth(secret);
+  // Get the remote pubkey from the signer
+  const remotePubkey = await signer.getPublicKey();
 
-  try {
-    const remotePubkey = await Promise.race([connectionPromise, timeoutPromise]);
-
-    return {
-      signer: bunkerSigner,
-      remotePubkey,
-      localSecretKey
-    };
-  } catch (error) {
-    bunkerSigner.close();
-    throw error;
-  }
+  return {
+    signer,
+    remotePubkey,
+    localSecretKey
+  };
 }
 
 /**
