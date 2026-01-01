@@ -96,7 +96,7 @@ async def fetch_videos(request: FetchVideosRequest):
             profile = None
             videos = []
             max_id = ""
-            max_pages = 10  # Safety limit to prevent infinite loops
+            max_pages = 50  # Safety limit - allows up to ~600 videos
             page = 0
 
             while page < max_pages:
