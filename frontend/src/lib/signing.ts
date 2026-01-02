@@ -16,6 +16,9 @@ export const NOSTR_RELAYS = [
   'wss://nos.lol'
 ];
 
+// Primal cache server for direct import
+export const PRIMAL_CACHE_URL = 'wss://cache1.primal.net/v1';
+
 export interface VideoMetadata {
   url: string;
   sha256: string;
@@ -222,4 +225,59 @@ export async function publishToRelays(
   );
 
   return results;
+}
+
+/**
+ * Import events directly to Primal's cache server.
+ * This ensures events appear in Primal immediately, even with old timestamps.
+ */
+export async function importToPrimalCache(events: Event[]): Promise<boolean> {
+  if (events.length === 0) return false;
+
+  return new Promise((resolve) => {
+    try {
+      const ws = new WebSocket(PRIMAL_CACHE_URL);
+      const subId = Math.random().toString(36).substring(2, 14);
+
+      const timeout = setTimeout(() => {
+        ws.close();
+        console.log('Primal cache import timed out');
+        resolve(false);
+      }, 15000);
+
+      ws.onopen = () => {
+        // Send import_events request
+        const message = JSON.stringify([
+          'REQ',
+          subId,
+          { cache: ['import_events', { events }] }
+        ]);
+        ws.send(message);
+      };
+
+      ws.onmessage = (msg) => {
+        try {
+          const data = JSON.parse(msg.data);
+          console.log('Primal cache import response:', data);
+
+          // Close subscription and connection
+          ws.send(JSON.stringify(['CLOSE', subId]));
+          clearTimeout(timeout);
+          ws.close();
+          resolve(true);
+        } catch {
+          // Ignore parse errors
+        }
+      };
+
+      ws.onerror = () => {
+        clearTimeout(timeout);
+        console.log('Primal cache import error');
+        resolve(false);
+      };
+    } catch (err) {
+      console.error('Error importing to Primal cache:', err);
+      resolve(false);
+    }
+  });
 }

@@ -9,6 +9,7 @@
     createBlossomAuthHeader,
     calculateSHA256,
     publishToRelays,
+    importToPrimalCache,
     NOSTR_RELAYS,
     type VideoMetadata
   } from '$lib/signing';
@@ -138,6 +139,14 @@
 
       const signedProfile = await signWithNIP46($wizard.nip46Connection, profileEvent);
       await publishToRelays(signedProfile, NOSTR_RELAYS);
+
+      // Also import to Primal cache
+      try {
+        await importToPrimalCache([signedProfile]);
+      } catch (err) {
+        console.warn('Failed to import profile to Primal cache:', err);
+      }
+
       profilePublished = true;
     } catch (err) {
       console.error('Failed to publish profile:', err);
@@ -238,6 +247,14 @@
 
       if (publishResult.success.length === 0) {
         throw new Error('Failed to publish to any relay');
+      }
+
+      // Also import to Primal cache for immediate visibility (especially for old posts)
+      try {
+        await importToPrimalCache([signedPost]);
+      } catch (err) {
+        console.warn('Failed to import to Primal cache:', err);
+        // Don't fail the task if cache import fails
       }
 
       // Success!
