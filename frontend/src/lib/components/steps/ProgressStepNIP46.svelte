@@ -4,7 +4,6 @@
   import {
     createBlossomAuthEvent,
     createVideoPostEvent,
-    createProfileEvent,
     signWithNIP46,
     createBlossomAuthHeader,
     calculateSHA256,
@@ -26,7 +25,6 @@
   let tasks: TaskStatus[] = [];
   let currentTaskIndex = 0;
   let isProcessing = false;
-  let profilePublished = false;
 
   const BLOSSOM_SERVER = 'https://blossom.primal.net';
 
@@ -58,11 +56,11 @@
     if (isProcessing) return;
     isProcessing = true;
 
-    try {
-      // First, publish profile if we have profile data
-      await publishProfile();
+    // Note: NIP-46 users already have an established Nostr profile
+    // We skip profile publishing to preserve their existing identity
 
-      // Then process each video
+    try {
+      // Process each video
       for (let i = 0; i < tasks.length; i++) {
         currentTaskIndex = i;
         await processVideo(i);
@@ -74,83 +72,6 @@
       console.error('Migration error:', err);
     } finally {
       isProcessing = false;
-    }
-  }
-
-  async function publishProfile() {
-    if (!$wizard.profile || !$wizard.nip46Connection || !$wizard.nip46Pubkey) return;
-
-    try {
-      const { display_name, bio, profile_picture_url } = $wizard.profile;
-
-      // If we have a profile picture, upload it first
-      let pictureUrl = profile_picture_url;
-      if (profile_picture_url) {
-        try {
-          // Fetch profile picture through proxy
-          const proxyResponse = await fetch('/api/proxy-video', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url: profile_picture_url })
-          });
-
-          if (proxyResponse.ok) {
-            const imageData = await proxyResponse.arrayBuffer();
-            const sha256 = await calculateSHA256(imageData);
-
-            // Sign blossom auth for profile picture
-            const authEvent = createBlossomAuthEvent(
-              $wizard.nip46Pubkey,
-              sha256,
-              imageData.byteLength
-            );
-            const signedAuth = await signWithNIP46($wizard.nip46Connection, authEvent);
-            const authHeader = createBlossomAuthHeader(signedAuth);
-
-            // Upload to blossom
-            const uploadResponse = await fetch(`${BLOSSOM_SERVER}/upload`, {
-              method: 'PUT',
-              headers: {
-                'Authorization': authHeader,
-                'Content-Type': 'image/jpeg',
-                'X-SHA-256': sha256
-              },
-              body: imageData
-            });
-
-            if (uploadResponse.ok) {
-              const uploadData = await uploadResponse.json();
-              pictureUrl = uploadData.url || `${BLOSSOM_SERVER}/${sha256}`;
-            }
-          }
-        } catch (err) {
-          console.error('Failed to upload profile picture:', err);
-          // Continue with original URL
-        }
-      }
-
-      // Create and sign profile event
-      const profileEvent = createProfileEvent(
-        $wizard.nip46Pubkey,
-        display_name || $wizard.handle,
-        bio,
-        pictureUrl
-      );
-
-      const signedProfile = await signWithNIP46($wizard.nip46Connection, profileEvent);
-      await publishToRelays(signedProfile, NOSTR_RELAYS);
-
-      // Also import to Primal cache
-      try {
-        await importToPrimalCache([signedProfile]);
-      } catch (err) {
-        console.warn('Failed to import profile to Primal cache:', err);
-      }
-
-      profilePublished = true;
-    } catch (err) {
-      console.error('Failed to publish profile:', err);
-      // Continue with videos even if profile fails
     }
   }
 
@@ -321,11 +242,6 @@
     </div>
   </div>
 
-  {#if profilePublished}
-    <div class="profile-status">
-      <span class="check">&#10003;</span> Profile published
-    </div>
-  {/if}
 
   <div class="tasks-list">
     {#each tasks as task, i}
