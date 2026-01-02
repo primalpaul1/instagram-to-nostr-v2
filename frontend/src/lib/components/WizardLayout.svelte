@@ -4,20 +4,7 @@
 
 <div class="app-container">
   <header>
-    <div class="logo">
-      <svg width="32" height="32" viewBox="0 0 100 100" fill="none">
-        <defs>
-          <linearGradient id="primalGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stop-color="#FA3C83"/>
-            <stop offset="100%" stop-color="#FF8C42"/>
-          </linearGradient>
-        </defs>
-        <rect width="100" height="100" rx="22" fill="url(#primalGradient)"/>
-        <path d="M30 70V30h25c11 0 18 7 18 16s-7 16-18 16H42v8h-12z" fill="white"/>
-        <circle cx="55" cy="46" r="6" fill="url(#primalGradient)"/>
-      </svg>
-      <h1>Insta to Primal</h1>
-    </div>
+    <h1>Insta to Primal</h1>
     <p class="tagline">Migrate your Instagram videos to Nostr</p>
   </header>
 
@@ -57,18 +44,6 @@
     margin-bottom: 2.5rem;
   }
 
-  .logo {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.75rem;
-    margin-bottom: 0.5rem;
-  }
-
-  .logo svg {
-    flex-shrink: 0;
-  }
-
   h1 {
     font-size: 1.75rem;
     font-weight: 700;
@@ -77,6 +52,7 @@
     -webkit-text-fill-color: transparent;
     background-clip: text;
     letter-spacing: -0.02em;
+    margin-bottom: 0.5rem;
   }
 
   .tagline {
