@@ -336,24 +336,6 @@
     transition: width 0.3s ease;
   }
 
-  .profile-status {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    padding: 0.5rem 1rem;
-    background: rgba(34, 197, 94, 0.1);
-    border: 1px solid var(--success);
-    border-radius: 0.5rem;
-    margin-bottom: 1.5rem;
-    font-size: 0.875rem;
-    color: var(--success);
-  }
-
-  .profile-status .check {
-    font-weight: bold;
-  }
-
   .tasks-list {
     display: flex;
     flex-direction: column;
