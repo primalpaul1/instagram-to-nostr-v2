@@ -37,6 +37,7 @@ POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "5"))
 NOSTR_RELAYS = os.getenv(
     "NOSTR_RELAYS", "wss://relay.primal.net,wss://relay.damus.io,wss://nos.lol"
 ).split(",")
+PRIMAL_CACHE_URL = os.getenv("PRIMAL_CACHE_URL", "wss://cache1.primal.net/v1")
 
 
 def resolve_ytdl_url(ytdl_url: str) -> str:
@@ -322,6 +323,45 @@ async def publish_to_relays(event: dict) -> list[str]:
     return successful_relays
 
 
+async def import_to_primal_cache(events: list[dict]) -> bool:
+    """
+    Import events directly to Primal's cache server.
+    This ensures events appear in Primal immediately, even with old timestamps.
+    """
+    if not events:
+        return False
+
+    try:
+        import uuid
+        sub_id = str(uuid.uuid4())[:12]
+
+        async with websockets.connect(PRIMAL_CACHE_URL, close_timeout=15) as ws:
+            # Send import_events request
+            message = json.dumps([
+                "REQ",
+                sub_id,
+                {"cache": ["import_events", {"events": events}]}
+            ])
+            await ws.send(message)
+
+            # Wait for response
+            try:
+                response = await asyncio.wait_for(ws.recv(), timeout=15)
+                data = json.loads(response)
+                print(f"Primal cache import response: {data}")
+
+                # Close the subscription
+                await ws.send(json.dumps(["CLOSE", sub_id]))
+                return True
+            except asyncio.TimeoutError:
+                print("Primal cache import timed out")
+                return False
+
+    except Exception as e:
+        print(f"Error importing to Primal cache: {e}")
+        return False
+
+
 async def process_task(task: dict) -> None:
     """Process a single video task."""
     task_id = task["id"]
@@ -397,6 +437,11 @@ async def process_task(task: dict) -> None:
 
         if not successful_relays:
             raise Exception("Failed to publish to any relay")
+
+        # Also import to Primal cache for immediate visibility
+        cache_imported = await import_to_primal_cache([event])
+        if cache_imported:
+            print(f"Task {task_id} imported to Primal cache")
 
         # Success!
         update_task_status(
@@ -501,6 +546,12 @@ async def process_profile(job: dict) -> None:
 
         if successful_relays:
             print(f"Profile published to {len(successful_relays)} relays for job {job_id}")
+
+            # Also import to Primal cache for immediate visibility
+            cache_imported = await import_to_primal_cache([event])
+            if cache_imported:
+                print(f"Profile imported to Primal cache for job {job_id}")
+
             update_job_profile_published(job_id, blossom_picture_url)
         else:
             print(f"Failed to publish profile to any relay for job {job_id}")
