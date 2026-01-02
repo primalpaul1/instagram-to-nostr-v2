@@ -15,6 +15,9 @@
   let handle = '';
   let loading = false;
   let videoCount = 0;
+  let fetchedVideos: any[] = [];
+  let fetchedProfile: any = null;
+  let abortController: AbortController | null = null;
 
   // NIP-46 state
   let qrCodeDataUrl = '';
@@ -96,6 +99,9 @@
 
     loading = true;
     videoCount = 0;
+    fetchedVideos = [];
+    fetchedProfile = null;
+    abortController = new AbortController();
     wizard.setLoading(true);
     wizard.setError(null);
 
@@ -103,7 +109,9 @@
       const cleanHandle = handle.replace('@', '').trim();
 
       // Use SSE to stream video fetch progress
-      const response = await fetch(`/api/videos-stream/${encodeURIComponent(cleanHandle)}`);
+      const response = await fetch(`/api/videos-stream/${encodeURIComponent(cleanHandle)}`, {
+        signal: abortController.signal
+      });
 
       if (!response.ok) {
         throw new Error('Failed to fetch videos');
@@ -137,6 +145,13 @@
 
               if (data.progress) {
                 videoCount = data.count;
+                // Store partial results as they come in
+                if (data.videos) {
+                  fetchedVideos = data.videos;
+                }
+                if (data.profile) {
+                  fetchedProfile = data.profile;
+                }
               }
 
               if (data.done) {
@@ -164,11 +179,34 @@
       // If we get here without 'done', something went wrong
       throw new Error('Stream ended unexpectedly');
     } catch (err) {
+      // Check if this was an intentional abort (pause)
+      if (err instanceof Error && err.name === 'AbortError') {
+        // User paused - continue with fetched videos
+        return;
+      }
       wizard.setError(err instanceof Error ? err.message : 'An error occurred');
     } finally {
       loading = false;
+      abortController = null;
       wizard.setLoading(false);
     }
+  }
+
+  function handlePause() {
+    if (!abortController || fetchedVideos.length === 0) return;
+
+    const cleanHandle = handle.replace('@', '').trim();
+
+    // Abort the fetch
+    abortController.abort();
+
+    // Continue with what we have
+    wizard.setHandle(cleanHandle);
+    wizard.setVideos(fetchedVideos.map((v: any) => ({ ...v, selected: false })));
+    if (fetchedProfile) {
+      wizard.setProfile(fetchedProfile);
+    }
+    wizard.setStep('keys');
   }
 </script>
 
@@ -203,6 +241,12 @@
         Continue
       {/if}
     </button>
+
+    {#if loading && videoCount > 0}
+      <button type="button" class="pause-btn" on:click={handlePause}>
+        Continue with {videoCount} videos
+      </button>
+    {/if}
   </form>
 
   <div class="divider">
@@ -327,6 +371,17 @@
   button:disabled {
     opacity: 0.6;
     cursor: not-allowed;
+  }
+
+  .pause-btn {
+    margin-top: 0.75rem;
+    background: transparent;
+    border: 1px solid var(--accent);
+    color: var(--accent);
+  }
+
+  .pause-btn:hover {
+    background: rgba(139, 92, 246, 0.1);
   }
 
   .spinner {

@@ -189,8 +189,8 @@ async def fetch_videos_stream(handle: str):
                             "thumbnail_url": thumbnail_url,
                         })
 
-                    # Send progress update
-                    yield f"data: {json.dumps({'progress': True, 'count': len(videos)})}\n\n"
+                    # Send progress update with videos so pause button can access them
+                    yield f"data: {json.dumps({'progress': True, 'count': len(videos), 'videos': videos, 'profile': profile})}\n\n"
 
                     # Check for next page
                     page_info = result.get("page_info", {})
