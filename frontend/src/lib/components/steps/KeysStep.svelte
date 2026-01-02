@@ -60,7 +60,7 @@ Anyone with your secret key can post as you.
   }
 
   function handleContinue() {
-    if (!isNip46Mode && !acknowledged) return;
+    if (!isNip46Mode && (!acknowledged || !downloaded)) return;
     wizard.setStep('videos');
   }
 
@@ -204,9 +204,9 @@ Anyone with your secret key can post as you.
         <p>Your secret key is like a password. Anyone with it can post as you. Store it in a password manager.</p>
       </div>
 
-      <label class="acknowledge-box">
+      <label class="acknowledge-box" class:disabled={!downloaded}>
         <div class="checkbox-wrapper">
-          <input type="checkbox" bind:checked={acknowledged} />
+          <input type="checkbox" bind:checked={acknowledged} disabled={!downloaded} />
           <div class="custom-checkbox">
             {#if acknowledged}
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
@@ -215,7 +215,7 @@ Anyone with your secret key can post as you.
             {/if}
           </div>
         </div>
-        <span>I have saved my keys in a secure location</span>
+        <span>I have downloaded and saved my keys securely</span>
       </label>
 
       <div class="actions">
@@ -225,7 +225,7 @@ Anyone with your secret key can post as you.
           </svg>
           Back
         </button>
-        <button class="primary-btn" disabled={!acknowledged} on:click={handleContinue}>
+        <button class="primary-btn" disabled={!downloaded || !acknowledged} on:click={handleContinue}>
           Select Videos
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M5 12h14M12 5l7 7-7 7"/>
@@ -489,8 +489,13 @@ Anyone with your secret key can post as you.
     transition: border-color 0.2s ease;
   }
 
-  .acknowledge-box:hover {
+  .acknowledge-box:hover:not(.disabled) {
     border-color: var(--border-light);
+  }
+
+  .acknowledge-box.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 
   .checkbox-wrapper {
