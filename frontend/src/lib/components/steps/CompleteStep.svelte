@@ -55,6 +55,33 @@
     </svg>
   </a>
 
+  {#if !isNip46Mode}
+    <div class="download-primal">
+      <div class="qr-section">
+        <div class="qr-wrapper">
+          <img
+            src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=https://primal.net/downloads&bgcolor=ffffff&color=000000"
+            alt="QR Code to download Primal"
+            width="180"
+            height="180"
+          />
+        </div>
+        <div class="qr-info">
+          <h3>Get Primal</h3>
+          <p>Scan to download Primal and import your new Nostr keys</p>
+          <a href="https://primal.net/downloads" target="_blank" rel="noopener noreferrer" class="download-link">
+            Or visit primal.net/downloads
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/>
+              <polyline points="15 3 21 3 21 9"/>
+              <line x1="10" y1="14" x2="21" y2="3"/>
+            </svg>
+          </a>
+        </div>
+      </div>
+    </div>
+  {/if}
+
   <div class="next-steps">
     <h3>What's next?</h3>
     <div class="step-cards">
@@ -230,6 +257,74 @@
 
   .primal-cta:hover .cta-arrow {
     transform: translate(2px, -2px);
+  }
+
+  .download-primal {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 0.875rem;
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+  }
+
+  .qr-section {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+  }
+
+  .qr-wrapper {
+    flex-shrink: 0;
+    background: white;
+    padding: 0.5rem;
+    border-radius: 0.75rem;
+  }
+
+  .qr-wrapper img {
+    display: block;
+    border-radius: 0.5rem;
+  }
+
+  .qr-info {
+    text-align: left;
+  }
+
+  .qr-info h3 {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 0.5rem;
+  }
+
+  .qr-info p {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.75rem;
+    line-height: 1.4;
+  }
+
+  .download-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.8125rem;
+    color: var(--accent);
+    text-decoration: none;
+  }
+
+  .download-link:hover {
+    text-decoration: underline;
+  }
+
+  @media (max-width: 480px) {
+    .qr-section {
+      flex-direction: column;
+      text-align: center;
+    }
+
+    .qr-info {
+      text-align: center;
+    }
   }
 
   .next-steps {
