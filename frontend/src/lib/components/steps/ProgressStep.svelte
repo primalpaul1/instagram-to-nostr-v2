@@ -51,40 +51,40 @@
     }
   }
 
-  function getStatusIcon(status: TaskStatus['status']): string {
-    switch (status) {
-      case 'pending': return '&#9711;';
-      case 'uploading': return '&#8635;';
-      case 'publishing': return '&#8635;';
-      case 'complete': return '&#10003;';
-      case 'error': return '&#10007;';
-      default: return '&#9711;';
-    }
-  }
-
   function getStatusLabel(status: TaskStatus['status']): string {
     switch (status) {
       case 'pending': return 'Waiting';
       case 'uploading': return 'Uploading';
       case 'publishing': return 'Publishing';
-      case 'complete': return 'Complete';
+      case 'complete': return 'Done';
       case 'error': return 'Failed';
       default: return 'Unknown';
     }
   }
 </script>
 
-<div class="step-content">
-  <h2>Migration in progress</h2>
-  <p class="description">
-    Please keep this page open. Your videos are being migrated to Nostr.
-  </p>
+<div class="progress-step">
+  <div class="header">
+    <div class="migrating-icon">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M17 2l4 4-4 4"/>
+        <path d="M3 11v-1a4 4 0 014-4h14"/>
+        <path d="M7 22l-4-4 4-4"/>
+        <path d="M21 13v1a4 4 0 01-4 4H3"/>
+      </svg>
+    </div>
+    <h2>Migration in progress</h2>
+    <p class="subtitle">Keep this page open while we migrate your videos</p>
+  </div>
 
-  <div class="progress-container">
+  <div class="progress-card">
     <div class="progress-header">
-      <span class="progress-label">
-        {completedCount} of {totalCount} videos complete
-      </span>
+      <div class="progress-stats">
+        <span class="current">{completedCount}</span>
+        <span class="divider">/</span>
+        <span class="total">{totalCount}</span>
+        <span class="label">videos</span>
+      </div>
       <span class="progress-percent">{Math.round(progressPercent)}%</span>
     </div>
     <div class="progress-bar">
@@ -95,124 +95,207 @@
   {#if jobStatus}
     <div class="tasks-list">
       {#each jobStatus.tasks as task}
-        <div class="task-item" class:error={task.status === 'error'} class:complete={task.status === 'complete'}>
-          <div class="task-status" class:spinning={task.status === 'uploading' || task.status === 'publishing'}>
-            {@html getStatusIcon(task.status)}
+        <div class="task-item" class:error={task.status === 'error'} class:complete={task.status === 'complete'} class:active={task.status === 'uploading' || task.status === 'publishing'}>
+          <div class="task-status">
+            {#if task.status === 'complete'}
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                <path d="M20 6L9 17l-5-5"/>
+              </svg>
+            {:else if task.status === 'error'}
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="18" y1="6" x2="6" y2="18"/>
+                <line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
+            {:else if task.status === 'uploading' || task.status === 'publishing'}
+              <div class="task-spinner"></div>
+            {:else}
+              <div class="task-pending"></div>
+            {/if}
           </div>
           <div class="task-info">
-            <span class="task-caption">
-              {task.caption?.slice(0, 40) || 'Untitled'}{(task.caption?.length ?? 0) > 40 ? '...' : ''}
-            </span>
+            <span class="task-caption">{task.caption?.slice(0, 35) || 'Untitled'}{(task.caption?.length ?? 0) > 35 ? '...' : ''}</span>
             <span class="task-label">{getStatusLabel(task.status)}</span>
           </div>
-          {#if task.status === 'error' && task.error}
-            <div class="task-error">{task.error}</div>
-          {/if}
         </div>
+        {#if task.status === 'error' && task.error}
+          <div class="task-error-msg">{task.error}</div>
+        {/if}
       {/each}
     </div>
   {:else}
-    <div class="loading">
-      <div class="spinner"></div>
-      <p>Loading status...</p>
+    <div class="loading-state">
+      <div class="loading-spinner"></div>
+      <span>Connecting to server...</span>
     </div>
   {/if}
 
   {#if errorCount > 0}
-    <div class="error-summary">
-      {errorCount} video{errorCount !== 1 ? 's' : ''} failed to migrate.
-      These will be skipped.
+    <div class="error-banner">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="10"/>
+        <line x1="12" y1="8" x2="12" y2="12"/>
+        <line x1="12" y1="16" x2="12.01" y2="16"/>
+      </svg>
+      <span>{errorCount} video{errorCount !== 1 ? 's' : ''} failed. They will be skipped.</span>
     </div>
   {/if}
 </div>
 
 <style>
-  .step-content {
-    max-width: 600px;
+  .progress-step {
+    max-width: 520px;
     margin: 0 auto;
+  }
+
+  .header {
+    text-align: center;
+    margin-bottom: 2rem;
+  }
+
+  .migrating-icon {
+    width: 3.5rem;
+    height: 3.5rem;
+    background: rgba(var(--accent-rgb), 0.15);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--accent);
+    margin: 0 auto 1rem;
+    animation: pulse-glow 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse-glow {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(var(--accent-rgb), 0.2); }
+    50% { box-shadow: 0 0 0 12px rgba(var(--accent-rgb), 0); }
   }
 
   h2 {
     font-size: 1.5rem;
+    font-weight: 600;
     margin-bottom: 0.5rem;
-    text-align: center;
+    letter-spacing: -0.02em;
   }
 
-  .description {
+  .subtitle {
     color: var(--text-secondary);
-    margin-bottom: 2rem;
-    text-align: center;
+    font-size: 0.9375rem;
   }
 
-  .progress-container {
-    margin-bottom: 2rem;
+  .progress-card {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 0.875rem;
+    padding: 1.25rem;
+    margin-bottom: 1.5rem;
   }
 
   .progress-header {
     display: flex;
     justify-content: space-between;
-    margin-bottom: 0.5rem;
+    align-items: baseline;
+    margin-bottom: 0.75rem;
   }
 
-  .progress-label {
-    font-size: 0.875rem;
+  .progress-stats {
+    display: flex;
+    align-items: baseline;
+    gap: 0.25rem;
+  }
+
+  .progress-stats .current {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--accent);
+  }
+
+  .progress-stats .divider {
+    color: var(--text-muted);
+    margin: 0 0.125rem;
+  }
+
+  .progress-stats .total {
+    font-size: 1rem;
     color: var(--text-secondary);
+  }
+
+  .progress-stats .label {
+    font-size: 0.875rem;
+    color: var(--text-muted);
+    margin-left: 0.375rem;
   }
 
   .progress-percent {
     font-size: 0.875rem;
     font-weight: 600;
-    color: var(--accent);
+    color: var(--text-secondary);
   }
 
   .progress-bar {
-    height: 0.5rem;
-    background: var(--bg-tertiary);
-    border-radius: 9999px;
+    height: 6px;
+    background: var(--bg-primary);
+    border-radius: 3px;
     overflow: hidden;
   }
 
   .progress-fill {
     height: 100%;
-    background: linear-gradient(90deg, var(--accent), #ec4899);
-    border-radius: 9999px;
-    transition: width 0.3s ease;
+    background: var(--accent-gradient);
+    border-radius: 3px;
+    transition: width 0.4s ease;
   }
 
   .tasks-list {
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
-    max-height: 300px;
+    max-height: 280px;
     overflow-y: auto;
-    padding-right: 0.5rem;
+    padding-right: 0.25rem;
+  }
+
+  .tasks-list::-webkit-scrollbar {
+    width: 4px;
+  }
+
+  .tasks-list::-webkit-scrollbar-thumb {
+    background: var(--border-light);
+    border-radius: 2px;
   }
 
   .task-item {
     display: flex;
     align-items: center;
-    gap: 1rem;
+    gap: 0.875rem;
     padding: 0.75rem 1rem;
     background: var(--bg-tertiary);
-    border-radius: 0.5rem;
     border: 1px solid var(--border);
+    border-radius: 0.75rem;
+    transition: all 0.2s ease;
+  }
+
+  .task-item.active {
+    border-color: var(--accent);
+    background: rgba(var(--accent-rgb), 0.08);
   }
 
   .task-item.complete {
     border-color: var(--success);
-    background: rgba(34, 197, 94, 0.1);
+    background: rgba(var(--success-rgb), 0.08);
   }
 
   .task-item.error {
     border-color: var(--error);
-    background: rgba(239, 68, 68, 0.1);
+    background: rgba(255, 75, 75, 0.08);
   }
 
   .task-status {
-    font-size: 1.25rem;
-    min-width: 1.5rem;
-    text-align: center;
-    color: var(--text-secondary);
+    width: 1.5rem;
+    height: 1.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
   }
 
   .task-item.complete .task-status {
@@ -223,9 +306,24 @@
     color: var(--error);
   }
 
-  .task-status.spinning {
-    animation: spin 1s linear infinite;
-    color: var(--accent);
+  .task-spinner {
+    width: 1rem;
+    height: 1rem;
+    border: 2px solid var(--border-light);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  .task-pending {
+    width: 0.5rem;
+    height: 0.5rem;
+    background: var(--text-muted);
+    border-radius: 50%;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
   }
 
   .task-info {
@@ -233,62 +331,75 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 1rem;
+    gap: 0.75rem;
+    min-width: 0;
   }
 
   .task-caption {
-    font-size: 0.875rem;
+    font-size: 0.8125rem;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .task-label {
-    font-size: 0.75rem;
-    color: var(--text-secondary);
-    white-space: nowrap;
+    font-size: 0.6875rem;
+    font-weight: 500;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    flex-shrink: 0;
   }
 
-  .task-error {
+  .task-item.active .task-label {
+    color: var(--accent);
+  }
+
+  .task-item.complete .task-label {
+    color: var(--success);
+  }
+
+  .task-item.error .task-label {
+    color: var(--error);
+  }
+
+  .task-error-msg {
     font-size: 0.75rem;
     color: var(--error);
-    margin-left: 2.5rem;
-    margin-top: -0.5rem;
-    padding-bottom: 0.5rem;
+    padding: 0.25rem 1rem 0.25rem 3.375rem;
+    margin-top: -0.375rem;
   }
 
-  .loading {
+  .loading-state {
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 1rem;
-    padding: 2rem;
+    padding: 3rem 2rem;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
   }
 
-  .spinner {
-    width: 2rem;
-    height: 2rem;
+  .loading-spinner {
+    width: 2.5rem;
+    height: 2.5rem;
     border: 3px solid var(--border);
     border-top-color: var(--accent);
     border-radius: 50%;
-    animation: spin 0.8s linear infinite;
+    animation: spin 1s linear infinite;
   }
 
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
-
-  .loading p {
-    color: var(--text-secondary);
-  }
-
-  .error-summary {
+  .error-banner {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
     margin-top: 1rem;
-    padding: 0.75rem 1rem;
-    background: rgba(239, 68, 68, 0.1);
+    padding: 0.875rem 1rem;
+    background: rgba(255, 75, 75, 0.1);
     border: 1px solid var(--error);
-    border-radius: 0.5rem;
-    font-size: 0.875rem;
+    border-radius: 0.75rem;
     color: var(--error);
-    text-align: center;
+    font-size: 0.8125rem;
   }
 </style>

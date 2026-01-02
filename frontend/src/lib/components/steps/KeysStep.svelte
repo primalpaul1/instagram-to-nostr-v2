@@ -8,12 +8,10 @@
   let copied = { npub: false, nsec: false };
   let acknowledged = false;
 
-  // NIP-46 mode is already connected - no key backup needed
   $: isNip46Mode = $wizard.authMode === 'nip46';
   $: nip46Npub = $wizard.nip46Pubkey ? hexToNpub($wizard.nip46Pubkey) : '';
 
   onMount(() => {
-    // Only generate keys if not in NIP-46 mode
     if (!isNip46Mode && !keyPair) {
       keyPair = generateKeyPair();
       wizard.setKeyPair(keyPair);
@@ -29,7 +27,6 @@
   }
 
   function handleContinue() {
-    // NIP-46 mode doesn't need acknowledgment
     if (!isNip46Mode && !acknowledged) return;
     wizard.setStep('videos');
   }
@@ -39,104 +36,154 @@
   }
 </script>
 
-<div class="step-content">
+<div class="keys-step">
   {#if isNip46Mode}
-    <!-- NIP-46 Connected Mode -->
-    <h2>Connected to Primal</h2>
-    <p class="description">
-      You're logged in with your existing Nostr identity. Videos will be posted to this account.
-    </p>
-
-    <div class="connected-card">
-      <div class="connected-icon">
-        <div class="checkmark">&#10003;</div>
+    <div class="hero-section">
+      <div class="success-badge">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M20 6L9 17l-5-5"/>
+        </svg>
       </div>
-      <div class="connected-info">
-        <span class="label">Your Public Key</span>
-        <code class="npub">{nip46Npub}</code>
-        <button
-          class="copy-btn inline"
-          on:click={() => copyToClipboard(nip46Npub, 'npub')}
-        >
-          {copied.npub ? 'Copied!' : 'Copy'}
-        </button>
-      </div>
+      <h2>Connected to Primal</h2>
+      <p class="subtitle">Your videos will be posted to your existing Nostr identity</p>
     </div>
 
-    <div class="info-box">
-      <strong>About NIP-46 Signing</strong>
-      <p>
-        Your secret key stays safely in your Primal app. When we need to sign posts,
-        Primal will handle it seamlessly. Keep the browser tab open during migration.
-      </p>
+    <div class="identity-card">
+      <div class="identity-header">
+        <span class="label">Your Public Key</span>
+        <button class="copy-btn" on:click={() => copyToClipboard(nip46Npub, 'npub')}>
+          {#if copied.npub}
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M20 6L9 17l-5-5"/>
+            </svg>
+            Copied
+          {:else}
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+              <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+            </svg>
+            Copy
+          {/if}
+        </button>
+      </div>
+      <code class="pubkey">{nip46Npub}</code>
+    </div>
+
+    <div class="info-banner">
+      <svg class="info-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="10"/>
+        <path d="M12 16v-4M12 8h.01"/>
+      </svg>
+      <div class="info-content">
+        <strong>Remote Signing</strong>
+        <p>Your secret key stays safely in your Primal app. Keep this browser tab open during migration.</p>
+      </div>
     </div>
 
     <div class="actions">
-      <button class="secondary" on:click={handleBack}>Back</button>
-      <button class="primary" on:click={handleContinue}>
-        Continue to Video Selection
+      <button class="secondary-btn" on:click={handleBack}>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M19 12H5M12 19l-7-7 7-7"/>
+        </svg>
+        Back
+      </button>
+      <button class="primary-btn" on:click={handleContinue}>
+        Select Videos
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M5 12h14M12 5l7 7-7 7"/>
+        </svg>
       </button>
     </div>
   {:else}
-    <!-- Generate Keys Mode -->
-    <h2>Save your Nostr keys</h2>
-    <p class="description">
-      These keys are your identity on Nostr. Save them securely - you'll need them to access your account.
-    </p>
+    <div class="hero-section">
+      <h2>Save your Nostr keys</h2>
+      <p class="subtitle">These keys are your identity on Nostr. Store them securely.</p>
+    </div>
 
     {#if keyPair}
       <div class="keys-container">
-        <div class="key-card">
+        <div class="key-card public">
           <div class="key-header">
-            <span class="key-type public">Public Key (npub)</span>
-            <span class="key-info">Share this with others</span>
-          </div>
-          <div class="key-value">
-            <code>{keyPair.npub}</code>
-            <button
-              class="copy-btn"
-              on:click={() => copyToClipboard(keyPair.npub, 'npub')}
-            >
-              {copied.npub ? 'Copied!' : 'Copy'}
+            <div class="key-label">
+              <span class="badge public">Public</span>
+              <span class="key-name">npub</span>
+            </div>
+            <button class="copy-btn" on:click={() => copyToClipboard(keyPair.npub, 'npub')}>
+              {#if copied.npub}
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M20 6L9 17l-5-5"/>
+                </svg>
+              {:else}
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                  <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+                </svg>
+              {/if}
             </button>
           </div>
+          <code class="key-value">{keyPair.npub}</code>
+          <span class="key-hint">Share this with others to find you</span>
         </div>
 
         <div class="key-card secret">
           <div class="key-header">
-            <span class="key-type secret">Secret Key (nsec)</span>
-            <span class="key-info warning">Never share this!</span>
-          </div>
-          <div class="key-value">
-            <code>{keyPair.nsec}</code>
-            <button
-              class="copy-btn"
-              on:click={() => copyToClipboard(keyPair.nsec, 'nsec')}
-            >
-              {copied.nsec ? 'Copied!' : 'Copy'}
+            <div class="key-label">
+              <span class="badge secret">Secret</span>
+              <span class="key-name">nsec</span>
+            </div>
+            <button class="copy-btn" on:click={() => copyToClipboard(keyPair.nsec, 'nsec')}>
+              {#if copied.nsec}
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M20 6L9 17l-5-5"/>
+                </svg>
+              {:else}
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                  <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+                </svg>
+              {/if}
             </button>
           </div>
+          <code class="key-value">{keyPair.nsec}</code>
+          <span class="key-hint warning">Never share this with anyone!</span>
         </div>
       </div>
 
-      <div class="warning-box">
-        <div class="warning-icon">&#9888;</div>
-        <div class="warning-text">
-          <strong>Important:</strong> Your secret key (nsec) is like a password.
-          Anyone with it can post as you. Store it in a password manager or secure location.
-          We do not store your keys after the migration completes.
-        </div>
+      <div class="warning-banner">
+        <svg class="warning-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+          <line x1="12" y1="9" x2="12" y2="13"/>
+          <line x1="12" y1="17" x2="12.01" y2="17"/>
+        </svg>
+        <p>Your secret key is like a password. Anyone with it can post as you. Store it in a password manager.</p>
       </div>
 
-      <label class="acknowledge">
-        <input type="checkbox" bind:checked={acknowledged} />
+      <label class="acknowledge-box">
+        <div class="checkbox-wrapper">
+          <input type="checkbox" bind:checked={acknowledged} />
+          <div class="custom-checkbox">
+            {#if acknowledged}
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                <path d="M20 6L9 17l-5-5"/>
+              </svg>
+            {/if}
+          </div>
+        </div>
         <span>I have saved my keys in a secure location</span>
       </label>
 
       <div class="actions">
-        <button class="secondary" on:click={handleBack}>Back</button>
-        <button class="primary" disabled={!acknowledged} on:click={handleContinue}>
-          Continue to Video Selection
+        <button class="secondary-btn" on:click={handleBack}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M19 12H5M12 19l-7-7 7-7"/>
+          </svg>
+          Back
+        </button>
+        <button class="primary-btn" disabled={!acknowledged} on:click={handleContinue}>
+          Select Videos
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M5 12h14M12 5l7 7-7 7"/>
+          </svg>
         </button>
       </div>
     {/if}
@@ -144,110 +191,123 @@
 </div>
 
 <style>
-  .step-content {
-    max-width: 600px;
+  .keys-step {
+    max-width: 560px;
     margin: 0 auto;
   }
 
-  h2 {
-    font-size: 1.5rem;
-    margin-bottom: 0.5rem;
+  .hero-section {
     text-align: center;
-  }
-
-  .description {
-    color: var(--text-secondary);
     margin-bottom: 2rem;
-    text-align: center;
   }
 
-  /* NIP-46 Connected Mode Styles */
-  .connected-card {
-    display: flex;
-    align-items: center;
-    gap: 1.5rem;
-    background: var(--bg-tertiary);
-    border: 2px solid #22c55e;
-    border-radius: 0.75rem;
-    padding: 1.5rem;
-    margin-bottom: 1.5rem;
-  }
-
-  .connected-icon {
-    flex-shrink: 0;
-  }
-
-  .checkmark {
-    width: 3rem;
-    height: 3rem;
-    background: #22c55e;
+  .success-badge {
+    width: 3.5rem;
+    height: 3.5rem;
+    background: linear-gradient(135deg, var(--success), #00A855);
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 1.5rem;
     color: white;
+    margin: 0 auto 1rem;
   }
 
-  .connected-info {
-    flex: 1;
+  h2 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    letter-spacing: -0.02em;
+  }
+
+  .subtitle {
+    color: var(--text-secondary);
+    font-size: 0.9375rem;
+  }
+
+  .identity-card {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--success);
+    border-radius: 0.875rem;
+    padding: 1.25rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .identity-header {
     display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
   }
 
-  .connected-info .label {
+  .label {
     font-size: 0.75rem;
     text-transform: uppercase;
-    color: var(--text-secondary);
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
     font-weight: 600;
   }
 
-  .connected-info .npub {
+  .pubkey {
+    display: block;
     font-size: 0.75rem;
     word-break: break-all;
     background: var(--bg-primary);
-    padding: 0.5rem 0.75rem;
-    border-radius: 0.25rem;
-  }
-
-  .copy-btn.inline {
-    align-self: flex-start;
-    padding: 0.375rem 0.75rem;
-    background: var(--bg-primary);
-    border: 1px solid var(--border);
-    color: var(--text-primary);
-    border-radius: 0.25rem;
-    cursor: pointer;
-    font-size: 0.75rem;
-  }
-
-  .copy-btn.inline:hover {
-    background: var(--accent);
-    border-color: var(--accent);
-  }
-
-  .info-box {
-    background: rgba(139, 92, 246, 0.1);
-    border: 1px solid var(--accent);
+    padding: 0.75rem;
     border-radius: 0.5rem;
-    padding: 1rem;
-    margin-bottom: 2rem;
+    color: var(--text-secondary);
+    font-family: 'SF Mono', Monaco, monospace;
   }
 
-  .info-box strong {
-    display: block;
-    margin-bottom: 0.5rem;
+  .copy-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.375rem 0.75rem;
+    background: transparent;
+    border: 1px solid var(--border-light);
+    border-radius: 0.5rem;
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .copy-btn:hover {
+    border-color: var(--accent);
     color: var(--accent);
   }
 
-  .info-box p {
-    font-size: 0.875rem;
-    color: var(--text-secondary);
-    margin: 0;
+  .info-banner {
+    display: flex;
+    gap: 1rem;
+    padding: 1rem 1.25rem;
+    background: rgba(var(--accent-rgb), 0.1);
+    border: 1px solid rgba(var(--accent-rgb), 0.2);
+    border-radius: 0.75rem;
+    margin-bottom: 2rem;
   }
 
-  /* Generate Keys Mode Styles */
+  .info-icon {
+    flex-shrink: 0;
+    color: var(--accent);
+    margin-top: 0.125rem;
+  }
+
+  .info-content strong {
+    display: block;
+    margin-bottom: 0.25rem;
+    color: var(--accent);
+    font-size: 0.875rem;
+  }
+
+  .info-content p {
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    margin: 0;
+    line-height: 1.5;
+  }
+
   .keys-container {
     display: flex;
     flex-direction: column;
@@ -257,9 +317,9 @@
 
   .key-card {
     background: var(--bg-tertiary);
-    border-radius: 0.5rem;
-    padding: 1rem;
     border: 1px solid var(--border);
+    border-radius: 0.875rem;
+    padding: 1.25rem;
   }
 
   .key-card.secret {
@@ -273,149 +333,180 @@
     margin-bottom: 0.75rem;
   }
 
-  .key-type {
-    font-size: 0.75rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    padding: 0.25rem 0.5rem;
-    border-radius: 0.25rem;
+  .key-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
   }
 
-  .key-type.public {
-    background: rgba(34, 197, 94, 0.2);
+  .badge {
+    font-size: 0.625rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.25rem;
+    font-weight: 600;
+  }
+
+  .badge.public {
+    background: rgba(var(--success-rgb), 0.2);
     color: var(--success);
   }
 
-  .key-type.secret {
-    background: rgba(245, 158, 11, 0.2);
+  .badge.secret {
+    background: rgba(255, 176, 32, 0.2);
     color: var(--warning);
   }
 
-  .key-info {
-    font-size: 0.75rem;
+  .key-name {
+    font-size: 0.875rem;
+    font-weight: 500;
     color: var(--text-secondary);
   }
 
-  .key-info.warning {
+  .key-value {
+    display: block;
+    font-size: 0.75rem;
+    word-break: break-all;
+    background: var(--bg-primary);
+    padding: 0.75rem;
+    border-radius: 0.5rem;
+    color: var(--text-primary);
+    font-family: 'SF Mono', Monaco, monospace;
+    margin-bottom: 0.5rem;
+  }
+
+  .key-hint {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+
+  .key-hint.warning {
     color: var(--warning);
   }
 
-  .key-value {
-    display: flex;
-    gap: 0.5rem;
-    align-items: stretch;
-  }
-
-  code {
-    flex: 1;
-    background: var(--bg-primary);
-    padding: 0.75rem;
-    border-radius: 0.25rem;
-    font-size: 0.75rem;
-    word-break: break-all;
-    font-family: monospace;
-  }
-
-  .copy-btn {
-    padding: 0.75rem 1rem;
-    background: var(--bg-primary);
-    border: 1px solid var(--border);
-    color: var(--text-primary);
-    border-radius: 0.25rem;
-    cursor: pointer;
-    font-size: 0.75rem;
-    white-space: nowrap;
-    transition: all 0.2s;
-  }
-
-  .copy-btn:hover {
-    background: var(--accent);
-    border-color: var(--accent);
-  }
-
-  .warning-box {
+  .warning-banner {
     display: flex;
     gap: 1rem;
-    background: rgba(245, 158, 11, 0.1);
-    border: 1px solid var(--warning);
-    border-radius: 0.5rem;
-    padding: 1rem;
+    padding: 1rem 1.25rem;
+    background: rgba(255, 176, 32, 0.1);
+    border: 1px solid rgba(255, 176, 32, 0.3);
+    border-radius: 0.75rem;
     margin-bottom: 1.5rem;
   }
 
   .warning-icon {
-    font-size: 1.5rem;
+    flex-shrink: 0;
     color: var(--warning);
   }
 
-  .warning-text {
+  .warning-banner p {
     font-size: 0.875rem;
     color: var(--text-secondary);
+    margin: 0;
+    line-height: 1.5;
   }
 
-  .warning-text strong {
-    color: var(--warning);
-  }
-
-  .acknowledge {
+  .acknowledge-box {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    padding: 1rem;
+    gap: 0.875rem;
+    padding: 1rem 1.25rem;
     background: var(--bg-tertiary);
-    border-radius: 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: 0.75rem;
     cursor: pointer;
-    margin-bottom: 1.5rem;
+    margin-bottom: 2rem;
+    transition: border-color 0.2s ease;
   }
 
-  .acknowledge input[type="checkbox"] {
-    width: 1.25rem;
-    height: 1.25rem;
-    accent-color: var(--accent);
+  .acknowledge-box:hover {
+    border-color: var(--border-light);
   }
 
-  .acknowledge span {
-    font-size: 0.875rem;
+  .checkbox-wrapper {
+    position: relative;
+  }
+
+  .checkbox-wrapper input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+
+  .custom-checkbox {
+    width: 1.375rem;
+    height: 1.375rem;
+    background: var(--bg-primary);
+    border: 2px solid var(--border-light);
+    border-radius: 0.375rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+  }
+
+  .checkbox-wrapper input:checked + .custom-checkbox {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: white;
+  }
+
+  .acknowledge-box span {
+    font-size: 0.9375rem;
+    color: var(--text-primary);
   }
 
   .actions {
     display: flex;
     gap: 1rem;
-    justify-content: space-between;
   }
 
-  .actions button {
-    padding: 0.875rem 1.5rem;
-    border-radius: 0.5rem;
-    font-size: 1rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.2s;
-  }
-
-  .actions .secondary {
+  .secondary-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.875rem 1.25rem;
     background: transparent;
-    border: 1px solid var(--border);
+    border: 1px solid var(--border-light);
+    border-radius: 0.75rem;
     color: var(--text-primary);
+    font-size: 0.9375rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
   }
 
-  .actions .secondary:hover {
+  .secondary-btn:hover {
     border-color: var(--text-secondary);
   }
 
-  .actions .primary {
+  .primary-btn {
     flex: 1;
-    background: var(--accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.875rem 1.5rem;
+    background: var(--accent-gradient);
     border: none;
+    border-radius: 0.75rem;
     color: white;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
   }
 
-  .actions .primary:hover:not(:disabled) {
-    background: var(--accent-hover);
+  .primary-btn:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 20px rgba(var(--accent-rgb), 0.4);
   }
 
-  .actions .primary:disabled {
-    opacity: 0.6;
+  .primary-btn:disabled {
+    opacity: 0.5;
     cursor: not-allowed;
+    transform: none;
   }
 </style>

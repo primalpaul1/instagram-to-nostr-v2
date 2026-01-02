@@ -1,185 +1,191 @@
 <script lang="ts">
   import { wizard } from '$lib/stores/wizard';
-
-  const steps = [
-    { id: 'handle', label: 'Handle' },
-    { id: 'keys', label: 'Keys' },
-    { id: 'videos', label: 'Videos' },
-    { id: 'confirm', label: 'Confirm' },
-    { id: 'progress', label: 'Progress' },
-    { id: 'complete', label: 'Complete' }
-  ];
-
-  $: currentIndex = steps.findIndex(s => s.id === $wizard.step);
 </script>
 
-<div class="wizard-container">
+<div class="app-container">
   <header>
-    <h1>Instagram to Nostr</h1>
-    <p class="subtitle">Migrate your videos to the decentralized web</p>
+    <div class="logo">
+      <svg width="32" height="32" viewBox="0 0 100 100" fill="none">
+        <defs>
+          <linearGradient id="primalGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#FA3C83"/>
+            <stop offset="100%" stop-color="#FF8C42"/>
+          </linearGradient>
+        </defs>
+        <rect width="100" height="100" rx="22" fill="url(#primalGradient)"/>
+        <path d="M30 70V30h25c11 0 18 7 18 16s-7 16-18 16H42v8h-12z" fill="white"/>
+        <circle cx="55" cy="46" r="6" fill="url(#primalGradient)"/>
+      </svg>
+      <h1>Insta to Primal</h1>
+    </div>
+    <p class="tagline">Migrate your Instagram videos to Nostr</p>
   </header>
 
-  <nav class="steps">
-    {#each steps as step, i}
-      <div
-        class="step"
-        class:active={i === currentIndex}
-        class:completed={i < currentIndex}
-        class:disabled={i > currentIndex}
-      >
-        <span class="step-number">{i + 1}</span>
-        <span class="step-label">{step.label}</span>
-      </div>
-      {#if i < steps.length - 1}
-        <div class="step-line" class:active={i < currentIndex}></div>
-      {/if}
-    {/each}
-  </nav>
-
   <main>
-    <slot />
+    <div class="content-card">
+      <slot />
+    </div>
   </main>
 
   {#if $wizard.error}
-    <div class="error-banner">
-      <span>{$wizard.error}</span>
-      <button on:click={() => wizard.setError(null)}>Dismiss</button>
+    <div class="error-toast">
+      <div class="error-content">
+        <span class="error-icon">!</span>
+        <span class="error-message">{$wizard.error}</span>
+      </div>
+      <button class="error-dismiss" on:click={() => wizard.setError(null)}>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M18 6L6 18M6 6l12 12"/>
+        </svg>
+      </button>
     </div>
   {/if}
 </div>
 
 <style>
-  .wizard-container {
-    max-width: 800px;
-    margin: 0 auto;
+  .app-container {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
     padding: 2rem;
+    max-width: 900px;
+    margin: 0 auto;
   }
 
   header {
     text-align: center;
-    margin-bottom: 2rem;
+    margin-bottom: 2.5rem;
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .logo svg {
+    flex-shrink: 0;
   }
 
   h1 {
-    font-size: 2rem;
+    font-size: 1.75rem;
     font-weight: 700;
-    margin-bottom: 0.5rem;
-    background: linear-gradient(135deg, var(--accent) 0%, #ec4899 100%);
+    background: var(--accent-gradient);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
+    letter-spacing: -0.02em;
   }
 
-  .subtitle {
+  .tagline {
     color: var(--text-secondary);
     font-size: 1rem;
   }
 
-  .steps {
+  main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .content-card {
+    background: var(--bg-glass);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--border-light);
+    border-radius: 1rem;
+    padding: 2rem;
+    box-shadow:
+      0 4px 24px rgba(0, 0, 0, 0.4),
+      0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+  }
+
+  .error-toast {
+    position: fixed;
+    bottom: 2rem;
+    left: 50%;
+    transform: translateX(-50%);
     display: flex;
     align-items: center;
-    justify-content: center;
-    margin-bottom: 2rem;
-    gap: 0.5rem;
-    flex-wrap: wrap;
+    gap: 1rem;
+    padding: 1rem 1.25rem;
+    background: rgba(255, 75, 75, 0.15);
+    border: 1px solid var(--error);
+    border-radius: 0.75rem;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    animation: slideUp 0.3s ease-out;
+    max-width: 90%;
   }
 
-  .step {
+  @keyframes slideUp {
+    from {
+      opacity: 0;
+      transform: translateX(-50%) translateY(1rem);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+  }
+
+  .error-content {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem 1rem;
-    border-radius: 9999px;
-    background: var(--bg-secondary);
-    transition: all 0.2s;
+    gap: 0.75rem;
   }
 
-  .step.active {
-    background: var(--accent);
-    color: white;
-  }
-
-  .step.completed {
-    background: var(--success);
-    color: white;
-  }
-
-  .step.disabled {
-    opacity: 0.5;
-  }
-
-  .step-number {
+  .error-icon {
     display: flex;
     align-items: center;
     justify-content: center;
     width: 1.5rem;
     height: 1.5rem;
+    background: var(--error);
     border-radius: 50%;
-    background: rgba(255, 255, 255, 0.2);
-    font-size: 0.75rem;
-    font-weight: 600;
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: white;
+    flex-shrink: 0;
   }
 
-  .step-label {
+  .error-message {
+    color: var(--error);
     font-size: 0.875rem;
     font-weight: 500;
   }
 
-  .step-line {
-    width: 1.5rem;
-    height: 2px;
-    background: var(--border);
-    transition: background 0.2s;
-  }
-
-  .step-line.active {
-    background: var(--success);
-  }
-
-  main {
-    background: var(--bg-secondary);
-    border-radius: 1rem;
-    padding: 2rem;
-    border: 1px solid var(--border);
-  }
-
-  .error-banner {
-    margin-top: 1rem;
-    padding: 1rem;
-    background: rgba(239, 68, 68, 0.1);
-    border: 1px solid var(--error);
-    border-radius: 0.5rem;
+  .error-dismiss {
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    color: var(--error);
-  }
-
-  .error-banner button {
+    justify-content: center;
+    padding: 0.375rem;
     background: transparent;
-    border: 1px solid var(--error);
+    border: none;
     color: var(--error);
-    padding: 0.25rem 0.75rem;
-    border-radius: 0.25rem;
     cursor: pointer;
+    opacity: 0.7;
+    transition: opacity 0.2s;
   }
 
-  .error-banner button:hover {
-    background: var(--error);
-    color: white;
+  .error-dismiss:hover {
+    opacity: 1;
   }
 
-  @media (max-width: 600px) {
-    .wizard-container {
+  @media (max-width: 640px) {
+    .app-container {
       padding: 1rem;
     }
 
-    .step-label {
-      display: none;
+    h1 {
+      font-size: 1.5rem;
     }
 
-    main {
-      padding: 1rem;
+    .content-card {
+      padding: 1.5rem;
+      border-radius: 0.75rem;
     }
   }
 </style>

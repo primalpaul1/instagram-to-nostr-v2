@@ -33,7 +33,6 @@
   });
 
   onDestroy(() => {
-    // Cleanup connection if not used
     if (pendingConnection && $wizard.authMode !== 'nip46') {
       closeConnection(pendingConnection);
     }
@@ -43,18 +42,10 @@
     try {
       connectionStatus = 'waiting';
       connectionError = '';
-
-      // Generate local keypair for NIP-46 client
       localKeypair = generateLocalKeypair();
       connectionSecret = generateSecret();
-
-      // Create connection URI
       connectionURI = createConnectionURI(localKeypair.publicKey, connectionSecret);
-
-      // Generate QR code
       qrCodeDataUrl = await generateQRCode(connectionURI);
-
-      // Start listening for connection in background
       waitForPrimalConnection();
     } catch (err) {
       connectionStatus = 'error';
@@ -75,8 +66,6 @@
 
       pendingConnection = connection;
       connectionStatus = 'connected';
-
-      // Store connection in wizard
       wizard.setAuthMode('nip46');
       wizard.setNIP46Connection(connection, connection.remotePubkey);
     } catch (err) {
@@ -107,8 +96,6 @@
 
     try {
       const cleanHandle = handle.replace('@', '').trim();
-
-      // Use SSE to stream video fetch progress
       const response = await fetch(`/api/videos-stream/${encodeURIComponent(cleanHandle)}`, {
         signal: abortController.signal
       });
@@ -145,7 +132,6 @@
 
               if (data.progress) {
                 videoCount = data.count;
-                // Store partial results as they come in
                 if (data.videos) {
                   fetchedVideos = data.videos;
                 }
@@ -176,12 +162,9 @@
         }
       }
 
-      // If we get here without 'done', something went wrong
       throw new Error('Stream ended unexpectedly');
     } catch (err) {
-      // Check if this was an intentional abort (pause)
       if (err instanceof Error && err.name === 'AbortError') {
-        // User paused - continue with fetched videos
         return;
       }
       wizard.setError(err instanceof Error ? err.message : 'An error occurred');
@@ -196,11 +179,8 @@
     if (!abortController || fetchedVideos.length === 0) return;
 
     const cleanHandle = handle.replace('@', '').trim();
-
-    // Abort the fetch
     abortController.abort();
 
-    // Continue with what we have
     wizard.setHandle(cleanHandle);
     wizard.setVideos(fetchedVideos.map((v: any) => ({ ...v, selected: false })));
     if (fetchedProfile) {
@@ -210,15 +190,15 @@
   }
 </script>
 
-<div class="step-content">
-  <h2>Enter your Instagram handle</h2>
-  <p class="description">
-    We'll fetch your public videos from Instagram to migrate them to Nostr.
-  </p>
+<div class="handle-step">
+  <div class="hero-section">
+    <h2>Enter your Instagram handle</h2>
+    <p class="subtitle">We'll fetch your public videos and help you migrate them to Nostr</p>
+  </div>
 
   <form on:submit|preventDefault={handleSubmit}>
-    <div class="input-group">
-      <span class="prefix">@</span>
+    <div class="input-wrapper" class:focused={handle.length > 0} class:loading>
+      <span class="at-symbol">@</span>
       <input
         type="text"
         bind:value={handle}
@@ -226,43 +206,69 @@
         disabled={loading}
         autocomplete="off"
         autocapitalize="off"
+        spellcheck="false"
       />
+      {#if loading}
+        <div class="input-spinner"></div>
+      {/if}
     </div>
 
-    <button type="submit" disabled={!handle.trim() || loading}>
+    <button type="submit" class="primary-btn" disabled={!handle.trim() || loading}>
       {#if loading}
-        <span class="spinner"></span>
-        {#if videoCount > 0}
-          Fetching videos... {videoCount} found
-        {:else}
-          Fetching videos...
-        {/if}
+        <span class="btn-spinner"></span>
+        <span class="btn-text">
+          {#if videoCount > 0}
+            Fetching... {videoCount} videos found
+          {:else}
+            Searching for videos...
+          {/if}
+        </span>
       {:else}
-        Continue
+        <span class="btn-text">Fetch Videos</span>
+        <svg class="btn-arrow" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M5 12h14M12 5l7 7-7 7"/>
+        </svg>
       {/if}
     </button>
 
     {#if loading && videoCount > 0}
-      <button type="button" class="pause-btn" on:click={handlePause}>
+      <button type="button" class="secondary-btn" on:click={handlePause}>
         Continue with {videoCount} videos
       </button>
     {/if}
   </form>
 
   <div class="divider">
-    <span>or login with your existing Nostr identity</span>
+    <span>or connect your Nostr identity</span>
   </div>
 
-  <div class="primal-login">
-    <h3>Login with Primal</h3>
-    <p class="qr-description">Scan this QR code with your Primal app to connect</p>
+  <div class="primal-section">
+    <div class="primal-header">
+      <svg class="primal-icon" width="24" height="24" viewBox="0 0 100 100" fill="none">
+        <defs>
+          <linearGradient id="primalGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#FA3C83"/>
+            <stop offset="100%" stop-color="#FF8C42"/>
+          </linearGradient>
+        </defs>
+        <rect width="100" height="100" rx="22" fill="url(#primalGrad)"/>
+        <path d="M30 70V30h25c11 0 18 7 18 16s-7 16-18 16H42v8h-12z" fill="white"/>
+        <circle cx="55" cy="46" r="6" fill="url(#primalGrad)"/>
+      </svg>
+      <span>Login with Primal</span>
+    </div>
+    <p class="primal-description">Scan with your Primal app to connect your existing Nostr identity</p>
 
     <div class="qr-container">
       {#if connectionStatus === 'connected'}
         <div class="connected-state">
-          <div class="checkmark">✓</div>
-          <p class="connected-text">Connected to Primal</p>
-          <code class="pubkey">{hexToNpub($wizard.nip46Pubkey || '').slice(0, 20)}...</code>
+          <div class="success-ring">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+              <path d="M20 6L9 17l-5-5"/>
+            </svg>
+          </div>
+          <span class="connected-label">Connected</span>
+          <code class="pubkey">{hexToNpub($wizard.nip46Pubkey || '').slice(0, 24)}...</code>
         </div>
       {:else if connectionStatus === 'error'}
         <div class="error-state">
@@ -270,173 +276,232 @@
           <button class="retry-btn" on:click={retryConnection}>Try Again</button>
         </div>
       {:else if qrCodeDataUrl}
-        <img src={qrCodeDataUrl} alt="Scan with Primal" class="qr-code" />
-        <p class="waiting-text">Waiting for connection...</p>
+        <div class="qr-wrapper">
+          <img src={qrCodeDataUrl} alt="Scan with Primal" class="qr-code" />
+        </div>
+        <div class="waiting-indicator">
+          <div class="pulse-dot"></div>
+          <span>Waiting for connection...</span>
+        </div>
       {:else}
-        <div class="loading-qr">
-          <span class="spinner"></span>
-          <p>Generating QR code...</p>
+        <div class="loading-state">
+          <div class="qr-spinner"></div>
+          <span>Generating QR code...</span>
         </div>
       {/if}
     </div>
   </div>
 
-  <div class="info">
+  <div class="how-it-works">
     <h3>How it works</h3>
-    <ul>
-      <li>We fetch your public Instagram videos</li>
-      <li>You select which videos to migrate</li>
-      <li>Videos are uploaded to Blossom media server</li>
-      <li>Posts are published to Nostr relays</li>
-    </ul>
+    <div class="steps-list">
+      <div class="step-item">
+        <div class="step-icon">1</div>
+        <span>We fetch your public Instagram videos</span>
+      </div>
+      <div class="step-item">
+        <div class="step-icon">2</div>
+        <span>You choose which videos to migrate</span>
+      </div>
+      <div class="step-item">
+        <div class="step-icon">3</div>
+        <span>Videos are uploaded to Blossom</span>
+      </div>
+      <div class="step-item">
+        <div class="step-icon">4</div>
+        <span>Posts are published to Nostr</span>
+      </div>
+    </div>
   </div>
 </div>
 
 <style>
-  .step-content {
+  .handle-step {
+    max-width: 480px;
+    margin: 0 auto;
+  }
+
+  .hero-section {
     text-align: center;
+    margin-bottom: 2rem;
   }
 
   h2 {
     font-size: 1.5rem;
+    font-weight: 600;
     margin-bottom: 0.5rem;
+    letter-spacing: -0.02em;
   }
 
-  .description {
+  .subtitle {
     color: var(--text-secondary);
-    margin-bottom: 2rem;
+    font-size: 0.9375rem;
   }
 
   form {
-    max-width: 400px;
-    margin: 0 auto;
-  }
-
-  .input-group {
     display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .input-wrapper {
+    display: flex;
+    align-items: center;
     background: var(--bg-tertiary);
-    border: 2px solid var(--border);
-    border-radius: 0.5rem;
-    overflow: hidden;
-    margin-bottom: 1rem;
-    transition: border-color 0.2s;
+    border: 1px solid var(--border-light);
+    border-radius: 0.75rem;
+    padding: 0 1rem;
+    transition: all 0.2s ease;
   }
 
-  .input-group:focus-within {
+  .input-wrapper:focus-within {
     border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.15);
   }
 
-  .prefix {
-    padding: 0.75rem 1rem;
-    background: var(--bg-primary);
-    color: var(--text-secondary);
+  .input-wrapper.loading {
+    opacity: 0.7;
+  }
+
+  .at-symbol {
+    color: var(--text-muted);
     font-size: 1.125rem;
+    font-weight: 500;
+    margin-right: 0.25rem;
   }
 
   input {
     flex: 1;
-    padding: 0.75rem;
+    padding: 0.875rem 0;
     background: transparent;
     border: none;
     color: var(--text-primary);
     font-size: 1.125rem;
+    font-weight: 500;
     outline: none;
   }
 
   input::placeholder {
-    color: var(--text-secondary);
+    color: var(--text-muted);
   }
 
-  button {
-    width: 100%;
-    padding: 0.875rem;
-    background: var(--accent);
-    color: white;
-    border: none;
-    border-radius: 0.5rem;
-    font-size: 1rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: background 0.2s;
+  .input-spinner {
+    width: 1.25rem;
+    height: 1.25rem;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  .primary-btn {
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 0.5rem;
+    padding: 0.875rem 1.5rem;
+    background: var(--accent-gradient);
+    border: none;
+    border-radius: 0.75rem;
+    color: white;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
   }
 
-  button:hover:not(:disabled) {
-    background: var(--accent-hover);
+  .primary-btn:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 20px rgba(var(--accent-rgb), 0.4);
   }
 
-  button:disabled {
-    opacity: 0.6;
+  .primary-btn:disabled {
+    opacity: 0.5;
     cursor: not-allowed;
+    transform: none;
   }
 
-  .pause-btn {
-    margin-top: 0.75rem;
-    background: transparent;
-    border: 1px solid var(--accent);
-    color: var(--accent);
-  }
-
-  .pause-btn:hover {
-    background: rgba(139, 92, 246, 0.1);
-  }
-
-  .spinner {
-    width: 1rem;
-    height: 1rem;
+  .btn-spinner {
+    width: 1.125rem;
+    height: 1.125rem;
     border: 2px solid rgba(255, 255, 255, 0.3);
     border-top-color: white;
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
   }
 
+  .btn-arrow {
+    transition: transform 0.2s ease;
+  }
+
+  .primary-btn:hover:not(:disabled) .btn-arrow {
+    transform: translateX(3px);
+  }
+
+  .secondary-btn {
+    padding: 0.75rem 1.25rem;
+    background: transparent;
+    border: 1px solid var(--border-light);
+    border-radius: 0.75rem;
+    color: var(--text-primary);
+    font-size: 0.9375rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .secondary-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
   @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
+    to { transform: rotate(360deg); }
   }
 
   .divider {
     display: flex;
     align-items: center;
-    margin: 2rem auto;
-    max-width: 400px;
+    gap: 1rem;
+    margin: 2rem 0;
   }
 
   .divider::before,
   .divider::after {
     content: '';
     flex: 1;
-    border-bottom: 1px solid var(--border);
+    height: 1px;
+    background: var(--border);
   }
 
   .divider span {
-    padding: 0 1rem;
-    color: var(--text-secondary);
-    font-size: 0.875rem;
+    color: var(--text-muted);
+    font-size: 0.8125rem;
+    white-space: nowrap;
   }
 
-  .primal-login {
-    max-width: 400px;
-    margin: 0 auto 2rem;
-    padding: 1.5rem;
+  .primal-section {
     background: var(--bg-tertiary);
-    border-radius: 0.75rem;
     border: 1px solid var(--border);
+    border-radius: 0.875rem;
+    padding: 1.5rem;
   }
 
-  .primal-login h3 {
-    font-size: 1.125rem;
+  .primal-header {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
     margin-bottom: 0.5rem;
-    color: var(--text-primary);
+    font-weight: 600;
   }
 
-  .qr-description {
-    font-size: 0.875rem;
+  .primal-icon {
+    border-radius: 6px;
+  }
+
+  .primal-description {
     color: var(--text-secondary);
+    font-size: 0.875rem;
     margin-bottom: 1.5rem;
   }
 
@@ -444,35 +509,62 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    min-height: 300px;
+    min-height: 280px;
     justify-content: center;
   }
 
-  .qr-code {
-    border-radius: 0.5rem;
+  .qr-wrapper {
+    padding: 1rem;
     background: white;
-    padding: 0.5rem;
+    border-radius: 1rem;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2);
   }
 
-  .waiting-text {
+  .qr-code {
+    display: block;
+    width: 200px;
+    height: 200px;
+    border-radius: 0.5rem;
+  }
+
+  .waiting-indicator {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
     margin-top: 1rem;
-    font-size: 0.875rem;
     color: var(--text-secondary);
+    font-size: 0.8125rem;
   }
 
-  .loading-qr {
+  .pulse-dot {
+    width: 8px;
+    height: 8px;
+    background: var(--accent);
+    border-radius: 50%;
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(0.8); }
+  }
+
+  .loading-state {
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 1rem;
     color: var(--text-secondary);
+    font-size: 0.875rem;
   }
 
-  .loading-qr .spinner {
-    width: 2rem;
-    height: 2rem;
-    border-color: var(--border);
+  .qr-spinner {
+    width: 2.5rem;
+    height: 2.5rem;
+    border: 3px solid var(--border);
     border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
   }
 
   .connected-state {
@@ -482,29 +574,34 @@
     gap: 0.75rem;
   }
 
-  .checkmark {
+  .success-ring {
     width: 4rem;
     height: 4rem;
-    background: #22c55e;
+    background: linear-gradient(135deg, var(--success), #00A855);
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 2rem;
     color: white;
+    animation: scaleIn 0.3s ease-out;
   }
 
-  .connected-text {
+  @keyframes scaleIn {
+    from { transform: scale(0.5); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+  }
+
+  .connected-label {
     font-size: 1.125rem;
     font-weight: 600;
-    color: #22c55e;
+    color: var(--success);
   }
 
   .pubkey {
     font-size: 0.75rem;
     background: var(--bg-primary);
     padding: 0.5rem 1rem;
-    border-radius: 0.25rem;
+    border-radius: 0.5rem;
     color: var(--text-secondary);
   }
 
@@ -513,58 +610,71 @@
     flex-direction: column;
     align-items: center;
     gap: 1rem;
+    text-align: center;
   }
 
   .error-text {
-    color: #ef4444;
+    color: var(--error);
     font-size: 0.875rem;
   }
 
   .retry-btn {
-    width: auto;
-    padding: 0.5rem 1.5rem;
-    background: var(--bg-primary);
+    padding: 0.5rem 1.25rem;
+    background: transparent;
     border: 1px solid var(--border);
+    border-radius: 0.5rem;
     color: var(--text-primary);
+    font-size: 0.875rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
   }
 
   .retry-btn:hover {
     border-color: var(--accent);
-  }
-
-  .info {
-    margin-top: 2rem;
-    padding-top: 2rem;
-    border-top: 1px solid var(--border);
-    text-align: left;
-    max-width: 400px;
-    margin-left: auto;
-    margin-right: auto;
-  }
-
-  .info h3 {
-    font-size: 0.875rem;
-    color: var(--text-secondary);
-    margin-bottom: 0.75rem;
-  }
-
-  .info ul {
-    list-style: none;
-    padding: 0;
-  }
-
-  .info li {
-    padding: 0.5rem 0;
-    padding-left: 1.5rem;
-    position: relative;
-    color: var(--text-secondary);
-    font-size: 0.875rem;
-  }
-
-  .info li::before {
-    content: '→';
-    position: absolute;
-    left: 0;
     color: var(--accent);
+  }
+
+  .how-it-works {
+    margin-top: 2rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border);
+  }
+
+  .how-it-works h3 {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 1rem;
+  }
+
+  .steps-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .step-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+  }
+
+  .step-icon {
+    width: 1.5rem;
+    height: 1.5rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--accent);
+    flex-shrink: 0;
   }
 </style>
