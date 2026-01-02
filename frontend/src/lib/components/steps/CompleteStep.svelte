@@ -36,20 +36,7 @@
   </div>
 
   <a href={primalUrl} target="_blank" rel="noopener noreferrer" class="primal-cta">
-    <div class="cta-content">
-      <svg class="primal-logo" width="28" height="28" viewBox="0 0 100 100" fill="none">
-        <defs>
-          <linearGradient id="primalCtaGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stop-color="#FA3C83"/>
-            <stop offset="100%" stop-color="#FF8C42"/>
-          </linearGradient>
-        </defs>
-        <rect width="100" height="100" rx="22" fill="url(#primalCtaGrad)"/>
-        <path d="M30 70V30h25c11 0 18 7 18 16s-7 16-18 16H42v8h-12z" fill="white"/>
-        <circle cx="55" cy="46" r="6" fill="url(#primalCtaGrad)"/>
-      </svg>
-      <span class="cta-text">View on Primal</span>
-    </div>
+    <span class="cta-text">View on Primal</span>
     <svg class="cta-arrow" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
       <path d="M7 17L17 7M17 7H7M17 7v10"/>
     </svg>
@@ -233,16 +220,6 @@
   .primal-cta:hover {
     transform: translateY(-2px);
     box-shadow: 0 8px 32px rgba(var(--accent-rgb), 0.4);
-  }
-
-  .cta-content {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-  }
-
-  .primal-logo {
-    border-radius: 8px;
   }
 
   .cta-text {

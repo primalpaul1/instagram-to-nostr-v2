@@ -244,17 +244,6 @@
 
   <div class="primal-section">
     <div class="primal-header">
-      <svg class="primal-icon" width="24" height="24" viewBox="0 0 100 100" fill="none">
-        <defs>
-          <linearGradient id="primalGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stop-color="#FA3C83"/>
-            <stop offset="100%" stop-color="#FF8C42"/>
-          </linearGradient>
-        </defs>
-        <rect width="100" height="100" rx="22" fill="url(#primalGrad)"/>
-        <path d="M30 70V30h25c11 0 18 7 18 16s-7 16-18 16H42v8h-12z" fill="white"/>
-        <circle cx="55" cy="46" r="6" fill="url(#primalGrad)"/>
-      </svg>
       <span>Login with Primal</span>
     </div>
     <p class="primal-description">Scan with your Primal app to connect your existing Nostr identity</p>
@@ -493,10 +482,6 @@
     gap: 0.625rem;
     margin-bottom: 0.5rem;
     font-weight: 600;
-  }
-
-  .primal-icon {
-    border-radius: 6px;
   }
 
   .primal-description {
