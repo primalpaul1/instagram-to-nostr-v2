@@ -230,10 +230,21 @@ export async function publishToRelays(
 /**
  * Import events directly to Primal's cache server.
  * This ensures events appear in Primal immediately, even with old timestamps.
+ * Tries multiple methods: import_events API and direct EVENT broadcast.
  */
 export async function importToPrimalCache(events: Event[]): Promise<boolean> {
   if (events.length === 0) return false;
 
+  // Try sending via import_events first
+  const importResult = await sendImportEvents(events);
+
+  // Also try sending as regular EVENT messages to the cache
+  const eventResult = await sendEventsToCache(events);
+
+  return importResult || eventResult;
+}
+
+async function sendImportEvents(events: Event[]): Promise<boolean> {
   return new Promise((resolve) => {
     try {
       const ws = new WebSocket(PRIMAL_CACHE_URL);
@@ -241,12 +252,10 @@ export async function importToPrimalCache(events: Event[]): Promise<boolean> {
 
       const timeout = setTimeout(() => {
         ws.close();
-        console.log('Primal cache import timed out');
         resolve(false);
-      }, 15000);
+      }, 10000);
 
       ws.onopen = () => {
-        // Send import_events request
         const message = JSON.stringify([
           'REQ',
           subId,
@@ -258,25 +267,58 @@ export async function importToPrimalCache(events: Event[]): Promise<boolean> {
       ws.onmessage = (msg) => {
         try {
           const data = JSON.parse(msg.data);
-          console.log('Primal cache import response:', data);
-
-          // Close subscription and connection
+          console.log('Primal import_events response:', data);
           ws.send(JSON.stringify(['CLOSE', subId]));
           clearTimeout(timeout);
           ws.close();
           resolve(true);
         } catch {
-          // Ignore parse errors
+          // Ignore
         }
       };
 
       ws.onerror = () => {
         clearTimeout(timeout);
-        console.log('Primal cache import error');
         resolve(false);
       };
-    } catch (err) {
-      console.error('Error importing to Primal cache:', err);
+    } catch {
+      resolve(false);
+    }
+  });
+}
+
+async function sendEventsToCache(events: Event[]): Promise<boolean> {
+  // Send events as standard EVENT messages to the cache server
+  return new Promise((resolve) => {
+    try {
+      const ws = new WebSocket(PRIMAL_CACHE_URL);
+      let sentCount = 0;
+
+      const timeout = setTimeout(() => {
+        ws.close();
+        resolve(sentCount > 0);
+      }, 10000);
+
+      ws.onopen = () => {
+        for (const event of events) {
+          ws.send(JSON.stringify(['EVENT', event]));
+          sentCount++;
+        }
+        console.log(`Sent ${sentCount} events to Primal cache`);
+
+        // Give it a moment to process
+        setTimeout(() => {
+          clearTimeout(timeout);
+          ws.close();
+          resolve(true);
+        }, 1000);
+      };
+
+      ws.onerror = () => {
+        clearTimeout(timeout);
+        resolve(false);
+      };
+    } catch {
       resolve(false);
     }
   });
