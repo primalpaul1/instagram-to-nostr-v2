@@ -102,7 +102,7 @@
       });
 
       if (!response.ok) {
-        throw new Error('Failed to fetch videos');
+        throw new Error('Failed to fetch content');
       }
 
       const reader = response.body?.getReader();
@@ -199,7 +199,7 @@
 <div class="handle-step">
   <div class="hero-section">
     <h2>Enter your Instagram handle</h2>
-    <p class="subtitle">We'll fetch your public videos and help you migrate them to Nostr</p>
+    <p class="subtitle">We'll fetch your public content and help you migrate it to Nostr</p>
   </div>
 
   <form on:submit|preventDefault={handleSubmit}>
@@ -224,13 +224,13 @@
         <span class="btn-spinner"></span>
         <span class="btn-text">
           {#if videoCount > 0}
-            Fetching... {videoCount} videos found
+            Fetching... {videoCount} posts found
           {:else}
-            Searching for videos...
+            Searching for content...
           {/if}
         </span>
       {:else}
-        <span class="btn-text">Fetch Videos</span>
+        <span class="btn-text">Fetch Content</span>
         <svg class="btn-arrow" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M5 12h14M12 5l7 7-7 7"/>
         </svg>
@@ -239,7 +239,7 @@
 
     {#if loading && videoCount > 0}
       <button type="button" class="secondary-btn" on:click={handlePause}>
-        Continue with {videoCount} videos
+        Continue with {videoCount} posts
       </button>
     {/if}
   </form>
@@ -292,15 +292,15 @@
     <div class="steps-list">
       <div class="step-item">
         <div class="step-icon">1</div>
-        <span>We fetch your public Instagram videos</span>
+        <span>We fetch your public Instagram content</span>
       </div>
       <div class="step-item">
         <div class="step-icon">2</div>
-        <span>You choose which videos to migrate</span>
+        <span>You choose which posts to migrate</span>
       </div>
       <div class="step-item">
         <div class="step-icon">3</div>
-        <span>Videos are uploaded to Blossom</span>
+        <span>Media is uploaded to Blossom</span>
       </div>
       <div class="step-item">
         <div class="step-icon">4</div>
