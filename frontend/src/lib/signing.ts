@@ -31,6 +31,15 @@ export interface VideoMetadata {
   originalDate?: string;
 }
 
+export interface MediaUpload {
+  url: string;  // Blossom URL after upload
+  sha256: string;
+  mimeType: string;
+  size: number;
+  width?: number;
+  height?: number;
+}
+
 /**
  * Create a Blossom auth event template for upload authorization.
  * Kind 24242 with upload tag and sha256.
@@ -108,6 +117,67 @@ export function createVideoPostEvent(
     tags: [
       ['imeta', ...imetaParts]
     ],
+    content,
+    id: '' // Will be filled by signer
+  };
+}
+
+/**
+ * Create a post event with multiple media items (kind 1 with multiple imeta tags).
+ * Used for carousels and multi-media posts.
+ */
+export function createMultiMediaPostEvent(
+  pubkey: string,
+  mediaUploads: MediaUpload[],
+  caption?: string,
+  originalDate?: string
+): Omit<Event, 'sig'> {
+  // Build imeta tags for each media item
+  const tags: string[][] = [];
+  const urls: string[] = [];
+
+  for (const media of mediaUploads) {
+    const imetaParts = [
+      'imeta',
+      `url ${media.url}`,
+      `m ${media.mimeType}`,
+      `x ${media.sha256}`,
+      `size ${media.size}`
+    ];
+
+    if (media.width && media.height) {
+      imetaParts.push(`dim ${media.width}x${media.height}`);
+    }
+
+    tags.push(imetaParts);
+    urls.push(media.url);
+  }
+
+  // Build content with caption and all URLs
+  let content = caption || '';
+  if (content && urls.length > 0) {
+    content += '\n\n';
+  }
+  content += urls.join('\n');
+
+  // Parse original date for created_at timestamp
+  let createdAt = Math.floor(Date.now() / 1000);
+  if (originalDate) {
+    try {
+      const date = new Date(originalDate);
+      if (!isNaN(date.getTime())) {
+        createdAt = Math.floor(date.getTime() / 1000);
+      }
+    } catch {
+      // Use current time if parsing fails
+    }
+  }
+
+  return {
+    kind: 1,
+    pubkey,
+    created_at: createdAt,
+    tags,
     content,
     id: '' // Will be filled by signer
   };

@@ -1,25 +1,26 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { wizard, selectedVideos, type VideoInfo } from '$lib/stores/wizard';
+  import { wizard, selectedPosts, type PostInfo, type MediaItemInfo } from '$lib/stores/wizard';
   import {
     createBlossomAuthEvent,
-    createVideoPostEvent,
+    createMultiMediaPostEvent,
     signWithNIP46,
     createBlossomAuthHeader,
     calculateSHA256,
     publishToRelays,
     importToPrimalCache,
     NOSTR_RELAYS,
-    type VideoMetadata
+    type MediaUpload
   } from '$lib/signing';
   import { closeConnection } from '$lib/nip46';
 
   interface TaskStatus {
-    video: VideoInfo;
+    post: PostInfo;
     status: 'pending' | 'downloading' | 'signing' | 'uploading' | 'publishing' | 'complete' | 'error';
-    blossomUrl?: string;
+    blossomUrls?: string[];
     nostrEventId?: string;
     error?: string;
+    mediaProgress?: { current: number; total: number };
   }
 
   let tasks: TaskStatus[] = [];
@@ -35,8 +36,8 @@
   $: allDone = completedCount + errorCount === totalCount && totalCount > 0;
 
   onMount(() => {
-    tasks = $selectedVideos.map(video => ({
-      video,
+    tasks = $selectedPosts.map(post => ({
+      post,
       status: 'pending'
     }));
     startMigration();
@@ -55,7 +56,7 @@
     try {
       for (let i = 0; i < tasks.length; i++) {
         currentTaskIndex = i;
-        await processVideo(i);
+        await processPost(i);
       }
       wizard.setStep('complete');
     } catch (err) {
@@ -65,7 +66,62 @@
     }
   }
 
-  async function processVideo(index: number) {
+  async function uploadMediaItem(
+    mediaItem: MediaItemInfo,
+    pubkey: string
+  ): Promise<MediaUpload> {
+    // Download the media
+    const proxyResponse = await fetch('/api/proxy-video', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: mediaItem.url })
+    });
+
+    if (!proxyResponse.ok) {
+      throw new Error(`Failed to download ${mediaItem.media_type}`);
+    }
+
+    const mediaData = await proxyResponse.arrayBuffer();
+    const sha256 = await calculateSHA256(mediaData);
+
+    // Create and sign auth event
+    const authEvent = createBlossomAuthEvent(pubkey, sha256, mediaData.byteLength);
+    const signedAuth = await signWithNIP46($wizard.nip46Connection!, authEvent);
+    const authHeader = createBlossomAuthHeader(signedAuth);
+
+    // Determine content type
+    const mimeType = mediaItem.media_type === 'video' ? 'video/mp4' : 'image/jpeg';
+
+    // Upload to Blossom
+    const uploadResponse = await fetch(`${BLOSSOM_SERVER}/upload`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': authHeader,
+        'Content-Type': mimeType,
+        'X-SHA-256': sha256
+      },
+      body: mediaData
+    });
+
+    if (!uploadResponse.ok) {
+      const errorText = await uploadResponse.text();
+      throw new Error(`Blossom upload failed: ${errorText}`);
+    }
+
+    const uploadData = await uploadResponse.json();
+    const blossomUrl = uploadData.url || `${BLOSSOM_SERVER}/${sha256}`;
+
+    return {
+      url: blossomUrl,
+      sha256,
+      mimeType,
+      size: mediaData.byteLength,
+      width: mediaItem.width,
+      height: mediaItem.height
+    };
+  }
+
+  async function processPost(index: number) {
     const task = tasks[index];
     if (!$wizard.nip46Connection || !$wizard.nip46Pubkey) {
       tasks[index] = { ...task, status: 'error', error: 'No NIP-46 connection' };
@@ -73,74 +129,41 @@
     }
 
     try {
-      tasks[index] = { ...task, status: 'downloading' };
-      tasks = [...tasks];
+      const mediaItems = task.post.media_items;
+      const mediaUploads: MediaUpload[] = [];
 
-      const proxyResponse = await fetch('/api/proxy-video', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: task.video.url })
-      });
-
-      if (!proxyResponse.ok) {
-        throw new Error('Failed to download video');
-      }
-
-      const videoData = await proxyResponse.arrayBuffer();
-      const sha256 = await calculateSHA256(videoData);
-
-      tasks[index] = { ...tasks[index], status: 'signing' };
-      tasks = [...tasks];
-
-      const authEvent = createBlossomAuthEvent(
-        $wizard.nip46Pubkey,
-        sha256,
-        videoData.byteLength
-      );
-
-      const signedAuth = await signWithNIP46($wizard.nip46Connection, authEvent);
-      const authHeader = createBlossomAuthHeader(signedAuth);
-
-      tasks[index] = { ...tasks[index], status: 'uploading' };
-      tasks = [...tasks];
-
-      const uploadResponse = await fetch(`${BLOSSOM_SERVER}/upload`, {
-        method: 'PUT',
-        headers: {
-          'Authorization': authHeader,
-          'Content-Type': 'video/mp4',
-          'X-SHA-256': sha256
-        },
-        body: videoData
-      });
-
-      if (!uploadResponse.ok) {
-        const errorText = await uploadResponse.text();
-        throw new Error(`Blossom upload failed: ${errorText}`);
-      }
-
-      const uploadData = await uploadResponse.json();
-      const blossomUrl = uploadData.url || `${BLOSSOM_SERVER}/${sha256}`;
-
-      tasks[index] = { ...tasks[index], status: 'signing', blossomUrl };
-      tasks = [...tasks];
-
-      const videoMetadata: VideoMetadata = {
-        url: task.video.url,
-        sha256,
-        mimeType: 'video/mp4',
-        size: videoData.byteLength,
-        width: task.video.width,
-        height: task.video.height,
-        duration: task.video.duration,
-        caption: task.video.caption,
-        originalDate: task.video.original_date
+      // Upload all media items
+      tasks[index] = {
+        ...task,
+        status: 'downloading',
+        mediaProgress: { current: 0, total: mediaItems.length }
       };
+      tasks = [...tasks];
 
-      const postEvent = createVideoPostEvent(
+      for (let i = 0; i < mediaItems.length; i++) {
+        tasks[index] = {
+          ...tasks[index],
+          mediaProgress: { current: i + 1, total: mediaItems.length }
+        };
+        tasks = [...tasks];
+
+        const upload = await uploadMediaItem(mediaItems[i], $wizard.nip46Pubkey);
+        mediaUploads.push(upload);
+      }
+
+      tasks[index] = {
+        ...tasks[index],
+        status: 'signing',
+        blossomUrls: mediaUploads.map(u => u.url)
+      };
+      tasks = [...tasks];
+
+      // Create post event with all media
+      const postEvent = createMultiMediaPostEvent(
         $wizard.nip46Pubkey,
-        videoMetadata,
-        blossomUrl
+        mediaUploads,
+        task.post.caption,
+        task.post.original_date
       );
 
       const signedPost = await signWithNIP46($wizard.nip46Connection, postEvent);
@@ -168,7 +191,7 @@
       tasks = [...tasks];
 
     } catch (err) {
-      console.error(`Error processing video ${index}:`, err);
+      console.error(`Error processing post ${index}:`, err);
       tasks[index] = {
         ...tasks[index],
         status: 'error',
@@ -178,16 +201,28 @@
     }
   }
 
-  function getStatusLabel(status: TaskStatus['status']): string {
-    switch (status) {
+  function getStatusLabel(task: TaskStatus): string {
+    switch (task.status) {
       case 'pending': return 'Waiting';
-      case 'downloading': return 'Downloading';
+      case 'downloading':
+        if (task.mediaProgress && task.mediaProgress.total > 1) {
+          return `Downloading ${task.mediaProgress.current}/${task.mediaProgress.total}`;
+        }
+        return 'Downloading';
       case 'signing': return 'Signing';
       case 'uploading': return 'Uploading';
       case 'publishing': return 'Publishing';
       case 'complete': return 'Done';
       case 'error': return 'Failed';
       default: return 'Unknown';
+    }
+  }
+
+  function getPostTypeIcon(postType: string): string {
+    switch (postType) {
+      case 'reel': return '▶';
+      case 'carousel': return '⧉';
+      default: return '□';
     }
   }
 </script>
@@ -212,7 +247,7 @@
         <span class="current">{completedCount}</span>
         <span class="divider">/</span>
         <span class="total">{totalCount}</span>
-        <span class="label">videos</span>
+        <span class="label">posts</span>
       </div>
       <span class="progress-percent">{Math.round(progressPercent)}%</span>
     </div>
@@ -246,8 +281,11 @@
           {/if}
         </div>
         <div class="task-info">
-          <span class="task-caption">{task.video.caption?.slice(0, 35) || 'Untitled'}{(task.video.caption?.length ?? 0) > 35 ? '...' : ''}</span>
-          <span class="task-label">{getStatusLabel(task.status)}</span>
+          <div class="task-caption-row">
+            <span class="task-type-icon" class:reel={task.post.post_type === 'reel'}>{getPostTypeIcon(task.post.post_type)}</span>
+            <span class="task-caption">{task.post.caption?.slice(0, 30) || 'Untitled'}{(task.post.caption?.length ?? 0) > 30 ? '...' : ''}</span>
+          </div>
+          <span class="task-label">{getStatusLabel(task)}</span>
         </div>
       </div>
       {#if task.status === 'error' && task.error}
@@ -263,7 +301,7 @@
         <line x1="12" y1="8" x2="12" y2="12"/>
         <line x1="12" y1="16" x2="12.01" y2="16"/>
       </svg>
-      <span>{errorCount} video{errorCount !== 1 ? 's' : ''} failed. They will be skipped.</span>
+      <span>{errorCount} post{errorCount !== 1 ? 's' : ''} failed. They will be skipped.</span>
     </div>
   {/if}
 
@@ -471,6 +509,23 @@
     align-items: center;
     gap: 0.75rem;
     min-width: 0;
+  }
+
+  .task-caption-row {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    min-width: 0;
+  }
+
+  .task-type-icon {
+    font-size: 0.625rem;
+    color: var(--text-muted);
+    flex-shrink: 0;
+  }
+
+  .task-type-icon.reel {
+    color: var(--accent);
   }
 
   .task-caption {

@@ -79,8 +79,11 @@ export interface VideoTask {
   height: number | null;
   duration: number | null;
   thumbnail_url: string | null;
+  post_type: 'reel' | 'image' | 'carousel';
+  media_items: string | null;  // JSON string
   status: 'pending' | 'uploading' | 'publishing' | 'complete' | 'error';
   blossom_url: string | null;
+  blossom_urls: string | null;  // JSON string
   nostr_event_id: string | null;
   error: string | null;
   retry_count: number;
@@ -141,15 +144,17 @@ export async function createVideoTask(
   width?: number,
   height?: number,
   duration?: number,
-  thumbnailUrl?: string
+  thumbnailUrl?: string,
+  postType?: 'reel' | 'image' | 'carousel',
+  mediaItems?: string  // JSON string
 ): Promise<VideoTask> {
   const database = await getDb();
   database.run(
     `INSERT INTO video_tasks (
       id, job_id, instagram_url, filename, caption, original_date,
-      width, height, duration, thumbnail_url, status
+      width, height, duration, thumbnail_url, post_type, media_items, status
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
     [
       id,
       jobId,
@@ -160,7 +165,9 @@ export async function createVideoTask(
       width || null,
       height || null,
       duration || null,
-      thumbnailUrl || null
+      thumbnailUrl || null,
+      postType || 'reel',
+      mediaItems || null
     ]
   );
   saveDb(database);

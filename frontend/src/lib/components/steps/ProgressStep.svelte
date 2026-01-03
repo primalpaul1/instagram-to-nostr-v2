@@ -74,7 +74,7 @@
       </svg>
     </div>
     <h2>Migration in progress</h2>
-    <p class="subtitle">Keep this page open while we migrate your videos</p>
+    <p class="subtitle">Keep this page open while we migrate your content</p>
   </div>
 
   <div class="progress-card">
@@ -83,7 +83,7 @@
         <span class="current">{completedCount}</span>
         <span class="divider">/</span>
         <span class="total">{totalCount}</span>
-        <span class="label">videos</span>
+        <span class="label">posts</span>
       </div>
       <span class="progress-percent">{Math.round(progressPercent)}%</span>
     </div>
@@ -136,7 +136,7 @@
         <line x1="12" y1="8" x2="12" y2="12"/>
         <line x1="12" y1="16" x2="12.01" y2="16"/>
       </svg>
-      <span>{errorCount} video{errorCount !== 1 ? 's' : ''} failed. They will be skipped.</span>
+      <span>{errorCount} post{errorCount !== 1 ? 's' : ''} failed. They will be skipped.</span>
     </div>
   {/if}
 </div>

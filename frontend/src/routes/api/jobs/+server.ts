@@ -6,15 +6,22 @@ function generateId(): string {
   return crypto.randomUUID();
 }
 
-interface VideoInput {
+interface MediaItemInput {
   url: string;
-  filename?: string;
-  caption?: string;
-  original_date?: string;
+  media_type: 'image' | 'video';
   width?: number;
   height?: number;
   duration?: number;
   thumbnail_url?: string;
+}
+
+interface PostInput {
+  id: string;
+  post_type: 'reel' | 'image' | 'carousel';
+  caption?: string;
+  original_date?: string;
+  thumbnail_url?: string;
+  media_items: MediaItemInput[];
 }
 
 interface ProfileInput {
@@ -27,15 +34,15 @@ interface ProfileInput {
 export const POST: RequestHandler = async ({ request }) => {
   try {
     const body = await request.json();
-    const { handle, publicKey, secretKey, videos, profile } = body as {
+    const { handle, publicKey, secretKey, posts, profile } = body as {
       handle: string;
       publicKey: string;
       secretKey: string;
-      videos: VideoInput[];
+      posts: PostInput[];
       profile?: ProfileInput;
     };
 
-    if (!handle || !publicKey || !secretKey || !videos?.length) {
+    if (!handle || !publicKey || !secretKey || !posts?.length) {
       return json(
         { message: 'Missing required fields' },
         { status: 400 }
@@ -54,20 +61,25 @@ export const POST: RequestHandler = async ({ request }) => {
       profile?.profile_picture_url
     );
 
-    // Create video tasks
-    for (const video of videos) {
+    // Create post tasks
+    for (const post of posts) {
       const taskId = generateId();
+      // Get first media item for primary URL (for reels/images) or use first item for carousel
+      const primaryMedia = post.media_items[0];
+
       await createVideoTask(
         taskId,
         jobId,
-        video.url,
-        video.filename,
-        video.caption,
-        video.original_date,
-        video.width,
-        video.height,
-        video.duration,
-        video.thumbnail_url
+        primaryMedia?.url || '',
+        undefined,  // filename
+        post.caption,
+        post.original_date,
+        primaryMedia?.width,
+        primaryMedia?.height,
+        primaryMedia?.duration,
+        post.thumbnail_url,
+        post.post_type,
+        JSON.stringify(post.media_items)
       );
     }
 

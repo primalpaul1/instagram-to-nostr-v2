@@ -207,36 +207,39 @@ def create_blossom_auth_event(
     return "Nostr " + event_base64
 
 
-def create_video_event(
+def create_post_event(
     public_key_hex: str,
     secret_key_hex: str,
-    blossom_url: str,
+    media_uploads: list[dict],  # List of {url, hash, size, mime_type, width, height}
     caption: Optional[str],
     original_date: Optional[str],
-    width: Optional[int],
-    height: Optional[int],
-    duration: Optional[float],
-    file_hash: str,
-    file_size: int,
-    mime_type: str,
 ) -> dict:
-    """Create a Kind 1 Nostr event with imeta tag for the video."""
-    # Build imeta tag
-    imeta_parts = [
-        "imeta",
-        f"url {blossom_url}",
-        f"x {file_hash}",
-        f"m {mime_type}",
-        f"size {file_size}",
-    ]
+    """Create a Kind 1 Nostr event with imeta tags for all media."""
+    # Build imeta tags for each media item
+    tags = []
+    urls = []
 
-    if width and height:
-        imeta_parts.append(f"dim {width}x{height}")
+    for media in media_uploads:
+        imeta_parts = [
+            "imeta",
+            f"url {media['url']}",
+            f"x {media['hash']}",
+            f"m {media['mime_type']}",
+            f"size {media['size']}",
+        ]
+
+        if media.get('width') and media.get('height'):
+            imeta_parts.append(f"dim {media['width']}x{media['height']}")
+
+        tags.append(imeta_parts)
+        urls.append(media['url'])
 
     # Build content
     content = caption or ""
-    if blossom_url and blossom_url not in content:
-        content = f"{content}\n\n{blossom_url}".strip()
+    # Add all media URLs to content
+    url_text = "\n".join(urls)
+    if url_text and url_text not in content:
+        content = f"{content}\n\n{url_text}".strip()
 
     # Use original date if available, otherwise current time
     if original_date:
@@ -253,7 +256,7 @@ def create_video_event(
         "kind": 1,
         "pubkey": public_key_hex,
         "created_at": created_at,
-        "tags": [imeta_parts],
+        "tags": tags,
         "content": content,
     }
 
@@ -362,12 +365,94 @@ async def import_to_primal_cache(events: list[dict]) -> bool:
         return False
 
 
+async def upload_media_to_blossom(
+    client: httpx.AsyncClient,
+    media_url: str,
+    media_type: str,  # "video" or "image"
+    public_key_hex: str,
+    secret_key_hex: str,
+    width: Optional[int] = None,
+    height: Optional[int] = None,
+) -> dict:
+    """
+    Upload a single media item to Blossom.
+    Returns dict with url, hash, size, mime_type, width, height.
+    """
+    # Resolve ytdl: URLs for videos
+    if media_url.startswith("ytdl:"):
+        print(f"Resolving ytdl URL: {media_url}")
+        media_url = resolve_ytdl_url(media_url)
+        print(f"Resolved to: {media_url}")
+
+    # Download the media to calculate hash
+    response = await client.get(media_url, follow_redirects=True)
+    response.raise_for_status()
+    content = response.content
+    file_hash = hashlib.sha256(content).hexdigest()
+    file_size = len(content)
+
+    # Determine content type
+    content_type = response.headers.get("content-type", "")
+    if media_type == "video":
+        mime_type = content_type if "video" in content_type else "video/mp4"
+    else:
+        mime_type = content_type if "image" in content_type else "image/jpeg"
+
+    # Create Blossom auth header
+    auth_header = create_blossom_auth_event(public_key_hex, secret_key_hex, file_hash)
+
+    if media_type == "video":
+        # Use backend streaming upload for videos
+        upload_response = await client.post(
+            f"{BACKEND_URL}/stream-upload",
+            json={
+                "video_url": media_url,
+                "auth_header": auth_header,
+            },
+            timeout=300.0,
+        )
+
+        if upload_response.status_code != 200:
+            raise Exception(f"Upload failed: {upload_response.text}")
+
+        upload_data = upload_response.json()
+        blossom_url = upload_data["blossom_url"]
+        mime_type = upload_data.get("mime_type", mime_type)
+    else:
+        # Direct upload for images
+        upload_response = await client.put(
+            f"{BLOSSOM_SERVER}/upload",
+            content=content,
+            headers={
+                "Authorization": auth_header,
+                "Content-Type": mime_type,
+                "X-SHA-256": file_hash,
+            },
+        )
+
+        if upload_response.status_code not in (200, 201):
+            raise Exception(f"Upload failed: {upload_response.text}")
+
+        upload_data = upload_response.json()
+        blossom_url = upload_data.get("url") or f"{BLOSSOM_SERVER}/{file_hash}"
+
+    return {
+        "url": blossom_url,
+        "hash": file_hash,
+        "size": file_size,
+        "mime_type": mime_type,
+        "width": width,
+        "height": height,
+    }
+
+
 async def process_task(task: dict) -> None:
-    """Process a single video task."""
+    """Process a single post task (reel, image, or carousel)."""
     task_id = task["id"]
     job_id = task["job_id"]
+    post_type = task.get("post_type", "reel")
 
-    print(f"Processing task {task_id}")
+    print(f"Processing task {task_id} (type: {post_type})")
 
     try:
         # Update status to uploading
@@ -377,59 +462,54 @@ async def process_task(task: dict) -> None:
         secret_key_hex = task["secret_key_hex"]
         public_key_hex = task["public_key_hex"]
 
-        # Resolve ytdl: URLs to actual video URLs
-        video_url = task["instagram_url"]
-        if video_url.startswith("ytdl:"):
-            print(f"Resolving ytdl URL: {video_url}")
-            video_url = resolve_ytdl_url(video_url)
-            print(f"Resolved to: {video_url}")
+        # Parse media items
+        media_items_json = task.get("media_items")
+        if media_items_json:
+            media_items = json.loads(media_items_json)
+        else:
+            # Backwards compatibility: single video
+            media_items = [{
+                "url": task["instagram_url"],
+                "media_type": "video",
+                "width": task.get("width"),
+                "height": task.get("height"),
+            }]
 
-        # We need to first fetch the video to get its hash for Blossom auth
-        # The backend will handle the streaming upload
+        # Upload all media items
+        media_uploads = []
         async with httpx.AsyncClient(timeout=300.0) as client:
-            # First, download the video to calculate hash
-            video_response = await client.get(video_url, follow_redirects=True)
-            video_response.raise_for_status()
-            video_content = video_response.content
-            file_hash = hashlib.sha256(video_content).hexdigest()
-            file_size = len(video_content)
+            for item in media_items:
+                print(f"Uploading {item['media_type']} for task {task_id}")
+                upload_result = await upload_media_to_blossom(
+                    client=client,
+                    media_url=item["url"],
+                    media_type=item["media_type"],
+                    public_key_hex=public_key_hex,
+                    secret_key_hex=secret_key_hex,
+                    width=item.get("width"),
+                    height=item.get("height"),
+                )
+                media_uploads.append(upload_result)
 
-            # Create Blossom auth header
-            auth_header = create_blossom_auth_event(public_key_hex, secret_key_hex, file_hash)
-
-            # Upload to Blossom via backend
-            upload_response = await client.post(
-                f"{BACKEND_URL}/stream-upload",
-                json={
-                    "video_url": video_url,  # Use resolved URL
-                    "auth_header": auth_header,
-                },
-                timeout=300.0,
-            )
-
-            if upload_response.status_code != 200:
-                raise Exception(f"Upload failed: {upload_response.text}")
-
-            upload_data = upload_response.json()
-            blossom_url = upload_data["blossom_url"]
-            mime_type = upload_data.get("mime_type", "video/mp4")
+        # Get primary blossom URL (first item)
+        primary_blossom_url = media_uploads[0]["url"] if media_uploads else None
+        all_blossom_urls = [m["url"] for m in media_uploads]
 
         # Update status to publishing
-        update_task_status(task_id, "publishing", blossom_url=blossom_url)
+        update_task_status(
+            task_id,
+            "publishing",
+            blossom_url=primary_blossom_url,
+            blossom_urls=json.dumps(all_blossom_urls) if len(all_blossom_urls) > 1 else None,
+        )
 
-        # Create and sign Nostr event
-        event = create_video_event(
+        # Create and sign Nostr event with all media
+        event = create_post_event(
             public_key_hex=public_key_hex,
             secret_key_hex=secret_key_hex,
-            blossom_url=blossom_url,
+            media_uploads=media_uploads,
             caption=task.get("caption"),
             original_date=task.get("original_date"),
-            width=task.get("width"),
-            height=task.get("height"),
-            duration=task.get("duration"),
-            file_hash=file_hash,
-            file_size=file_size,
-            mime_type=mime_type,
         )
 
         # Publish to relays
@@ -447,10 +527,11 @@ async def process_task(task: dict) -> None:
         update_task_status(
             task_id,
             "complete",
-            blossom_url=blossom_url,
+            blossom_url=primary_blossom_url,
+            blossom_urls=json.dumps(all_blossom_urls) if len(all_blossom_urls) > 1 else None,
             nostr_event_id=event["id"],
         )
-        print(f"Task {task_id} completed successfully")
+        print(f"Task {task_id} completed successfully ({len(media_uploads)} media items)")
 
     except Exception as e:
         error_msg = str(e)

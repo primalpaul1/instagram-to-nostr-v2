@@ -64,6 +64,7 @@ def update_task_status(
     task_id: str,
     status: str,
     blossom_url: Optional[str] = None,
+    blossom_urls: Optional[str] = None,  # JSON string for multi-media
     nostr_event_id: Optional[str] = None,
     error: Optional[str] = None,
     increment_retry: bool = False,
@@ -74,20 +75,20 @@ def update_task_status(
             conn.execute(
                 """
                 UPDATE video_tasks
-                SET status = ?, blossom_url = ?, nostr_event_id = ?, error = ?,
+                SET status = ?, blossom_url = ?, blossom_urls = ?, nostr_event_id = ?, error = ?,
                     retry_count = retry_count + 1
                 WHERE id = ?
                 """,
-                (status, blossom_url, nostr_event_id, error, task_id),
+                (status, blossom_url, blossom_urls, nostr_event_id, error, task_id),
             )
         else:
             conn.execute(
                 """
                 UPDATE video_tasks
-                SET status = ?, blossom_url = ?, nostr_event_id = ?, error = ?
+                SET status = ?, blossom_url = ?, blossom_urls = ?, nostr_event_id = ?, error = ?
                 WHERE id = ?
                 """,
-                (status, blossom_url, nostr_event_id, error, task_id),
+                (status, blossom_url, blossom_urls, nostr_event_id, error, task_id),
             )
 
 

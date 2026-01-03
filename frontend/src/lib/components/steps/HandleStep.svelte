@@ -16,6 +16,7 @@
   let loading = false;
   let videoCount = 0;
   let fetchedVideos: any[] = [];
+  let fetchedPosts: any[] = [];
   let fetchedProfile: any = null;
   let abortController: AbortController | null = null;
 
@@ -135,18 +136,22 @@
                 if (data.videos) {
                   fetchedVideos = data.videos;
                 }
+                if (data.posts) {
+                  fetchedPosts = data.posts;
+                }
                 if (data.profile) {
                   fetchedProfile = data.profile;
                 }
               }
 
               if (data.done) {
-                if (data.videos.length === 0) {
-                  throw new Error('No videos found for this account');
+                if ((!data.videos || data.videos.length === 0) && (!data.posts || data.posts.length === 0)) {
+                  throw new Error('No content found for this account');
                 }
 
                 wizard.setHandle(cleanHandle);
-                wizard.setVideos(data.videos.map((v: any) => ({ ...v, selected: false })));
+                wizard.setVideos((data.videos || []).map((v: any) => ({ ...v, selected: false })));
+                wizard.setPosts((data.posts || []).map((p: any) => ({ ...p, selected: false })));
                 if (data.profile) {
                   wizard.setProfile(data.profile);
                 }
@@ -176,13 +181,14 @@
   }
 
   function handlePause() {
-    if (!abortController || fetchedVideos.length === 0) return;
+    if (!abortController || (fetchedVideos.length === 0 && fetchedPosts.length === 0)) return;
 
     const cleanHandle = handle.replace('@', '').trim();
     abortController.abort();
 
     wizard.setHandle(cleanHandle);
     wizard.setVideos(fetchedVideos.map((v: any) => ({ ...v, selected: false })));
+    wizard.setPosts(fetchedPosts.map((p: any) => ({ ...p, selected: false })));
     if (fetchedProfile) {
       wizard.setProfile(fetchedProfile);
     }

@@ -31,6 +31,27 @@ BLOSSOM_SERVER = os.getenv("BLOSSOM_SERVER", "https://blossom.primal.net")
 RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY", "")
 
 
+class MediaItem(BaseModel):
+    """Individual media item (image or video) within a post."""
+    url: str
+    media_type: str  # "image" or "video"
+    width: Optional[int] = None
+    height: Optional[int] = None
+    duration: Optional[float] = None  # Only for videos
+    thumbnail_url: Optional[str] = None
+
+
+class PostMetadata(BaseModel):
+    """Metadata for an Instagram post (reel, image, or carousel)."""
+    id: str
+    post_type: str  # "reel", "image", or "carousel"
+    caption: Optional[str] = None
+    original_date: Optional[str] = None
+    thumbnail_url: Optional[str] = None
+    media_items: list[MediaItem]  # Single item for reel/image, multiple for carousel
+
+
+# Keep VideoMetadata for backwards compatibility
 class VideoMetadata(BaseModel):
     url: str
     filename: str
@@ -56,7 +77,8 @@ class FetchVideosRequest(BaseModel):
 
 
 class FetchVideosResponse(BaseModel):
-    videos: list[VideoMetadata]
+    videos: list[VideoMetadata]  # Kept for backwards compatibility (reels only)
+    posts: list[PostMetadata] = []  # All posts including images and carousels
     handle: str
     profile: Optional[ProfileMetadata] = None
 
@@ -87,6 +109,49 @@ async def fetch_videos_stream(handle: str):
     """
     handle = handle.lstrip("@")
 
+    def extract_caption(node):
+        """Extract caption text from node."""
+        caption_obj = node.get("caption")
+        if caption_obj:
+            return caption_obj.get("text") if isinstance(caption_obj, dict) else caption_obj
+        return None
+
+    def extract_date(node):
+        """Extract and format original date from node."""
+        taken_at = node.get("taken_at")
+        if taken_at:
+            from datetime import datetime
+            try:
+                return datetime.fromtimestamp(int(taken_at)).isoformat()
+            except (ValueError, TypeError):
+                pass
+        return None
+
+    def extract_media_item(item, is_video=False):
+        """Extract media item data from a node or carousel item."""
+        media_item = {"media_type": "video" if is_video else "image"}
+
+        if is_video:
+            video_versions = item.get("video_versions", [])
+            if video_versions:
+                media_item["url"] = video_versions[0].get("url")
+                media_item["width"] = video_versions[0].get("width")
+                media_item["height"] = video_versions[0].get("height")
+            media_item["duration"] = item.get("video_duration")
+        else:
+            image_versions = item.get("image_versions2", {}).get("candidates", [])
+            if image_versions:
+                media_item["url"] = image_versions[0].get("url")
+                media_item["width"] = image_versions[0].get("width")
+                media_item["height"] = image_versions[0].get("height")
+
+        # Thumbnail
+        image_versions = item.get("image_versions2", {}).get("candidates", [])
+        if image_versions:
+            media_item["thumbnail_url"] = image_versions[0].get("url")
+
+        return media_item if media_item.get("url") else None
+
     async def generate():
         if not RAPIDAPI_KEY:
             yield f"data: {json.dumps({'error': 'RAPIDAPI_KEY not configured'})}\n\n"
@@ -95,7 +160,8 @@ async def fetch_videos_stream(handle: str):
         try:
             async with httpx.AsyncClient(timeout=60.0) as client:
                 profile = None
-                videos = []
+                videos = []  # Backwards compatibility - reels only
+                posts = []   # All posts including images and carousels
                 max_id = ""
                 max_pages = 50
                 page = 0
@@ -143,54 +209,83 @@ async def fetch_videos_stream(handle: str):
                                 "profile_picture_url": profile_pic,
                             }
 
-                    # Process edges for videos
+                    # Process ALL edges (not just videos)
                     for edge in edges:
                         node = edge.get("node", {})
-                        video_versions = node.get("video_versions", [])
-                        if not video_versions:
-                            continue
+                        code = node.get("code", node.get("pk", "post"))
+                        caption = extract_caption(node)
+                        original_date = extract_date(node)
 
-                        video_url = video_versions[0].get("url") if video_versions else None
-                        if not video_url:
-                            continue
-
-                        width = video_versions[0].get("width")
-                        height = video_versions[0].get("height")
-
-                        caption = None
-                        caption_obj = node.get("caption")
-                        if caption_obj:
-                            caption = caption_obj.get("text") if isinstance(caption_obj, dict) else caption_obj
-
-                        taken_at = node.get("taken_at")
-                        original_date = None
-                        if taken_at:
-                            from datetime import datetime
-                            try:
-                                original_date = datetime.fromtimestamp(int(taken_at)).isoformat()
-                            except (ValueError, TypeError):
-                                pass
-
+                        # Get thumbnail from main node
                         thumbnail_url = None
                         image_versions = node.get("image_versions2", {}).get("candidates", [])
                         if image_versions:
                             thumbnail_url = image_versions[0].get("url")
 
-                        code = node.get("code", node.get("pk", "video"))
+                        # Determine post type and extract media
+                        media_type = node.get("media_type", 0)
+                        carousel_media = node.get("carousel_media", [])
+                        video_versions = node.get("video_versions", [])
 
-                        videos.append({
-                            "url": video_url,
-                            "filename": f"{code}.mp4",
-                            "caption": caption,
-                            "original_date": original_date,
-                            "width": width,
-                            "height": height,
-                            "duration": node.get("video_duration"),
-                            "thumbnail_url": thumbnail_url,
-                        })
+                        if carousel_media:
+                            # Carousel post - multiple media items
+                            media_items = []
+                            for item in carousel_media:
+                                item_has_video = bool(item.get("video_versions"))
+                                media_item = extract_media_item(item, is_video=item_has_video)
+                                if media_item:
+                                    media_items.append(media_item)
 
-                    # Send progress update with videos so pause button can access them
-                    yield f"data: {json.dumps({'progress': True, 'count': len(videos), 'videos': videos, 'profile': profile})}\n\n"
+                            if media_items:
+                                posts.append({
+                                    "id": code,
+                                    "post_type": "carousel",
+                                    "caption": caption,
+                                    "original_date": original_date,
+                                    "thumbnail_url": thumbnail_url,
+                                    "media_items": media_items,
+                                })
+
+                        elif video_versions:
+                            # Video/Reel post
+                            media_item = extract_media_item(node, is_video=True)
+                            if media_item:
+                                posts.append({
+                                    "id": code,
+                                    "post_type": "reel",
+                                    "caption": caption,
+                                    "original_date": original_date,
+                                    "thumbnail_url": thumbnail_url,
+                                    "media_items": [media_item],
+                                })
+
+                                # Also add to videos for backwards compatibility
+                                videos.append({
+                                    "url": media_item["url"],
+                                    "filename": f"{code}.mp4",
+                                    "caption": caption,
+                                    "original_date": original_date,
+                                    "width": media_item.get("width"),
+                                    "height": media_item.get("height"),
+                                    "duration": media_item.get("duration"),
+                                    "thumbnail_url": thumbnail_url,
+                                })
+
+                        else:
+                            # Image post
+                            media_item = extract_media_item(node, is_video=False)
+                            if media_item:
+                                posts.append({
+                                    "id": code,
+                                    "post_type": "image",
+                                    "caption": caption,
+                                    "original_date": original_date,
+                                    "thumbnail_url": thumbnail_url,
+                                    "media_items": [media_item],
+                                })
+
+                    # Send progress update with all content
+                    yield f"data: {json.dumps({'progress': True, 'count': len(posts), 'videos': videos, 'posts': posts, 'profile': profile})}\n\n"
 
                     # Check for next page
                     page_info = result.get("page_info", {})
@@ -207,7 +302,7 @@ async def fetch_videos_stream(handle: str):
                 if not profile:
                     profile = {"username": handle}
 
-                yield f"data: {json.dumps({'done': True, 'videos': videos, 'handle': handle, 'profile': profile})}\n\n"
+                yield f"data: {json.dumps({'done': True, 'videos': videos, 'posts': posts, 'handle': handle, 'profile': profile})}\n\n"
 
         except Exception as e:
             yield f"data: {json.dumps({'error': str(e)})}\n\n"

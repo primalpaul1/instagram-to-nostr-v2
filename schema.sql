@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
--- Individual video tasks within a job
+-- Individual post tasks within a job
 CREATE TABLE IF NOT EXISTS video_tasks (
   id TEXT PRIMARY KEY,
   job_id TEXT NOT NULL,
@@ -26,8 +26,11 @@ CREATE TABLE IF NOT EXISTS video_tasks (
   height INTEGER,
   duration REAL,
   thumbnail_url TEXT,
+  post_type TEXT DEFAULT 'reel' CHECK (post_type IN ('reel', 'image', 'carousel')),
+  media_items TEXT,  -- JSON array of media items for carousels
   status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'uploading', 'publishing', 'complete', 'error')),
   blossom_url TEXT,
+  blossom_urls TEXT,  -- JSON array of blossom URLs for multi-media posts
   nostr_event_id TEXT,
   error TEXT,
   retry_count INTEGER DEFAULT 0,

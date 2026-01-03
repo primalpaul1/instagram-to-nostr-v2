@@ -11,7 +11,28 @@ export type WizardStep =
   | 'complete';
 
 export type AuthMode = 'generate' | 'nip46';
+export type PostType = 'reel' | 'image' | 'carousel';
 
+export interface MediaItemInfo {
+  url: string;
+  media_type: 'image' | 'video';
+  width?: number;
+  height?: number;
+  duration?: number;
+  thumbnail_url?: string;
+}
+
+export interface PostInfo {
+  id: string;
+  post_type: PostType;
+  caption?: string;
+  original_date?: string;
+  thumbnail_url?: string;
+  media_items: MediaItemInfo[];
+  selected: boolean;
+}
+
+// Keep VideoInfo for backwards compatibility
 export interface VideoInfo {
   url: string;
   filename: string;
@@ -44,7 +65,8 @@ export interface WizardState {
   step: WizardStep;
   handle: string;
   keyPair: KeyPair | null;
-  videos: VideoInfo[];
+  videos: VideoInfo[];  // Backwards compatibility - reels only
+  posts: PostInfo[];    // All posts including images and carousels
   profile: ProfileInfo | null;
   jobId: string | null;
   error: string | null;
@@ -59,6 +81,7 @@ const initialState: WizardState = {
   handle: '',
   keyPair: null,
   videos: [],
+  posts: [],
   profile: null,
   jobId: null,
   error: null,
@@ -78,13 +101,23 @@ function createWizardStore() {
     setHandle: (handle: string) => update(s => ({ ...s, handle })),
     setKeyPair: (keyPair: KeyPair) => update(s => ({ ...s, keyPair })),
     setVideos: (videos: VideoInfo[]) => update(s => ({ ...s, videos })),
+    setPosts: (posts: PostInfo[]) => update(s => ({ ...s, posts })),
     setProfile: (profile: ProfileInfo | null) => update(s => ({ ...s, profile })),
+    // Toggle video (backwards compatibility)
     toggleVideo: (url: string) => update(s => ({
       ...s,
       videos: s.videos.map(v =>
         v.url === url ? { ...v, selected: !v.selected } : v
       )
     })),
+    // Toggle post by ID
+    togglePost: (id: string) => update(s => ({
+      ...s,
+      posts: s.posts.map(p =>
+        p.id === id ? { ...p, selected: !p.selected } : p
+      )
+    })),
+    // Select/deselect all videos (backwards compatibility)
     selectAll: () => update(s => ({
       ...s,
       videos: s.videos.map(v => ({ ...v, selected: true }))
@@ -92,6 +125,19 @@ function createWizardStore() {
     deselectAll: () => update(s => ({
       ...s,
       videos: s.videos.map(v => ({ ...v, selected: false }))
+    })),
+    // Select/deselect posts by type
+    selectAllPosts: (postType?: PostType) => update(s => ({
+      ...s,
+      posts: s.posts.map(p =>
+        !postType || p.post_type === postType ? { ...p, selected: true } : p
+      )
+    })),
+    deselectAllPosts: (postType?: PostType) => update(s => ({
+      ...s,
+      posts: s.posts.map(p =>
+        !postType || p.post_type === postType ? { ...p, selected: false } : p
+      )
     })),
     setJobId: (jobId: string) => update(s => ({ ...s, jobId })),
     setError: (error: string | null) => update(s => ({ ...s, error })),
@@ -118,4 +164,36 @@ export const selectedVideos = derived(
 export const selectedCount = derived(
   selectedVideos,
   $selected => $selected.length
+);
+
+// Derived stores for posts
+export const selectedPosts = derived(
+  wizard,
+  $wizard => $wizard.posts.filter(p => p.selected)
+);
+
+export const selectedPostsCount = derived(
+  selectedPosts,
+  $selected => $selected.length
+);
+
+// Filter posts by type
+export const reelPosts = derived(
+  wizard,
+  $wizard => $wizard.posts.filter(p => p.post_type === 'reel')
+);
+
+export const imagePosts = derived(
+  wizard,
+  $wizard => $wizard.posts.filter(p => p.post_type === 'image' || p.post_type === 'carousel')
+);
+
+export const selectedReels = derived(
+  wizard,
+  $wizard => $wizard.posts.filter(p => p.post_type === 'reel' && p.selected)
+);
+
+export const selectedImagePosts = derived(
+  wizard,
+  $wizard => $wizard.posts.filter(p => (p.post_type === 'image' || p.post_type === 'carousel') && p.selected)
 );

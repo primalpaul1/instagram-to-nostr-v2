@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { wizard, selectedVideos } from '$lib/stores/wizard';
+  import { wizard, selectedPosts, selectedReels, selectedImagePosts } from '$lib/stores/wizard';
   import { hexToNpub } from '$lib/nip46';
 
   let loading = false;
@@ -8,6 +8,9 @@
   $: displayNpub = isNip46Mode
     ? ($wizard.nip46Pubkey ? hexToNpub($wizard.nip46Pubkey) : '')
     : $wizard.keyPair?.npub || '';
+
+  $: reelCount = $selectedReels.length;
+  $: imagePostCount = $selectedImagePosts.length;
 
   function handleBack() {
     wizard.setStep('videos');
@@ -24,15 +27,13 @@
       if (isNip46Mode) {
         wizard.setStep('progress-nip46');
       } else {
-        const videos = $selectedVideos.map(v => ({
-          url: v.url,
-          filename: v.filename,
-          caption: v.caption,
-          original_date: v.original_date,
-          width: v.width,
-          height: v.height,
-          duration: v.duration,
-          thumbnail_url: v.thumbnail_url
+        const posts = $selectedPosts.map(p => ({
+          id: p.id,
+          post_type: p.post_type,
+          caption: p.caption,
+          original_date: p.original_date,
+          thumbnail_url: p.thumbnail_url,
+          media_items: p.media_items
         }));
 
         const response = await fetch('/api/jobs', {
@@ -42,7 +43,7 @@
             handle: $wizard.handle,
             publicKey: $wizard.keyPair?.publicKey,
             secretKey: $wizard.keyPair?.secretKey,
-            videos,
+            posts,
             profile: $wizard.profile
           })
         });
@@ -95,23 +96,48 @@
     {/if}
     <div class="divider"></div>
     <div class="summary-item highlight">
-      <span class="summary-label">Videos</span>
-      <span class="video-count">{$selectedVideos.length}</span>
+      <span class="summary-label">Content</span>
+      <span class="content-counts">
+        {#if reelCount > 0}
+          <span class="count-badge reels">{reelCount} reel{reelCount !== 1 ? 's' : ''}</span>
+        {/if}
+        {#if imagePostCount > 0}
+          <span class="count-badge posts">{imagePostCount} post{imagePostCount !== 1 ? 's' : ''}</span>
+        {/if}
+      </span>
     </div>
   </div>
 
   <div class="preview-section">
     <div class="preview-header">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <polygon points="5 3 19 12 5 21 5 3"/>
+        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+        <circle cx="8.5" cy="8.5" r="1.5"/>
+        <polyline points="21 15 16 10 5 21"/>
       </svg>
-      <span>Selected videos</span>
+      <span>Selected content</span>
     </div>
     <div class="preview-list">
-      {#each $selectedVideos as video, i}
+      {#each $selectedPosts as post, i}
         <div class="preview-item">
           <span class="item-number">{i + 1}</span>
-          <span class="item-title">{video.caption?.slice(0, 45) || 'Untitled video'}{(video.caption?.length ?? 0) > 45 ? '...' : ''}</span>
+          <span class="item-type" class:reel={post.post_type === 'reel'} class:carousel={post.post_type === 'carousel'}>
+            {#if post.post_type === 'reel'}
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <polygon points="5 3 19 12 5 21 5 3"/>
+              </svg>
+            {:else if post.post_type === 'carousel'}
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <rect x="2" y="2" width="13" height="13" rx="2"/>
+                <rect x="9" y="9" width="13" height="13" rx="2"/>
+              </svg>
+            {:else}
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <rect x="3" y="3" width="18" height="18" rx="2"/>
+              </svg>
+            {/if}
+          </span>
+          <span class="item-title">{post.caption?.slice(0, 40) || 'Untitled'}{(post.caption?.length ?? 0) > 40 ? '...' : ''}</span>
         </div>
       {/each}
     </div>
@@ -126,7 +152,7 @@
       <span>What happens next</span>
     </div>
     <ul class="info-list">
-      <li>Videos download from Instagram</li>
+      <li>Content downloads from Instagram</li>
       <li>Upload to Blossom media server</li>
       <li>Publish to Nostr relays</li>
       {#if isNip46Mode}
@@ -248,10 +274,26 @@
     font-weight: 600;
   }
 
-  .video-count {
-    font-size: 1.5rem;
-    font-weight: 700;
+  .content-counts {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .count-badge {
+    font-size: 0.875rem;
+    font-weight: 600;
+    padding: 0.25rem 0.625rem;
+    border-radius: 1rem;
+  }
+
+  .count-badge.reels {
+    background: rgba(var(--accent-rgb), 0.2);
     color: var(--accent);
+  }
+
+  .count-badge.posts {
+    background: rgba(var(--success-rgb), 0.2);
+    color: var(--success);
   }
 
   .preview-section {
@@ -302,8 +344,26 @@
     min-width: 1.25rem;
   }
 
+  .item-type {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.25rem;
+    height: 1.25rem;
+    color: var(--text-muted);
+  }
+
+  .item-type.reel {
+    color: var(--accent);
+  }
+
+  .item-type.carousel {
+    color: var(--success);
+  }
+
   .item-title {
     color: var(--text-primary);
+    flex: 1;
   }
 
   .info-card {
