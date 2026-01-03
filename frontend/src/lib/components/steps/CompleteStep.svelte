@@ -84,10 +84,6 @@
           <h4>You own your content</h4>
           <p>Congratulations! Your posts now live on the decentralized web — free from algorithms, censorship, and corporate control. Forever.</p>
         </div>
-        <div class="freedom-badge">
-          <span class="badge-dot"></span>
-          Decentralized
-        </div>
       </div>
 
       <div class="freedom-card tell-friends">
@@ -111,45 +107,52 @@
       </div>
     </div>
   {:else}
-    <div class="next-steps">
-      <h3>What's next?</h3>
-      <div class="step-cards">
-        <div class="step-card">
-          <div class="step-icon keys">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 11-7.778 7.778 5.5 5.5 0 017.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>
-            </svg>
-          </div>
-          <div class="step-info">
-            <strong>Secure your keys</strong>
-            <span>Store your secret key (nsec) in a password manager</span>
-          </div>
+    <div class="freedom-section">
+      <div class="freedom-card own-content">
+        <div class="freedom-glow"></div>
+        <div class="freedom-icon">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+            <path d="M2 17l10 5 10-5"/>
+            <path d="M2 12l10 5 10-5"/>
+          </svg>
         </div>
-        <div class="step-card">
-          <div class="step-icon explore">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="10"/>
-              <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/>
-            </svg>
-          </div>
-          <div class="step-info">
-            <strong>Explore Nostr</strong>
-            <span>Try <a href="https://damus.io" target="_blank">Damus</a>, <a href="https://snort.social" target="_blank">Snort</a>, or <a href="https://nostrudel.ninja" target="_blank">noStrudel</a></span>
-          </div>
+        <div class="freedom-content">
+          <h4>You own your content</h4>
+          <p>Congratulations! Your posts now live on the decentralized web — free from algorithms, censorship, and corporate control. Forever.</p>
         </div>
-        <div class="step-card">
-          <div class="step-icon connect">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
-              <circle cx="9" cy="7" r="4"/>
-              <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/>
-            </svg>
-          </div>
-          <div class="step-info">
-            <strong>Follow people</strong>
-            <span>Find friends and interesting accounts on the decentralized network</span>
-          </div>
+      </div>
+
+      <div class="freedom-card keys-card">
+        <div class="freedom-icon keys">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 11-7.778 7.778 5.5 5.5 0 017.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>
+          </svg>
         </div>
+        <div class="freedom-content">
+          <h4>Secure your keys</h4>
+          <p>Your secret key (nsec) is like a password that can never be reset. Store it safely in a password manager — if you lose it, you lose access forever.</p>
+        </div>
+      </div>
+
+      <div class="freedom-card tell-friends">
+        <div class="freedom-icon share">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8"/>
+            <polyline points="16 6 12 2 8 6"/>
+            <line x1="12" y1="2" x2="12" y2="15"/>
+          </svg>
+        </div>
+        <div class="freedom-content">
+          <h4>Tell your friends</h4>
+          <p>Help others break free from Instagram. Share the migration tool and grow the decentralized community.</p>
+        </div>
+        <a href="https://instatoprimal.com" class="share-link" target="_blank" rel="noopener noreferrer">
+          <span>instatoprimal.com</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M7 17L17 7M17 7H7M17 7v10"/>
+          </svg>
+        </a>
       </div>
     </div>
   {/if}
@@ -345,86 +348,6 @@
     }
   }
 
-  .next-steps {
-    text-align: left;
-    margin-bottom: 2rem;
-  }
-
-  .next-steps h3 {
-    font-size: 0.8125rem;
-    font-weight: 600;
-    color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    margin-bottom: 1rem;
-  }
-
-  .step-cards {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-  }
-
-  .step-card {
-    display: flex;
-    align-items: flex-start;
-    gap: 1rem;
-    padding: 1rem;
-    background: var(--bg-tertiary);
-    border: 1px solid var(--border);
-    border-radius: 0.75rem;
-  }
-
-  .step-icon {
-    width: 2.5rem;
-    height: 2.5rem;
-    border-radius: 0.5rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-  }
-
-  .step-icon.keys {
-    background: rgba(255, 176, 32, 0.15);
-    color: var(--warning);
-  }
-
-  .step-icon.explore {
-    background: rgba(var(--accent-rgb), 0.15);
-    color: var(--accent);
-  }
-
-  .step-icon.connect {
-    background: rgba(var(--success-rgb), 0.15);
-    color: var(--success);
-  }
-
-  .step-info {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-  }
-
-  .step-info strong {
-    font-size: 0.9375rem;
-    color: var(--text-primary);
-  }
-
-  .step-info span {
-    font-size: 0.8125rem;
-    color: var(--text-secondary);
-  }
-
-  .step-info a {
-    color: var(--accent);
-    text-decoration: none;
-  }
-
-  .step-info a:hover {
-    text-decoration: underline;
-  }
-
   .restart-btn {
     display: inline-flex;
     align-items: center;
@@ -521,6 +444,17 @@
     box-shadow: 0 4px 20px rgba(var(--success-rgb), 0.3);
   }
 
+  .freedom-icon.keys {
+    background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%);
+    box-shadow: 0 4px 20px rgba(245, 158, 11, 0.3);
+  }
+
+  .freedom-card.keys-card {
+    animation-delay: 0.2s;
+    border-color: rgba(245, 158, 11, 0.3);
+    background: linear-gradient(135deg, rgba(245, 158, 11, 0.08) 0%, var(--bg-tertiary) 60%);
+  }
+
   .freedom-content h4 {
     font-size: 1.125rem;
     font-weight: 700;
@@ -534,35 +468,6 @@
     color: var(--text-secondary);
     line-height: 1.5;
     margin: 0;
-  }
-
-  .freedom-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem 0.875rem;
-    background: rgba(var(--success-rgb), 0.12);
-    border: 1px solid rgba(var(--success-rgb), 0.25);
-    border-radius: 2rem;
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: var(--success);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    width: fit-content;
-  }
-
-  .badge-dot {
-    width: 6px;
-    height: 6px;
-    background: var(--success);
-    border-radius: 50%;
-    animation: dotPulse 2s ease-in-out infinite;
-  }
-
-  @keyframes dotPulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.4; }
   }
 
   .share-link {
