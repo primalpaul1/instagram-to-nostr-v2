@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { wizard, selectedPosts, type PostInfo, type MediaItemInfo } from '$lib/stores/wizard';
+  import { wizard, selectedPosts, type PostInfo, type MediaItemInfo, getMediaCache, clearMediaCache } from '$lib/stores/wizard';
   import {
     createBlossomAuthEvent,
     createMultiMediaPostEvent,
@@ -24,10 +24,11 @@
   }
 
   let tasks: TaskStatus[] = [];
-  let currentTaskIndex = 0;
   let isProcessing = false;
+  let activeIndices: Set<number> = new Set();
 
   const BLOSSOM_SERVER = 'https://blossom.primal.net';
+  const CONCURRENCY = 2; // Process 2 posts at a time
 
   $: completedCount = tasks.filter(t => t.status === 'complete').length;
   $: totalCount = tasks.length;
@@ -47,6 +48,7 @@
     if ($wizard.nip46Connection) {
       closeConnection($wizard.nip46Connection);
     }
+    clearMediaCache();
   });
 
   async function startMigration() {
@@ -54,15 +56,33 @@
     isProcessing = true;
 
     try {
-      for (let i = 0; i < tasks.length; i++) {
-        currentTaskIndex = i;
-        await processPost(i);
+      // Create a queue of task indices
+      const queue: number[] = [...Array(tasks.length).keys()];
+
+      // Process queue with worker functions
+      async function processQueue() {
+        while (queue.length > 0) {
+          const index = queue.shift();
+          if (index !== undefined) {
+            activeIndices.add(index);
+            activeIndices = activeIndices; // Trigger reactivity
+            await processPost(index);
+            activeIndices.delete(index);
+            activeIndices = activeIndices;
+          }
+        }
       }
+
+      // Start CONCURRENCY number of workers
+      const workers = Array(CONCURRENCY).fill(null).map(() => processQueue());
+      await Promise.all(workers);
+
       wizard.setStep('complete');
     } catch (err) {
       console.error('Migration error:', err);
     } finally {
       isProcessing = false;
+      clearMediaCache();
     }
   }
 
@@ -70,18 +90,23 @@
     mediaItem: MediaItemInfo,
     pubkey: string
   ): Promise<MediaUpload> {
-    // Download the media
-    const proxyResponse = await fetch('/api/proxy-video', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url: mediaItem.url })
-    });
+    // Check cache first (from pre-download)
+    let mediaData = getMediaCache(mediaItem.url);
 
-    if (!proxyResponse.ok) {
-      throw new Error(`Failed to download ${mediaItem.media_type}`);
+    if (!mediaData) {
+      // Download if not cached
+      const proxyResponse = await fetch('/api/proxy-video', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: mediaItem.url })
+      });
+
+      if (!proxyResponse.ok) {
+        throw new Error(`Failed to download ${mediaItem.media_type}`);
+      }
+
+      mediaData = await proxyResponse.arrayBuffer();
     }
-
-    const mediaData = await proxyResponse.arrayBuffer();
     const sha256 = await calculateSHA256(mediaData);
 
     // Create and sign auth event
@@ -130,9 +155,8 @@
 
     try {
       const mediaItems = task.post.media_items;
-      const mediaUploads: MediaUpload[] = [];
 
-      // Upload all media items
+      // Upload all media items (parallel for carousels)
       tasks[index] = {
         ...task,
         status: 'downloading',
@@ -140,16 +164,26 @@
       };
       tasks = [...tasks];
 
-      for (let i = 0; i < mediaItems.length; i++) {
+      // Track progress across parallel uploads
+      let completedUploads = 0;
+      const updateProgress = () => {
+        completedUploads++;
         tasks[index] = {
           ...tasks[index],
-          mediaProgress: { current: i + 1, total: mediaItems.length }
+          mediaProgress: { current: completedUploads, total: mediaItems.length }
         };
         tasks = [...tasks];
+      };
 
-        const upload = await uploadMediaItem(mediaItems[i], $wizard.nip46Pubkey);
-        mediaUploads.push(upload);
-      }
+      // Upload all items in parallel, preserving order
+      const uploadPromises = mediaItems.map((item, i) =>
+        uploadMediaItem(item, $wizard.nip46Pubkey!).then(upload => {
+          updateProgress();
+          return { index: i, upload };
+        })
+      );
+      const results = await Promise.all(uploadPromises);
+      const mediaUploads = results.sort((a, b) => a.index - b.index).map(r => r.upload);
 
       tasks[index] = {
         ...tasks[index],
@@ -262,7 +296,7 @@
         class="task-item"
         class:error={task.status === 'error'}
         class:complete={task.status === 'complete'}
-        class:active={i === currentTaskIndex && task.status !== 'complete' && task.status !== 'error'}
+        class:active={activeIndices.has(i) && task.status !== 'complete' && task.status !== 'error'}
       >
         <div class="task-status">
           {#if task.status === 'complete'}

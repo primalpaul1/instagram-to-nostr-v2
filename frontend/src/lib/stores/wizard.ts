@@ -76,6 +76,21 @@ export interface WizardState {
   nip46Pubkey: string | null;
 }
 
+// Media cache for pre-downloaded content (stored outside reactive state for performance)
+const mediaCache = new Map<string, ArrayBuffer>();
+
+export function setMediaCache(url: string, data: ArrayBuffer): void {
+  mediaCache.set(url, data);
+}
+
+export function getMediaCache(url: string): ArrayBuffer | undefined {
+  return mediaCache.get(url);
+}
+
+export function clearMediaCache(): void {
+  mediaCache.clear();
+}
+
 const initialState: WizardState = {
   step: 'handle',
   handle: '',

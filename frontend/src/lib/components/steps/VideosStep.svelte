@@ -1,6 +1,68 @@
 <script lang="ts">
-  import { wizard, reelPosts, imagePosts, selectedPosts, selectedPostsCount } from '$lib/stores/wizard';
-  import type { PostInfo } from '$lib/stores/wizard';
+  import { onDestroy } from 'svelte';
+  import { wizard, reelPosts, imagePosts, selectedPosts, selectedPostsCount, setMediaCache, getMediaCache } from '$lib/stores/wizard';
+  import type { PostInfo, MediaItemInfo } from '$lib/stores/wizard';
+
+  // Pre-download state
+  const MAX_CONCURRENT_DOWNLOADS = 3;
+  let downloadQueue: MediaItemInfo[] = [];
+  let activeDownloads = 0;
+  let downloadedUrls = new Set<string>();
+
+  // Watch for selection changes and queue downloads
+  $: {
+    const selected = $selectedPosts;
+    // Sort by date descending (latest first) and queue media items
+    const sortedPosts = [...selected].sort((a, b) => {
+      const dateA = a.original_date ? new Date(a.original_date).getTime() : 0;
+      const dateB = b.original_date ? new Date(b.original_date).getTime() : 0;
+      return dateB - dateA;
+    });
+
+    for (const post of sortedPosts) {
+      for (const media of post.media_items) {
+        if (!downloadedUrls.has(media.url) && !downloadQueue.some(m => m.url === media.url)) {
+          downloadQueue.push(media);
+        }
+      }
+    }
+    processDownloadQueue();
+  }
+
+  async function processDownloadQueue() {
+    while (downloadQueue.length > 0 && activeDownloads < MAX_CONCURRENT_DOWNLOADS) {
+      const media = downloadQueue.shift();
+      if (!media || downloadedUrls.has(media.url) || getMediaCache(media.url)) continue;
+
+      activeDownloads++;
+      downloadMedia(media).finally(() => {
+        activeDownloads--;
+        processDownloadQueue();
+      });
+    }
+  }
+
+  async function downloadMedia(media: MediaItemInfo) {
+    try {
+      const response = await fetch('/api/proxy-video', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: media.url })
+      });
+
+      if (response.ok) {
+        const data = await response.arrayBuffer();
+        setMediaCache(media.url, data);
+        downloadedUrls.add(media.url);
+      }
+    } catch (err) {
+      console.warn('Pre-download failed:', media.url, err);
+    }
+  }
+
+  onDestroy(() => {
+    downloadQueue = [];
+  });
 
   let activeTab: 'reels' | 'posts' = 'reels';
 
