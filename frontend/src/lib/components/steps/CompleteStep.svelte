@@ -24,44 +24,82 @@
       </svg>
     </div>
     <h2>Migration Complete!</h2>
-    <p class="subtitle">Your videos are now live on Nostr</p>
-  </div>
-
-  <div class="profile-card">
-    <div class="profile-label">Your Nostr Profile</div>
-    <div class="profile-key">
-      <span class="key-label">Public Key</span>
-      <code class="npub">{displayNpub}</code>
-    </div>
+    <p class="subtitle">Your content is now live on Nostr</p>
   </div>
 
   <a href={primalUrl} target="_blank" rel="noopener noreferrer" class="primal-cta">
-    <span class="cta-text">View on Primal</span>
+    <span class="cta-text">View on Primal Web</span>
     <svg class="cta-arrow" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
       <path d="M7 17L17 7M17 7H7M17 7v10"/>
     </svg>
   </a>
 
   {#if !isNip46Mode}
-    <div class="download-primal">
-      <div class="qr-section">
-        <div class="qr-wrapper">
-          <img
-            src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=https://primal.net/downloads&bgcolor=ffffff&color=000000"
-            alt="QR Code to download Primal"
-            width="180"
-            height="180"
-          />
+    <div class="whats-next-section">
+      <h3 class="section-title">What's next?</h3>
+
+      <div class="step-card">
+        <div class="step-number">1</div>
+        <div class="step-content">
+          <h4>Download Primal on your phone</h4>
+          <p>Get the app to access your content anywhere</p>
+
+          <div class="download-row">
+            <div class="qr-wrapper">
+              <img
+                src="https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=https://primal.net/downloads&bgcolor=ffffff&color=000000"
+                alt="QR Code to download Primal"
+                width="120"
+                height="120"
+              />
+            </div>
+            <div class="store-buttons">
+              <a href="https://apps.apple.com/us/app/primal/id1673134518" target="_blank" rel="noopener noreferrer" class="store-btn">
+                <svg width="20" height="24" viewBox="0 0 20 24" fill="currentColor">
+                  <path d="M16.52 12.46c-.03-2.59 2.11-3.84 2.21-3.9-1.21-1.76-3.08-2-3.75-2.03-1.58-.17-3.11.94-3.91.94-.82 0-2.06-.92-3.39-.9-1.72.03-3.33 1.02-4.22 2.57-1.82 3.14-.46 7.76 1.28 10.3.87 1.24 1.89 2.62 3.23 2.57 1.3-.05 1.79-.83 3.36-.83 1.56 0 2.01.83 3.37.8 1.4-.02 2.28-1.25 3.12-2.5 1-1.43 1.41-2.83 1.43-2.9-.03-.01-2.73-1.05-2.76-4.12h.03zM13.89 4.43c.7-.87 1.18-2.05 1.05-3.25-1.01.04-2.27.69-3 1.54-.64.76-1.22 2-1.07 3.17 1.14.08 2.31-.57 3.02-1.46z"/>
+                </svg>
+                <div class="store-text">
+                  <span class="store-label">Download on the</span>
+                  <span class="store-name">App Store</span>
+                </div>
+              </a>
+              <a href="https://play.google.com/store/apps/details?id=net.primal.android" target="_blank" rel="noopener noreferrer" class="store-btn">
+                <svg width="20" height="22" viewBox="0 0 20 22" fill="currentColor">
+                  <path d="M1 1.16v19.68c0 .67.74 1.07 1.32.71l16.36-9.84c.58-.35.58-1.17 0-1.51L2.32.36C1.74 0 1 .4 1 1.07v.09z"/>
+                </svg>
+                <div class="store-text">
+                  <span class="store-label">Get it on</span>
+                  <span class="store-name">Google Play</span>
+                </div>
+              </a>
+            </div>
+          </div>
         </div>
-        <div class="qr-info">
-          <h3>Get Primal</h3>
-          <p>Scan to download Primal and log in with your Primal Key</p>
-          <a href="https://primal.net/downloads" target="_blank" rel="noopener noreferrer" class="download-link">
-            Or visit primal.net/downloads
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/>
-              <polyline points="15 3 21 3 21 9"/>
-              <line x1="10" y1="14" x2="21" y2="3"/>
+      </div>
+
+      <div class="step-card">
+        <div class="step-number">2</div>
+        <div class="step-content">
+          <h4>Log in with your Primal Key</h4>
+          <p>Open Primal, tap "Login", then "Use login key" and paste your saved Primal Key</p>
+          <div class="key-reminder">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 11-7.778 7.778 5.5 5.5 0 017.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>
+            </svg>
+            <span>Make sure you saved your primal-key.txt file!</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="step-card">
+        <div class="step-number">3</div>
+        <div class="step-content">
+          <h4>Tell your friends!</h4>
+          <p>Help others break free from Instagram and own their content</p>
+          <a href="https://instatoprimal.com" class="share-link" target="_blank" rel="noopener noreferrer">
+            <span>instatoprimal.com</span>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <path d="M7 17L17 7M17 7H7M17 7v10"/>
             </svg>
           </a>
         </div>
@@ -83,55 +121,6 @@
         <div class="freedom-content">
           <h4>You own your content</h4>
           <p>Congratulations! Your posts now live on the decentralized web — free from algorithms, censorship, and corporate control. Forever.</p>
-        </div>
-      </div>
-
-      <div class="freedom-card tell-friends">
-        <div class="freedom-icon share">
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8"/>
-            <polyline points="16 6 12 2 8 6"/>
-            <line x1="12" y1="2" x2="12" y2="15"/>
-          </svg>
-        </div>
-        <div class="freedom-content">
-          <h4>Tell your friends</h4>
-          <p>Help others break free from Instagram. Share the migration tool and grow the decentralized community.</p>
-        </div>
-        <a href="https://instatoprimal.com" class="share-link" target="_blank" rel="noopener noreferrer">
-          <span>instatoprimal.com</span>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-            <path d="M7 17L17 7M17 7H7M17 7v10"/>
-          </svg>
-        </a>
-      </div>
-    </div>
-  {:else}
-    <div class="freedom-section">
-      <div class="freedom-card own-content">
-        <div class="freedom-glow"></div>
-        <div class="freedom-icon">
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M12 2L2 7l10 5 10-5-10-5z"/>
-            <path d="M2 17l10 5 10-5"/>
-            <path d="M2 12l10 5 10-5"/>
-          </svg>
-        </div>
-        <div class="freedom-content">
-          <h4>You own your content</h4>
-          <p>Congratulations! Your posts now live on the decentralized web — free from algorithms, censorship, and corporate control. Forever.</p>
-        </div>
-      </div>
-
-      <div class="freedom-card keys-card">
-        <div class="freedom-icon keys">
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 11-7.778 7.778 5.5 5.5 0 017.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>
-          </svg>
-        </div>
-        <div class="freedom-content">
-          <h4>Save your Primal Key</h4>
-          <p>Your Primal Key is your login — store it safely in a password manager. If you lose it, you lose access forever.</p>
         </div>
       </div>
 
@@ -209,45 +198,6 @@
     font-size: 1rem;
   }
 
-  .profile-card {
-    background: var(--bg-tertiary);
-    border: 1px solid var(--border);
-    border-radius: 0.875rem;
-    padding: 1.25rem;
-    margin-bottom: 1.5rem;
-    text-align: left;
-  }
-
-  .profile-label {
-    font-size: 0.6875rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--text-muted);
-    font-weight: 600;
-    margin-bottom: 1rem;
-  }
-
-  .profile-key {
-    display: flex;
-    flex-direction: column;
-    gap: 0.375rem;
-  }
-
-  .key-label {
-    font-size: 0.75rem;
-    color: var(--text-secondary);
-  }
-
-  .npub {
-    font-family: 'SF Mono', Monaco, monospace;
-    font-size: 0.6875rem;
-    word-break: break-all;
-    background: var(--bg-primary);
-    padding: 0.75rem;
-    border-radius: 0.5rem;
-    color: var(--text-primary);
-  }
-
   .primal-cta {
     display: flex;
     align-items: center;
@@ -280,71 +230,189 @@
     transform: translate(2px, -2px);
   }
 
-  .download-primal {
-    background: var(--bg-tertiary);
-    border: 1px solid var(--border);
-    border-radius: 0.875rem;
-    padding: 1.5rem;
+  /* What's Next Section - Non-NIP46 */
+  .whats-next-section {
+    text-align: left;
     margin-bottom: 2rem;
   }
 
-  .qr-section {
+  .section-title {
+    font-size: 1.125rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 1.25rem;
+    letter-spacing: -0.01em;
+  }
+
+  .step-card {
+    display: flex;
+    gap: 1rem;
+    padding: 1.25rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 0.875rem;
+    margin-bottom: 1rem;
+    animation: cardSlideIn 0.5s ease-out backwards;
+  }
+
+  .step-card:nth-child(2) { animation-delay: 0.1s; }
+  .step-card:nth-child(3) { animation-delay: 0.2s; }
+  .step-card:nth-child(4) { animation-delay: 0.3s; }
+
+  .step-number {
+    flex-shrink: 0;
+    width: 2rem;
+    height: 2rem;
+    background: var(--accent-gradient);
+    border-radius: 50%;
     display: flex;
     align-items: center;
-    gap: 1.5rem;
+    justify-content: center;
+    color: white;
+    font-size: 0.875rem;
+    font-weight: 700;
+  }
+
+  .step-content {
+    flex: 1;
+  }
+
+  .step-content h4 {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 0.25rem;
+  }
+
+  .step-content p {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    line-height: 1.4;
+    margin: 0;
+  }
+
+  .download-row {
+    display: flex;
+    align-items: center;
+    gap: 1.25rem;
+    margin-top: 1rem;
   }
 
   .qr-wrapper {
     flex-shrink: 0;
     background: white;
-    padding: 0.5rem;
-    border-radius: 0.75rem;
+    padding: 0.375rem;
+    border-radius: 0.625rem;
   }
 
   .qr-wrapper img {
     display: block;
+    border-radius: 0.375rem;
+  }
+
+  .store-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;
+  }
+
+  .store-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    padding: 0.625rem 0.875rem;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
     border-radius: 0.5rem;
-  }
-
-  .qr-info {
-    text-align: left;
-  }
-
-  .qr-info h3 {
-    font-size: 1.125rem;
-    font-weight: 600;
     color: var(--text-primary);
-    margin-bottom: 0.5rem;
+    text-decoration: none;
+    transition: all 0.2s ease;
   }
 
-  .qr-info p {
+  .store-btn:hover {
+    border-color: var(--accent);
+    background: rgba(var(--accent-rgb), 0.05);
+  }
+
+  .store-text {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .store-label {
+    font-size: 0.625rem;
+    color: var(--text-muted);
+    line-height: 1;
+  }
+
+  .store-name {
     font-size: 0.875rem;
-    color: var(--text-secondary);
-    margin-bottom: 0.75rem;
-    line-height: 1.4;
+    font-weight: 600;
+    line-height: 1.2;
   }
 
-  .download-link {
+  .key-reminder {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+    padding: 0.625rem 0.875rem;
+    background: rgba(245, 158, 11, 0.1);
+    border: 1px solid rgba(245, 158, 11, 0.25);
+    border-radius: 0.5rem;
+    color: #D97706;
+    font-size: 0.8125rem;
+    font-weight: 500;
+  }
+
+  .key-reminder svg {
+    flex-shrink: 0;
+  }
+
+  .share-link {
     display: inline-flex;
     align-items: center;
-    gap: 0.375rem;
-    font-size: 0.8125rem;
-    color: var(--accent);
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+    padding: 0.625rem 1rem;
+    background: rgba(var(--success-rgb), 0.12);
+    border: 1px solid rgba(var(--success-rgb), 0.25);
+    border-radius: 0.625rem;
+    color: var(--success);
+    font-size: 0.875rem;
+    font-weight: 600;
     text-decoration: none;
+    transition: all 0.2s ease;
   }
 
-  .download-link:hover {
-    text-decoration: underline;
+  .share-link:hover {
+    background: rgba(var(--success-rgb), 0.2);
+    border-color: var(--success);
+    transform: translateY(-1px);
+  }
+
+  .share-link svg {
+    opacity: 0.7;
+    transition: all 0.2s ease;
+  }
+
+  .share-link:hover svg {
+    opacity: 1;
+    transform: translate(2px, -2px);
   }
 
   @media (max-width: 480px) {
-    .qr-section {
+    .download-row {
       flex-direction: column;
-      text-align: center;
+      align-items: flex-start;
     }
 
-    .qr-info {
-      text-align: center;
+    .store-buttons {
+      width: 100%;
+    }
+
+    .store-btn {
+      width: 100%;
     }
   }
 
@@ -444,17 +512,6 @@
     box-shadow: 0 4px 20px rgba(var(--success-rgb), 0.3);
   }
 
-  .freedom-icon.keys {
-    background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%);
-    box-shadow: 0 4px 20px rgba(245, 158, 11, 0.3);
-  }
-
-  .freedom-card.keys-card {
-    animation-delay: 0.2s;
-    border-color: rgba(245, 158, 11, 0.3);
-    background: linear-gradient(135deg, rgba(245, 158, 11, 0.08) 0%, var(--bg-tertiary) 60%);
-  }
-
   .freedom-content h4 {
     font-size: 1.125rem;
     font-weight: 700;
@@ -468,37 +525,5 @@
     color: var(--text-secondary);
     line-height: 1.5;
     margin: 0;
-  }
-
-  .share-link {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.625rem 1rem;
-    background: rgba(var(--success-rgb), 0.12);
-    border: 1px solid rgba(var(--success-rgb), 0.25);
-    border-radius: 0.625rem;
-    color: var(--success);
-    font-size: 0.875rem;
-    font-weight: 600;
-    text-decoration: none;
-    width: fit-content;
-    transition: all 0.2s ease;
-  }
-
-  .share-link:hover {
-    background: rgba(var(--success-rgb), 0.2);
-    border-color: var(--success);
-    transform: translateY(-1px);
-  }
-
-  .share-link svg {
-    opacity: 0.7;
-    transition: all 0.2s ease;
-  }
-
-  .share-link:hover svg {
-    opacity: 1;
-    transform: translate(2px, -2px);
   }
 </style>
