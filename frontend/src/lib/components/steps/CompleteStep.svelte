@@ -55,7 +55,7 @@
         </div>
         <div class="qr-info">
           <h3>Get Primal</h3>
-          <p>Scan to download Primal and import your new Nostr keys</p>
+          <p>Scan to download Primal and log in with your Primal Key</p>
           <a href="https://primal.net/downloads" target="_blank" rel="noopener noreferrer" class="download-link">
             Or visit primal.net/downloads
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -130,8 +130,8 @@
           </svg>
         </div>
         <div class="freedom-content">
-          <h4>Secure your keys</h4>
-          <p>Your secret key (nsec) is like a password that can never be reset. Store it safely in a password manager — if you lose it, you lose access forever.</p>
+          <h4>Save your Primal Key</h4>
+          <p>Your Primal Key is your login — store it safely in a password manager. If you lose it, you lose access forever.</p>
         </div>
       </div>
 

@@ -79,7 +79,7 @@
     </div>
     <div class="divider"></div>
     <div class="summary-item">
-      <span class="summary-label">Nostr Key</span>
+      <span class="summary-label">Primal Key</span>
       <code class="summary-value mono">{displayNpub.slice(0, 16)}...</code>
     </div>
     {#if isNip46Mode}
