@@ -6,7 +6,6 @@
 
   let keyPair = $wizard.keyPair;
   let copied = { npub: false, nsec: false };
-  let acknowledged = false;
   let downloaded = false;
 
   function downloadKeys() {
@@ -65,7 +64,7 @@ Store it somewhere safe!
   }
 
   function handleContinue() {
-    if (!isNip46Mode && (!acknowledged || !downloaded)) return;
+    if (!isNip46Mode && !downloaded) return;
     wizard.setStep('videos');
   }
 
@@ -170,35 +169,6 @@ Store it somewhere safe!
         </div>
       </div>
 
-      <div class="info-card">
-        <div class="info-header">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="10"/>
-            <path d="M12 16v-4M12 8h.01"/>
-          </svg>
-          <span>How to use your key</span>
-        </div>
-        <ol class="info-list">
-          <li>Download the Primal app</li>
-          <li>Tap "Login" then "Use login key"</li>
-          <li>Paste your Primal Key</li>
-        </ol>
-      </div>
-
-      <label class="acknowledge-box" class:disabled={!downloaded}>
-        <div class="checkbox-wrapper">
-          <input type="checkbox" bind:checked={acknowledged} disabled={!downloaded} />
-          <div class="custom-checkbox">
-            {#if acknowledged}
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
-                <path d="M20 6L9 17l-5-5"/>
-              </svg>
-            {/if}
-          </div>
-        </div>
-        <span>I've saved my Primal Key somewhere safe</span>
-      </label>
-
       <div class="actions">
         <button class="secondary-btn" on:click={handleBack}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -206,7 +176,7 @@ Store it somewhere safe!
           </svg>
           Back
         </button>
-        <button class="primary-btn" disabled={!downloaded || !acknowledged} on:click={handleContinue}>
+        <button class="primary-btn" disabled={!downloaded} on:click={handleContinue}>
           Select Content
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M5 12h14M12 5l7 7-7 7"/>
@@ -349,7 +319,7 @@ Store it somewhere safe!
 
   /* Download section for non-NIP46 */
   .download-section {
-    margin-bottom: 1.5rem;
+    margin-bottom: 2rem;
   }
 
   .download-btn {
@@ -390,92 +360,6 @@ Store it somewhere safe!
 
   .warning-note svg {
     flex-shrink: 0;
-  }
-
-  /* Info card for how to use */
-  .info-card {
-    background: var(--bg-tertiary);
-    border: 1px solid var(--border);
-    border-radius: 0.875rem;
-    padding: 1.25rem;
-    margin-bottom: 1.5rem;
-  }
-
-  .info-header {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    color: var(--text-secondary);
-    font-size: 0.875rem;
-    font-weight: 600;
-    margin-bottom: 0.75rem;
-  }
-
-  .info-list {
-    margin: 0;
-    padding-left: 1.25rem;
-    color: var(--text-secondary);
-    font-size: 0.875rem;
-  }
-
-  .info-list li {
-    padding: 0.25rem 0;
-  }
-
-  .acknowledge-box {
-    display: flex;
-    align-items: center;
-    gap: 0.875rem;
-    padding: 1rem 1.25rem;
-    background: var(--bg-tertiary);
-    border: 1px solid var(--border);
-    border-radius: 0.75rem;
-    cursor: pointer;
-    margin-bottom: 2rem;
-    transition: border-color 0.2s ease;
-  }
-
-  .acknowledge-box:hover:not(.disabled) {
-    border-color: var(--border-light);
-  }
-
-  .acknowledge-box.disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .checkbox-wrapper {
-    position: relative;
-  }
-
-  .checkbox-wrapper input {
-    position: absolute;
-    opacity: 0;
-    width: 0;
-    height: 0;
-  }
-
-  .custom-checkbox {
-    width: 1.375rem;
-    height: 1.375rem;
-    background: var(--bg-primary);
-    border: 2px solid var(--border-light);
-    border-radius: 0.375rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s ease;
-  }
-
-  .checkbox-wrapper input:checked + .custom-checkbox {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: white;
-  }
-
-  .acknowledge-box span {
-    font-size: 0.9375rem;
-    color: var(--text-primary);
   }
 
   .actions {
