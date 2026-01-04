@@ -77,12 +77,12 @@
       <span class="summary-label">Instagram</span>
       <span class="summary-value">@{$wizard.handle}</span>
     </div>
-    <div class="divider"></div>
-    <div class="summary-item">
-      <span class="summary-label">Primal Key</span>
-      <code class="summary-value mono">{displayNpub.slice(0, 16)}...</code>
-    </div>
     {#if isNip46Mode}
+      <div class="divider"></div>
+      <div class="summary-item">
+        <span class="summary-label">Primal Account</span>
+        <code class="summary-value mono">{displayNpub.slice(0, 16)}...</code>
+      </div>
       <div class="divider"></div>
       <div class="summary-item">
         <span class="summary-label">Signing</span>

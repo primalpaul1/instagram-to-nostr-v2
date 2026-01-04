@@ -81,12 +81,12 @@
         <div class="step-number">2</div>
         <div class="step-content">
           <h4>Log in with your Primal Key</h4>
-          <p>Open Primal, tap "Login", then "Use login key" and paste your saved Primal Key</p>
-          <div class="key-reminder">
+          <p>Open Primal, tap "Login", then "Use login key" and paste your Primal Key</p>
+          <div class="key-location">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 11-7.778 7.778 5.5 5.5 0 017.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>
+              <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/>
             </svg>
-            <span>Make sure you saved your primal-key.txt file!</span>
+            <span>Your key is saved in Downloads as <strong>primal-key.txt</strong></span>
           </div>
         </div>
       </div>
@@ -351,22 +351,27 @@
     line-height: 1.2;
   }
 
-  .key-reminder {
+  .key-location {
     display: flex;
     align-items: center;
     gap: 0.5rem;
     margin-top: 0.75rem;
     padding: 0.625rem 0.875rem;
-    background: rgba(245, 158, 11, 0.1);
-    border: 1px solid rgba(245, 158, 11, 0.25);
+    background: rgba(var(--accent-rgb), 0.08);
+    border: 1px solid rgba(var(--accent-rgb), 0.2);
     border-radius: 0.5rem;
-    color: #D97706;
+    color: var(--text-secondary);
     font-size: 0.8125rem;
-    font-weight: 500;
   }
 
-  .key-reminder svg {
+  .key-location svg {
     flex-shrink: 0;
+    color: var(--accent);
+  }
+
+  .key-location strong {
+    color: var(--text-primary);
+    font-weight: 600;
   }
 
   .share-link {
