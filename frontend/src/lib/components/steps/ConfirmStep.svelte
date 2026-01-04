@@ -155,9 +155,6 @@
       <li>Content downloads from Instagram</li>
       <li>Upload to Blossom media server</li>
       <li>Publish to Nostr relays</li>
-      {#if isNip46Mode}
-        <li class="highlight">Your Primal wallet signs each post</li>
-      {/if}
     </ul>
     {#if isNip46Mode}
       <div class="warning-note">
