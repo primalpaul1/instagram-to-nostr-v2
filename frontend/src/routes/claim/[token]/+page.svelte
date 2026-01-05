@@ -71,6 +71,13 @@
   let tasks: TaskStatus[] = [];
   let activeIndices: Set<number> = new Set();
 
+  // Post editing state
+  let selectedPostIndex: number | null = null;
+  let editingCaption = '';
+  let editedCaptions: Record<number, string> = {}; // postId -> edited caption
+
+  $: selectedPost = selectedPostIndex !== null && proposal ? proposal.posts[selectedPostIndex] : null;
+
   $: completedCount = tasks.filter(t => t.status === 'complete').length;
   $: totalCount = tasks.length;
   $: progressPercent = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
@@ -261,11 +268,12 @@
         height: undefined
       }));
 
-      // Create post event
+      // Create post event - use edited caption if available
+      const caption = editedCaptions[task.post.id] ?? task.post.caption;
       const postEvent = createMultiMediaPostEvent(
         connectedPubkey,
         mediaUploads,
-        task.post.caption || undefined,
+        caption || undefined,
         task.post.original_date || undefined
       );
 
@@ -322,6 +330,35 @@
       case 'error': return 'Failed';
       default: return 'Unknown';
     }
+  }
+
+  function openPostDetail(index: number) {
+    if (!proposal) return;
+    selectedPostIndex = index;
+    const post = proposal.posts[index];
+    // Use edited caption if exists, otherwise original
+    editingCaption = editedCaptions[post.id] ?? post.caption ?? '';
+  }
+
+  function closePostDetail() {
+    selectedPostIndex = null;
+    editingCaption = '';
+  }
+
+  function saveCaption() {
+    if (selectedPostIndex === null || !proposal) return;
+    const post = proposal.posts[selectedPostIndex];
+    editedCaptions[post.id] = editingCaption;
+    editedCaptions = editedCaptions; // trigger reactivity
+    closePostDetail();
+  }
+
+  function getPostCaption(post: ProposalPost): string {
+    return editedCaptions[post.id] ?? post.caption ?? '';
+  }
+
+  function isPostEdited(post: ProposalPost): boolean {
+    return post.id in editedCaptions;
   }
 </script>
 
@@ -385,12 +422,15 @@
         </div>
 
         <div class="posts-preview">
-          <div class="preview-header">Preview</div>
+          <div class="preview-header">
+            <span>Preview</span>
+            <span class="edit-hint">Tap to edit captions</span>
+          </div>
           <div class="preview-grid">
-            {#each proposal.posts.slice(0, 6) as post}
-              <div class="preview-item">
-                {#if post.thumbnail_url}
-                  <img src={post.thumbnail_url} alt="" />
+            {#each proposal.posts as post, i}
+              <button class="preview-item" on:click={() => openPostDetail(i)}>
+                {#if post.thumbnail_url || post.blossom_urls[0]}
+                  <img src={post.thumbnail_url || post.blossom_urls[0]} alt="" />
                 {:else}
                   <div class="placeholder">
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -398,11 +438,21 @@
                     </svg>
                   </div>
                 {/if}
-              </div>
+                {#if isPostEdited(post)}
+                  <div class="edited-badge">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                      <path d="M20 6L9 17l-5-5"/>
+                    </svg>
+                  </div>
+                {/if}
+                <div class="hover-overlay">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
+                    <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                  </svg>
+                </div>
+              </button>
             {/each}
-            {#if proposal.posts.length > 6}
-              <div class="preview-more">+{proposal.posts.length - 6}</div>
-            {/if}
           </div>
         </div>
 
@@ -564,6 +614,60 @@
       </div>
     {/if}
   </main>
+
+  {#if selectedPost}
+    <div class="modal-backdrop" on:click={closePostDetail} on:keydown={(e) => e.key === 'Escape' && closePostDetail()} role="button" tabindex="-1">
+      <div class="post-modal" on:click|stopPropagation role="dialog" aria-modal="true" tabindex="0">
+        <div class="modal-header">
+          <h3>Edit Post</h3>
+          <button class="close-btn" on:click={closePostDetail} aria-label="Close">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M18 6L6 18M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+
+        <div class="modal-media">
+          {#if selectedPost.post_type === 'reel'}
+            <video
+              src={selectedPost.blossom_urls[0]}
+              controls
+              playsinline
+              class="media-preview"
+            >
+              <track kind="captions" />
+            </video>
+          {:else}
+            <img
+              src={selectedPost.blossom_urls[0]}
+              alt=""
+              class="media-preview"
+            />
+          {/if}
+        </div>
+
+        <div class="modal-body">
+          <label for="caption-edit">Caption</label>
+          <textarea
+            id="caption-edit"
+            bind:value={editingCaption}
+            placeholder="Add a caption..."
+            rows="4"
+          ></textarea>
+          {#if selectedPost.original_date}
+            <div class="post-date">
+              Originally posted: {new Date(selectedPost.original_date).toLocaleDateString()}
+            </div>
+          {/if}
+        </div>
+
+        <div class="modal-footer">
+          <button class="secondary-btn" on:click={closePostDetail}>Cancel</button>
+          <button class="primary-btn small" on:click={saveCaption}>Save Changes</button>
+        </div>
+      </div>
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -715,50 +819,12 @@
     overflow: hidden;
   }
 
-  .preview-header {
-    padding: 0.75rem 1rem;
-    border-bottom: 1px solid var(--border);
-    font-size: 0.8125rem;
-    color: var(--text-secondary);
-    font-weight: 500;
-  }
-
-  .preview-grid {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 2px;
-    padding: 2px;
-  }
-
-  .preview-item {
-    aspect-ratio: 1;
-    background: var(--bg-primary);
-    overflow: hidden;
-  }
-
-  .preview-item img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-
   .placeholder {
     width: 100%;
     height: 100%;
     display: flex;
     align-items: center;
     justify-content: center;
-    color: var(--text-muted);
-  }
-
-  .preview-more {
-    aspect-ratio: 1;
-    background: var(--bg-primary);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 0.875rem;
-    font-weight: 600;
     color: var(--text-muted);
   }
 
@@ -1122,5 +1188,196 @@
     margin: 0.25rem 0;
     font-size: 0.875rem;
     color: var(--text-secondary);
+  }
+
+  /* Updated preview styles */
+  .preview-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    font-weight: 500;
+  }
+
+  .edit-hint {
+    font-size: 0.6875rem;
+    font-weight: 400;
+    color: var(--text-muted);
+  }
+
+  .preview-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 2px;
+    padding: 2px;
+  }
+
+  button.preview-item {
+    position: relative;
+    aspect-ratio: 1;
+    background: var(--bg-primary);
+    overflow: hidden;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+  }
+
+  .preview-item img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.2s ease;
+  }
+
+  .preview-item:hover img {
+    transform: scale(1.05);
+  }
+
+  .hover-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+  }
+
+  .preview-item:hover .hover-overlay {
+    opacity: 1;
+  }
+
+  .edited-badge {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 18px;
+    height: 18px;
+    background: var(--success);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+  }
+
+  /* Modal */
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.8);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: 1rem;
+  }
+
+  .post-modal {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 1rem;
+    width: 100%;
+    max-width: 500px;
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+
+  .modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .modal-header h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    margin: 0;
+  }
+
+  .close-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    background: transparent;
+    border: none;
+    border-radius: 0.5rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+  }
+
+  .close-btn:hover {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+  }
+
+  .modal-media {
+    background: black;
+  }
+
+  .media-preview {
+    display: block;
+    width: 100%;
+    max-height: 350px;
+    object-fit: contain;
+  }
+
+  .modal-body {
+    padding: 1.25rem;
+  }
+
+  .modal-body label {
+    display: block;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    margin-bottom: 0.5rem;
+  }
+
+  .modal-body textarea {
+    width: 100%;
+    padding: 0.875rem 1rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-light);
+    border-radius: 0.75rem;
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    font-family: inherit;
+    resize: vertical;
+    min-height: 100px;
+  }
+
+  .modal-body textarea:focus {
+    border-color: var(--accent);
+    outline: none;
+  }
+
+  .post-date {
+    margin-top: 0.75rem;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+
+  .modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    padding: 1rem 1.25rem;
+    border-top: 1px solid var(--border);
+  }
+
+  .primary-btn.small {
+    padding: 0.625rem 1rem;
+    font-size: 0.875rem;
   }
 </style>
