@@ -414,13 +414,13 @@
         </button>
 
         <p class="disclaimer">
-          You'll sign these posts with your Primal wallet. Only the account matching the target npub can claim this content.
+          You'll sign these posts with Primal. Only the account matching the target npub can claim this content.
         </p>
       </div>
 
     {:else if step === 'connect'}
       <div class="connect-step">
-        <h2>Connect Your Primal Wallet</h2>
+        <h2>Connect with Primal</h2>
         <p class="subtitle">Scan with the Primal app to sign your posts</p>
 
         <div class="qr-container">
