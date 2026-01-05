@@ -262,8 +262,9 @@
   async function startPublishing() {
     if (!nip46Connection || !proposal) return;
 
-    // Higher concurrency since signing is the bottleneck
-    const CONCURRENCY = 10;
+    // Keep concurrency low - NIP-46 signers may struggle with high concurrency
+    // and overwrite timestamps when overwhelmed
+    const CONCURRENCY = 3;
     signedEvents = [];
     publishedPostIds = [];
 
