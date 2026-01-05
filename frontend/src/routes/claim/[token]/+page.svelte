@@ -346,8 +346,12 @@
         task.post.original_date || undefined
       );
 
+      console.log(`Post ${task.post.id}: original_date=${task.post.original_date}, event.created_at=${postEvent.created_at}`);
+
       // Sign with NIP-46
       const signedPost = await signWithNIP46(nip46Connection, postEvent);
+
+      console.log(`Post ${task.post.id}: after signing created_at=${signedPost.created_at}`);
 
       tasks[index] = { ...tasks[index], status: 'publishing' };
       tasks = [...tasks];
