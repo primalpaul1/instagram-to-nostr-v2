@@ -31,6 +31,25 @@
   let pendingConnection: NIP46Connection | null = null;
 
   onMount(async () => {
+    // Check for pending NIP-46 connection from redirect
+    const pendingConnection = sessionStorage.getItem('nip46_pending_main');
+    if (pendingConnection) {
+      try {
+        const { localSecretKey, localPublicKey, secret } = JSON.parse(pendingConnection);
+        // Restore connection state and resume waiting
+        localKeypair = { secretKey: localSecretKey, publicKey: localPublicKey };
+        connectionSecret = secret;
+        connectionURI = createConnectionURI(localPublicKey, secret, false);
+        mobileConnectionURI = createConnectionURI(localPublicKey, secret, true, window.location.href);
+        qrCodeDataUrl = await generateQRCode(connectionURI);
+        connectionStatus = 'waiting';
+        waitForPrimalConnection();
+        return;
+      } catch (err) {
+        console.error('Failed to restore NIP-46 connection:', err);
+        sessionStorage.removeItem('nip46_pending_main');
+      }
+    }
     await initNIP46Connection();
   });
 
@@ -54,6 +73,15 @@
       const callbackUrl = typeof window !== 'undefined' ? window.location.href : undefined;
       mobileConnectionURI = createConnectionURI(localKeypair.publicKey, connectionSecret, true, callbackUrl);
 
+      // Save connection state for redirect recovery
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem('nip46_pending_main', JSON.stringify({
+          localSecretKey: localKeypair.secretKey,
+          localPublicKey: localKeypair.publicKey,
+          secret: connectionSecret
+        }));
+      }
+
       qrCodeDataUrl = await generateQRCode(connectionURI);
       waitForPrimalConnection();
     } catch (err) {
@@ -75,6 +103,10 @@
 
       pendingConnection = connection;
       connectionStatus = 'connected';
+
+      // Clear pending connection state
+      sessionStorage.removeItem('nip46_pending_main');
+
       wizard.setAuthMode('nip46');
       wizard.setNIP46Connection(connection, connection.remotePubkey);
     } catch (err) {
