@@ -289,9 +289,6 @@
   </div>
 
   <div class="primal-section">
-    <div class="primal-header">
-      <span>Login with Primal</span>
-    </div>
     <div class="qr-container">
       {#if connectionStatus === 'connected'}
         <div class="connected-state">
