@@ -379,15 +379,19 @@
   }
 
   function getMediaPreviewUrl(post: ProposalPost): string | null {
-    // For images, use the blossom URL directly
-    if (post.post_type === 'image' && post.blossom_urls[0]) {
+    // For images and carousels, use the first blossom URL directly
+    if ((post.post_type === 'image' || post.post_type === 'carousel') && post.blossom_urls[0]) {
       return post.blossom_urls[0];
     }
-    // For videos, use thumbnail if available
+    // For videos/reels, use thumbnail if available
     if (post.thumbnail_url) {
       return post.thumbnail_url;
     }
-    // Fallback: for videos without thumbnail, return null (will show icon)
+    // Fallback to first blossom URL if available
+    if (post.blossom_urls && post.blossom_urls[0]) {
+      return post.blossom_urls[0];
+    }
+    // No preview available
     return null;
   }
 </script>
