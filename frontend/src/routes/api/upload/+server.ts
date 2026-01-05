@@ -1,8 +1,15 @@
 import { json } from '@sveltejs/kit';
-import type { RequestHandler } from './$types';
+import type { RequestHandler, Config } from './$types';
 import * as secp256k1 from '@noble/secp256k1';
 import { sha256 } from '@noble/hashes/sha256';
 import { bytesToHex } from '@noble/hashes/utils';
+
+// Allow large file uploads (500MB)
+export const config: Config = {
+  body: {
+    maxSize: '500mb'
+  }
+};
 
 const BLOSSOM_SERVER = 'https://blossom.primal.net';
 
