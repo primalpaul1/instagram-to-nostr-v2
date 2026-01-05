@@ -24,16 +24,23 @@ export interface NIP46Connection {
 /**
  * Generate a nostrconnect:// URI for QR code display.
  * User scans this with Primal to establish connection.
- * @param returnUrl - URL to redirect back to after approval (for mobile deep link flow)
+ * @param includeCallback - Whether to include callback URL (only for mobile deep link, not QR codes)
+ * @param callbackUrl - URL to redirect back to after approval
  */
-export function createConnectionURI(localPubkey: string, secret: string, returnUrl?: string): string {
+export function createConnectionURI(
+  localPubkey: string,
+  secret: string,
+  includeCallback: boolean = false,
+  callbackUrl?: string
+): string {
   const relayParams = NIP46_RELAYS.map(r => `relay=${encodeURIComponent(r)}`).join('&');
   const perms = 'sign_event:0,sign_event:1,sign_event:24242';
 
   let uri = `nostrconnect://${localPubkey}?${relayParams}&secret=${secret}&name=${encodeURIComponent('Insta to Primal')}&perms=${encodeURIComponent(perms)}`;
 
-  if (returnUrl) {
-    uri += `&url=${encodeURIComponent(returnUrl)}`;
+  // Only include callback for mobile deep link button, not QR codes
+  if (includeCallback && callbackUrl) {
+    uri += `&callback=${encodeURIComponent(callbackUrl)}`;
   }
 
   return uri;

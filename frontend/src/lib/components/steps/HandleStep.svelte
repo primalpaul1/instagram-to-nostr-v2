@@ -23,7 +23,8 @@
   // NIP-46 state
   let qrCodeDataUrl = '';
   let connectionSecret = '';
-  let connectionURI = '';
+  let connectionURI = '';  // For QR code (no callback)
+  let mobileConnectionURI = '';  // For mobile button (with callback)
   let localKeypair: { secretKey: string; publicKey: string } | null = null;
   let connectionStatus: 'idle' | 'waiting' | 'connected' | 'error' = 'idle';
   let connectionError = '';
@@ -45,9 +46,14 @@
       connectionError = '';
       localKeypair = generateLocalKeypair();
       connectionSecret = generateSecret();
-      // Pass current URL as return_url for mobile deep link flow
-      const returnUrl = typeof window !== 'undefined' ? window.location.href : undefined;
-      connectionURI = createConnectionURI(localKeypair.publicKey, connectionSecret, returnUrl);
+
+      // QR code URI (no callback - for desktop scanning)
+      connectionURI = createConnectionURI(localKeypair.publicKey, connectionSecret, false);
+
+      // Mobile button URI (with callback - redirects back after approval)
+      const callbackUrl = typeof window !== 'undefined' ? window.location.href : undefined;
+      mobileConnectionURI = createConnectionURI(localKeypair.publicKey, connectionSecret, true, callbackUrl);
+
       qrCodeDataUrl = await generateQRCode(connectionURI);
       waitForPrimalConnection();
     } catch (err) {
@@ -273,9 +279,9 @@
           <button class="retry-btn" on:click={retryConnection}>Try Again</button>
         </div>
       {:else if qrCodeDataUrl}
-        <!-- Login with Primal button for mobile -->
+        <!-- Login with Primal button for mobile (includes callback for redirect) -->
         <a
-          href={connectionURI}
+          href={mobileConnectionURI}
           class="primal-login-btn"
           aria-label="Login with Primal"
         >
