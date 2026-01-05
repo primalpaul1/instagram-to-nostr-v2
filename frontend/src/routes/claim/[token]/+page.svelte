@@ -436,13 +436,14 @@
   }
 
   function getMediaPreviewUrl(post: ProposalPost): string | null {
-    // First priority: use blossom URL if available (permanent, our storage)
-    if (post.blossom_urls && Array.isArray(post.blossom_urls) && post.blossom_urls.length > 0) {
-      return post.blossom_urls[0];
-    }
-    // Fallback to thumbnail URL (Instagram CDN, may expire)
+    // For thumbnails in the grid, prefer the thumbnail_url (smaller file size)
+    // Only use blossom_urls[0] for images, never for videos in thumbnails
     if (post.thumbnail_url) {
       return post.thumbnail_url;
+    }
+    // For images only, fall back to blossom URL (avoid loading full videos)
+    if (post.post_type !== 'reel' && post.blossom_urls && Array.isArray(post.blossom_urls) && post.blossom_urls.length > 0) {
+      return post.blossom_urls[0];
     }
     // No preview available
     return null;
@@ -526,7 +527,7 @@
                 on:click={() => openPostDetail(i)}
               >
                 {#if getMediaPreviewUrl(post)}
-                  <img src={getMediaPreviewUrl(post)} alt="" />
+                  <img src={getMediaPreviewUrl(post)} alt="" loading="lazy" decoding="async" />
                 {:else}
                   <div class="placeholder">
                     {#if post.post_type === 'reel'}
@@ -762,6 +763,8 @@
               src={selectedPost.blossom_urls[0]}
               controls
               playsinline
+              preload="metadata"
+              poster={selectedPost.thumbnail_url || ''}
               class="media-preview"
             >
               <track kind="captions" />
@@ -770,6 +773,8 @@
             <img
               src={selectedPost.blossom_urls[0]}
               alt=""
+              loading="eager"
+              decoding="async"
               class="media-preview"
             />
           {/if}
