@@ -46,6 +46,10 @@
   let manualVideoUrl = '';
   let manualCaption = '';
   let manualPostType: PostType = 'reel';
+  let uploadMode: 'url' | 'file' = 'file';
+  let isUploading = false;
+  let uploadProgress = '';
+  let fileInput: HTMLInputElement;
 
   $: reelPosts = posts.filter(p => p.post_type === 'reel');
   $: imagePosts = posts.filter(p => p.post_type === 'image' || p.post_type === 'carousel');
@@ -263,10 +267,52 @@
     manualVideoUrl = '';
     manualCaption = '';
     manualPostType = 'reel';
+    uploadMode = 'file';
+    isUploading = false;
+    uploadProgress = '';
   }
 
   function closeAddModal() {
     showAddModal = false;
+  }
+
+  async function handleFileUpload(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+
+    isUploading = true;
+    uploadProgress = 'Uploading to Blossom...';
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Upload failed');
+      }
+
+      const result = await response.json();
+      manualVideoUrl = result.url;
+      uploadProgress = 'Uploaded!';
+
+      // Auto-detect type from file
+      if (file.type.startsWith('video/')) {
+        manualPostType = 'reel';
+      } else if (file.type.startsWith('image/')) {
+        manualPostType = 'image';
+      }
+    } catch (err) {
+      uploadProgress = err instanceof Error ? err.message : 'Upload failed';
+    } finally {
+      isUploading = false;
+    }
   }
 
   function addManualPost() {
@@ -553,16 +599,73 @@
           </div>
 
           <div class="input-group">
-            <label for="media-url">Media URL</label>
-            <input
-              id="media-url"
-              type="text"
-              bind:value={manualVideoUrl}
-              placeholder={manualPostType === 'reel' ? 'https://example.com/video.mp4' : 'https://example.com/image.jpg'}
-              class="modal-input"
-            />
-            <span class="input-hint">Direct link to the {manualPostType === 'reel' ? 'video' : 'image'} file</span>
+            <label>Media Source</label>
+            <div class="source-toggle">
+              <button
+                class="source-option"
+                class:active={uploadMode === 'file'}
+                on:click={() => uploadMode = 'file'}
+              >
+                Upload File
+              </button>
+              <button
+                class="source-option"
+                class:active={uploadMode === 'url'}
+                on:click={() => uploadMode = 'url'}
+              >
+                Paste URL
+              </button>
+            </div>
           </div>
+
+          {#if uploadMode === 'file'}
+            <div class="input-group">
+              <label for="file-upload">Choose File</label>
+              <div class="file-upload-area" class:has-file={manualVideoUrl} class:uploading={isUploading}>
+                {#if isUploading}
+                  <div class="upload-spinner"></div>
+                  <span>{uploadProgress}</span>
+                {:else if manualVideoUrl}
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M20 6L9 17l-5-5"/>
+                  </svg>
+                  <span class="upload-success">File uploaded!</span>
+                  <button class="change-file-btn" on:click={() => fileInput.click()}>Change</button>
+                {:else}
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                    <polyline points="17 8 12 3 7 8"/>
+                    <line x1="12" y1="3" x2="12" y2="15"/>
+                  </svg>
+                  <span>Drop a file or click to browse</span>
+                  <span class="file-types">.mp4, .mov, .jpg, .png</span>
+                {/if}
+                <input
+                  bind:this={fileInput}
+                  id="file-upload"
+                  type="file"
+                  accept="video/*,image/*"
+                  on:change={handleFileUpload}
+                  class="file-input-hidden"
+                />
+              </div>
+              {#if uploadProgress && !isUploading && !manualVideoUrl}
+                <span class="input-hint error">{uploadProgress}</span>
+              {/if}
+            </div>
+          {:else}
+            <div class="input-group">
+              <label for="media-url">Media URL</label>
+              <input
+                id="media-url"
+                type="text"
+                bind:value={manualVideoUrl}
+                placeholder={manualPostType === 'reel' ? 'https://example.com/video.mp4' : 'https://example.com/image.jpg'}
+                class="modal-input"
+              />
+              <span class="input-hint">Direct link to the {manualPostType === 'reel' ? 'video' : 'image'} file</span>
+            </div>
+          {/if}
 
           <div class="input-group">
             <label for="caption">Caption</label>
@@ -1281,5 +1384,117 @@
     gap: 0.75rem;
     padding: 1.25rem 1.5rem;
     border-top: 1px solid var(--border);
+  }
+
+  /* Source Toggle */
+  .source-toggle {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .source-option {
+    flex: 1;
+    padding: 0.625rem 1rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    color: var(--text-secondary);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .source-option:hover {
+    border-color: var(--border-light);
+  }
+
+  .source-option.active {
+    border-color: var(--accent);
+    background: rgba(var(--accent-rgb), 0.1);
+    color: var(--accent);
+  }
+
+  /* File Upload */
+  .file-upload-area {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 2rem;
+    background: var(--bg-tertiary);
+    border: 2px dashed var(--border-light);
+    border-radius: 0.75rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    position: relative;
+  }
+
+  .file-upload-area:hover {
+    border-color: var(--accent);
+    background: rgba(var(--accent-rgb), 0.05);
+  }
+
+  .file-upload-area.uploading {
+    border-color: var(--accent);
+    cursor: wait;
+  }
+
+  .file-upload-area.has-file {
+    border-style: solid;
+    border-color: var(--success);
+    background: rgba(var(--success-rgb, 34, 197, 94), 0.1);
+  }
+
+  .file-upload-area span {
+    font-size: 0.875rem;
+  }
+
+  .file-types {
+    font-size: 0.75rem !important;
+    color: var(--text-muted);
+  }
+
+  .file-input-hidden {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+  }
+
+  .upload-spinner {
+    width: 1.5rem;
+    height: 1.5rem;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+
+  .upload-success {
+    color: var(--success);
+    font-weight: 500;
+  }
+
+  .change-file-btn {
+    padding: 0.375rem 0.75rem;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 0.375rem;
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    cursor: pointer;
+    margin-top: 0.25rem;
+  }
+
+  .change-file-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  .input-hint.error {
+    color: var(--error, #ef4444);
   }
 </style>
