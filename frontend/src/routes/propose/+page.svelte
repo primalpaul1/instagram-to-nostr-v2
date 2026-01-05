@@ -34,6 +34,7 @@
   let handle = '';
   let targetNpub = '';
   let posts: Post[] = [];
+  let fetchedPosts: any[] = [];  // Accumulates during streaming
   let profile: Profile | null = null;
   let fetchCount = 0;
   let error = '';
@@ -64,6 +65,7 @@
     step = 'fetching';
     error = '';
     posts = [];
+    fetchedPosts = [];
     fetchCount = 0;
     abortController = new AbortController();
 
@@ -105,6 +107,9 @@
 
               if (data.progress) {
                 fetchCount = data.count;
+                if (data.posts) {
+                  fetchedPosts = data.posts;
+                }
                 if (data.profile) {
                   profile = data.profile;
                 }
@@ -144,8 +149,10 @@
   }
 
   function pauseFetch() {
-    if (!abortController || posts.length === 0) return;
+    if (!abortController || fetchedPosts.length === 0) return;
     abortController.abort();
+    // Use accumulated posts with all selected by default
+    posts = fetchedPosts.map((p: any) => ({ ...p, selected: true }));
     step = 'select';
   }
 
@@ -309,9 +316,9 @@
         <div class="spinner-large"></div>
         <h2>Fetching content...</h2>
         <p class="count">{fetchCount} posts found</p>
-        {#if fetchCount > 0}
+        {#if fetchedPosts.length > 0}
           <button class="secondary-btn" on:click={pauseFetch}>
-            Continue with {fetchCount} posts
+            Continue with {fetchedPosts.length} posts
           </button>
         {/if}
       </div>
