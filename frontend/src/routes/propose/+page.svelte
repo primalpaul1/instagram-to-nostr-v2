@@ -41,6 +41,12 @@
   let claimUrl = '';
   let abortController: AbortController | null = null;
 
+  // Manual post adding
+  let showAddModal = false;
+  let manualVideoUrl = '';
+  let manualCaption = '';
+  let manualPostType: PostType = 'reel';
+
   $: reelPosts = posts.filter(p => p.post_type === 'reel');
   $: imagePosts = posts.filter(p => p.post_type === 'image' || p.post_type === 'carousel');
   $: selectedPosts = posts.filter(p => p.selected);
@@ -251,6 +257,41 @@
     const firstVideo = post.media_items.find(m => m.media_type === 'video');
     return firstVideo?.duration;
   }
+
+  function openAddModal() {
+    showAddModal = true;
+    manualVideoUrl = '';
+    manualCaption = '';
+    manualPostType = 'reel';
+  }
+
+  function closeAddModal() {
+    showAddModal = false;
+  }
+
+  function addManualPost() {
+    if (!manualVideoUrl.trim()) return;
+
+    const newPost: Post = {
+      id: `manual-${Date.now()}`,
+      post_type: manualPostType,
+      caption: manualCaption.trim() || undefined,
+      original_date: new Date().toISOString(),
+      thumbnail_url: undefined,
+      media_items: [{
+        url: manualVideoUrl.trim(),
+        media_type: manualPostType === 'reel' ? 'video' : 'image'
+      }],
+      selected: true
+    };
+
+    posts = [newPost, ...posts];
+    closeAddModal();
+  }
+
+  function editCaption(postId: string, newCaption: string) {
+    posts = posts.map(p => p.id === postId ? { ...p, caption: newCaption } : p);
+  }
 </script>
 
 <svelte:head>
@@ -352,6 +393,12 @@
             <span class="label">of {currentPosts.length} selected</span>
           </div>
           <div class="toolbar-actions">
+            <button class="add-btn" on:click={openAddModal}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 5v14M5 12h14"/>
+              </svg>
+              Add Post
+            </button>
             <button class="text-btn" on:click={selectAllCurrentTab}>Select All</button>
             <button class="text-btn" on:click={deselectAllCurrentTab}>Clear</button>
           </div>
@@ -463,6 +510,81 @@
       </div>
     {/if}
   </main>
+
+  {#if showAddModal}
+    <div class="modal-backdrop" on:click={closeAddModal} on:keydown={(e) => e.key === 'Escape' && closeAddModal()} role="button" tabindex="-1">
+      <div class="modal" on:click|stopPropagation role="dialog" aria-modal="true">
+        <div class="modal-header">
+          <h3>Add Post Manually</h3>
+          <button class="close-btn" on:click={closeAddModal}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M18 6L6 18M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+
+        <div class="modal-body">
+          <div class="input-group">
+            <label for="post-type">Post Type</label>
+            <div class="type-selector">
+              <button
+                class="type-option"
+                class:active={manualPostType === 'reel'}
+                on:click={() => manualPostType = 'reel'}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polygon points="5 3 19 12 5 21 5 3"/>
+                </svg>
+                Video
+              </button>
+              <button
+                class="type-option"
+                class:active={manualPostType === 'image'}
+                on:click={() => manualPostType = 'image'}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                  <circle cx="8.5" cy="8.5" r="1.5"/>
+                  <path d="M21 15l-5-5L5 21"/>
+                </svg>
+                Image
+              </button>
+            </div>
+          </div>
+
+          <div class="input-group">
+            <label for="media-url">Media URL</label>
+            <input
+              id="media-url"
+              type="text"
+              bind:value={manualVideoUrl}
+              placeholder={manualPostType === 'reel' ? 'https://example.com/video.mp4' : 'https://example.com/image.jpg'}
+              class="modal-input"
+            />
+            <span class="input-hint">Direct link to the {manualPostType === 'reel' ? 'video' : 'image'} file</span>
+          </div>
+
+          <div class="input-group">
+            <label for="caption">Caption</label>
+            <textarea
+              id="caption"
+              bind:value={manualCaption}
+              placeholder="Write your caption here..."
+              class="modal-textarea"
+              rows="4"
+            ></textarea>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button class="secondary-btn" on:click={closeAddModal}>Cancel</button>
+          <button class="primary-btn" disabled={!manualVideoUrl.trim()} on:click={addManualPost}>
+            Add Post
+          </button>
+        </div>
+      </div>
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -1002,5 +1124,162 @@
   .summary-row .value.mono {
     font-family: 'SF Mono', Monaco, monospace;
     font-size: 0.75rem;
+  }
+
+  /* Add Button */
+  .add-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.5rem 0.75rem;
+    background: rgba(var(--accent-rgb), 0.15);
+    border: 1px solid rgba(var(--accent-rgb), 0.3);
+    border-radius: 0.5rem;
+    color: var(--accent);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .add-btn:hover {
+    background: rgba(var(--accent-rgb), 0.25);
+    border-color: var(--accent);
+  }
+
+  /* Modal */
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: 1rem;
+  }
+
+  .modal {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 1rem;
+    width: 100%;
+    max-width: 480px;
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+
+  .modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1.25rem 1.5rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .modal-header h3 {
+    font-size: 1.125rem;
+    font-weight: 600;
+    margin: 0;
+  }
+
+  .close-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    background: transparent;
+    border: none;
+    border-radius: 0.5rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+  }
+
+  .close-btn:hover {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+  }
+
+  .modal-body {
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+  }
+
+  .type-selector {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .type-option {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    background: var(--bg-tertiary);
+    border: 2px solid var(--border);
+    border-radius: 0.75rem;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .type-option:hover {
+    border-color: var(--border-light);
+    color: var(--text-primary);
+  }
+
+  .type-option.active {
+    border-color: var(--accent);
+    background: rgba(var(--accent-rgb), 0.1);
+    color: var(--accent);
+  }
+
+  .modal-input {
+    width: 100%;
+    padding: 0.875rem 1rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-light);
+    border-radius: 0.75rem;
+    color: var(--text-primary);
+    font-size: 0.875rem;
+  }
+
+  .modal-input:focus {
+    border-color: var(--accent);
+    outline: none;
+  }
+
+  .modal-textarea {
+    width: 100%;
+    padding: 0.875rem 1rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-light);
+    border-radius: 0.75rem;
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    font-family: inherit;
+    resize: vertical;
+    min-height: 100px;
+  }
+
+  .modal-textarea:focus {
+    border-color: var(--accent);
+    outline: none;
+  }
+
+  .modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    padding: 1.25rem 1.5rem;
+    border-top: 1px solid var(--border);
   }
 </style>
