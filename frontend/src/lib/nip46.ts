@@ -9,10 +9,10 @@ import { bytesToHex, hexToBytes } from '@noble/hashes/utils';
 import QRCode from 'qrcode';
 
 // Default relays for NIP-46 communication
+// relay.nsec.app is specifically designed for NIP-46 remote signing
 const NIP46_RELAYS = [
-  'wss://relay.primal.net',
-  'wss://relay.damus.io',
-  'wss://relay.nsec.app'
+  'wss://relay.nsec.app',
+  'wss://relay.primal.net'
 ];
 
 export interface NIP46Connection {

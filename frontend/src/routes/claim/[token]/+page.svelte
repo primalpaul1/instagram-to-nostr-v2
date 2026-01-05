@@ -93,7 +93,7 @@
 
     // Check for pending NIP-46 connection from redirect
     const pendingConnection = sessionStorage.getItem('nip46_pending');
-    if (pendingConnection) {
+    if (pendingConnection && step === 'preview') {
       try {
         const { localSecretKey, localPublicKey, secret } = JSON.parse(pendingConnection);
         // Restore connection state and resume waiting
@@ -103,6 +103,8 @@
         mobileConnectionURI = createConnectionURI(localPublicKey, secret, true, window.location.href);
         qrCodeDataUrl = await generateQRCode(connectionURI);
         connectionStatus = 'waiting';
+        // Go to connect step to show waiting UI
+        step = 'connect';
         waitForPrimalConnection();
       } catch (err) {
         console.error('Failed to restore NIP-46 connection:', err);
