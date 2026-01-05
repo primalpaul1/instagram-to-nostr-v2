@@ -138,7 +138,7 @@
       throw new Error('Stream ended unexpectedly');
     } catch (err) {
       if (err instanceof Error && err.name === 'AbortError') {
-        step = 'input';
+        // Don't change step - pauseFetch already set it to 'select'
         return;
       }
       error = err instanceof Error ? err.message : 'An error occurred';
