@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { page } from '$app/stores';
+  import type { Event } from 'nostr-tools';
   import {
     createConnectionURI,
     generateQRCode,
@@ -254,10 +255,17 @@
     }
   }
 
+  // Collect signed events for batch import to Primal cache
+  let signedEvents: Event[] = [];
+  let publishedPostIds: number[] = [];
+
   async function startPublishing() {
     if (!nip46Connection || !proposal) return;
 
-    const CONCURRENCY = 5;
+    // Higher concurrency since signing is the bottleneck
+    const CONCURRENCY = 10;
+    signedEvents = [];
+    publishedPostIds = [];
 
     try {
       const queue: number[] = [...Array(tasks.length).keys()];
@@ -277,6 +285,23 @@
 
       const workers = Array(CONCURRENCY).fill(null).map(() => processQueue());
       await Promise.all(workers);
+
+      // Batch import all events to Primal cache (fire and forget)
+      if (signedEvents.length > 0) {
+        importToPrimalCache(signedEvents).catch(() => {});
+      }
+
+      // Batch mark all posts as published
+      if (publishedPostIds.length > 0) {
+        await fetch(`/api/proposals/${token}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'markPostsPublished',
+            postIds: publishedPostIds
+          })
+        });
+      }
 
       // Mark proposal as claimed
       await fetch(`/api/proposals/${token}`, {
@@ -334,22 +359,9 @@
         throw new Error('Failed to publish to any relay');
       }
 
-      // Import to Primal cache
-      try {
-        await importToPrimalCache([signedPost]);
-      } catch {
-        // Non-fatal
-      }
-
-      // Mark post as published
-      await fetch(`/api/proposals/${token}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'markPostPublished',
-          postId: task.post.id
-        })
-      });
+      // Collect for batch operations at the end
+      signedEvents.push(signedPost);
+      publishedPostIds.push(task.post.id);
 
       tasks[index] = { ...tasks[index], status: 'complete' };
       tasks = [...tasks];

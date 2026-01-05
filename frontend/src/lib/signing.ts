@@ -98,10 +98,15 @@ export function createVideoPostEvent(
   content += blossomUrl;
 
   // Parse original date for created_at timestamp
+  // Dates from backend are in ISO format without timezone, treat as UTC
   let createdAt = Math.floor(Date.now() / 1000);
   if (video.originalDate) {
     try {
-      const date = new Date(video.originalDate);
+      // Append 'Z' if no timezone specified to parse as UTC
+      const dateStr = video.originalDate.includes('Z') || video.originalDate.includes('+') || video.originalDate.includes('-', 10)
+        ? video.originalDate
+        : video.originalDate + 'Z';
+      const date = new Date(dateStr);
       if (!isNaN(date.getTime())) {
         createdAt = Math.floor(date.getTime() / 1000);
       }
@@ -161,10 +166,15 @@ export function createMultiMediaPostEvent(
   content += urls.join('\n');
 
   // Parse original date for created_at timestamp
+  // Dates from backend are in ISO format without timezone, treat as UTC
   let createdAt = Math.floor(Date.now() / 1000);
   if (originalDate) {
     try {
-      const date = new Date(originalDate);
+      // Append 'Z' if no timezone specified to parse as UTC
+      const dateStr = originalDate.includes('Z') || originalDate.includes('+') || originalDate.includes('-', 10)
+        ? originalDate
+        : originalDate + 'Z';
+      const date = new Date(dateStr);
       if (!isNaN(date.getTime())) {
         createdAt = Math.floor(date.getTime() / 1000);
       }

@@ -137,6 +137,20 @@ export const POST: RequestHandler = async ({ params, request }) => {
       return json({ success: true });
     }
 
+    if (action === 'markPostsPublished') {
+      // Batch mark multiple posts as published
+      const { postIds } = body;
+      if (!postIds || !Array.isArray(postIds)) {
+        return json({ error: 'Missing postIds array' }, { status: 400 });
+      }
+
+      // Mark all posts as published
+      for (const id of postIds) {
+        await updateProposalPostStatus(id, 'published');
+      }
+      return json({ success: true, count: postIds.length });
+    }
+
     return json({ error: 'Unknown action' }, { status: 400 });
   } catch (err) {
     console.error('Error processing proposal action:', err);

@@ -268,3 +268,34 @@ def cleanup_expired_proposals() -> int:
             )
 
         return count
+
+
+def reset_stale_processing_proposals() -> int:
+    """
+    Reset proposals stuck in 'processing' status back to 'pending'.
+    This handles cases where the worker was restarted mid-processing.
+    Also resets any 'uploading' posts back to 'pending'.
+    """
+    with get_connection() as conn:
+        # Count stale proposals
+        cursor = conn.execute(
+            "SELECT COUNT(*) as count FROM proposals WHERE status = 'processing'"
+        )
+        count = cursor.fetchone()["count"]
+
+        if count > 0:
+            # Reset proposal_posts that were uploading
+            conn.execute(
+                """
+                UPDATE proposal_posts
+                SET status = 'pending'
+                WHERE status = 'uploading'
+                AND proposal_id IN (SELECT id FROM proposals WHERE status = 'processing')
+                """
+            )
+            # Reset proposals
+            conn.execute(
+                "UPDATE proposals SET status = 'pending' WHERE status = 'processing'"
+            )
+
+        return count

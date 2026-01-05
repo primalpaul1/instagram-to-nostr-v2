@@ -32,6 +32,7 @@ from db import (
     update_proposal_status,
     update_proposal_post_status,
     cleanup_expired_proposals,
+    reset_stale_processing_proposals,
 )
 
 # Configuration
@@ -738,6 +739,11 @@ async def worker_loop():
 
     # Initialize database
     init_db()
+
+    # Reset any proposals that were stuck in 'processing' from previous runs
+    reset_count = reset_stale_processing_proposals()
+    if reset_count > 0:
+        print(f"Reset {reset_count} stale processing proposals")
 
     # Semaphore for concurrency limiting
     semaphore = asyncio.Semaphore(CONCURRENCY)
