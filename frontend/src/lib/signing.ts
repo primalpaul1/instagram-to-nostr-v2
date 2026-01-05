@@ -160,13 +160,11 @@ export function createMultiMediaPostEvent(
 
   // Build content with caption and all URLs
   let content = caption || '';
-  if (content && urls.length > 0) {
-    content += '\n\n';
-  }
-  content += urls.join('\n');
 
-  // Parse original date for created_at timestamp
-  // Dates from backend are in ISO format without timezone, treat as UTC
+  // Add original date attribution if available
+  // Note: NIP-46 signers may overwrite created_at for security, so we include
+  // the original date in the content to preserve the historical context
+  let formattedDate = '';
   let createdAt = Math.floor(Date.now() / 1000);
   if (originalDate) {
     try {
@@ -177,10 +175,30 @@ export function createMultiMediaPostEvent(
       const date = new Date(dateStr);
       if (!isNaN(date.getTime())) {
         createdAt = Math.floor(date.getTime() / 1000);
+        // Format date for display (e.g., "Dec 29, 2025")
+        formattedDate = date.toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+          timeZone: 'UTC'
+        });
       }
     } catch {
       // Use current time if parsing fails
     }
+  }
+
+  // Add original date at the end of caption if we have one
+  if (formattedDate) {
+    if (content) {
+      content += '\n\n';
+    }
+    content += `📅 Originally posted: ${formattedDate}`;
+  }
+
+  // Add media URLs
+  if (urls.length > 0) {
+    content += '\n\n' + urls.join('\n');
   }
 
   return {
