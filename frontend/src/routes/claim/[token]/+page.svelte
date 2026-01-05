@@ -379,17 +379,13 @@
   }
 
   function getMediaPreviewUrl(post: ProposalPost): string | null {
-    // For images and carousels, use the first blossom URL directly
-    if ((post.post_type === 'image' || post.post_type === 'carousel') && post.blossom_urls[0]) {
+    // First priority: use blossom URL if available (permanent, our storage)
+    if (post.blossom_urls && Array.isArray(post.blossom_urls) && post.blossom_urls.length > 0) {
       return post.blossom_urls[0];
     }
-    // For videos/reels, use thumbnail if available
+    // Fallback to thumbnail URL (Instagram CDN, may expire)
     if (post.thumbnail_url) {
       return post.thumbnail_url;
-    }
-    // Fallback to first blossom URL if available
-    if (post.blossom_urls && post.blossom_urls[0]) {
-      return post.blossom_urls[0];
     }
     // No preview available
     return null;
