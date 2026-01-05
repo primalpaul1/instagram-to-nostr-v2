@@ -292,8 +292,6 @@
     <div class="primal-header">
       <span>Login with Primal</span>
     </div>
-    <p class="primal-description">Scan with your Primal app to connect your existing Nostr identity</p>
-
     <div class="qr-container">
       {#if connectionStatus === 'connected'}
         <div class="connected-state">
