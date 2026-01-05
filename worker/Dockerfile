@@ -16,5 +16,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY db.py worker.py schema.sql ./
 
+# Ensure Python output is not buffered (for docker logs)
+ENV PYTHONUNBUFFERED=1
+
 # Run the worker
 CMD ["python", "worker.py"]
