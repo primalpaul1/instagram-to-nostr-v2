@@ -33,7 +33,7 @@ export function createConnectionURI(localPubkey: string, secret: string, returnU
   let uri = `nostrconnect://${localPubkey}?${relayParams}&secret=${secret}&name=${encodeURIComponent('Insta to Primal')}&perms=${encodeURIComponent(perms)}`;
 
   if (returnUrl) {
-    uri += `&return_url=${encodeURIComponent(returnUrl)}`;
+    uri += `&url=${encodeURIComponent(returnUrl)}`;
   }
 
   return uri;
