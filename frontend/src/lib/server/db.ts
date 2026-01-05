@@ -198,3 +198,245 @@ export async function getJobWithTasks(jobId: string): Promise<{ job: Job; tasks:
   const tasks = await getVideoTasksByJobId(jobId);
   return { job, tasks };
 }
+
+// ============================================
+// Proposal functions for third-party migrations
+// ============================================
+
+export interface Proposal {
+  id: string;
+  claim_token: string;
+  target_npub: string;
+  target_pubkey_hex: string;
+  ig_handle: string;
+  profile_data: string | null;  // JSON string
+  status: 'pending' | 'processing' | 'ready' | 'claimed' | 'expired';
+  claimed_at: string | null;
+  created_at: string;
+  expires_at: string;
+}
+
+export interface ProposalPost {
+  id: number;
+  proposal_id: string;
+  post_type: 'reel' | 'image' | 'carousel';
+  caption: string | null;
+  original_date: string | null;
+  media_items: string;  // JSON string
+  blossom_urls: string | null;  // JSON string
+  thumbnail_url: string | null;
+  status: 'pending' | 'uploading' | 'ready' | 'published';
+  created_at: string;
+}
+
+export async function ensureProposalTables(): Promise<void> {
+  const database = await getDb();
+
+  // Check if proposals table exists
+  const result = database.exec(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='proposals'"
+  );
+
+  if (result.length === 0 || result[0].values.length === 0) {
+    // Create proposals tables
+    database.run(`
+      CREATE TABLE IF NOT EXISTS proposals (
+        id TEXT PRIMARY KEY,
+        claim_token TEXT UNIQUE NOT NULL,
+        target_npub TEXT NOT NULL,
+        target_pubkey_hex TEXT NOT NULL,
+        ig_handle TEXT NOT NULL,
+        profile_data TEXT,
+        status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'ready', 'claimed', 'expired')),
+        claimed_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        expires_at DATETIME NOT NULL
+      )
+    `);
+
+    database.run(`
+      CREATE TABLE IF NOT EXISTS proposal_posts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        proposal_id TEXT NOT NULL,
+        post_type TEXT NOT NULL CHECK (post_type IN ('reel', 'image', 'carousel')),
+        caption TEXT,
+        original_date TEXT,
+        media_items TEXT NOT NULL,
+        blossom_urls TEXT,
+        thumbnail_url TEXT,
+        status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'uploading', 'ready', 'published')),
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE
+      )
+    `);
+
+    database.run('CREATE INDEX IF NOT EXISTS idx_proposals_claim_token ON proposals(claim_token)');
+    database.run('CREATE INDEX IF NOT EXISTS idx_proposals_status ON proposals(status)');
+    database.run('CREATE INDEX IF NOT EXISTS idx_proposals_expires_at ON proposals(expires_at)');
+    database.run('CREATE INDEX IF NOT EXISTS idx_proposal_posts_proposal_id ON proposal_posts(proposal_id)');
+
+    saveDb(database);
+  }
+}
+
+export async function createProposal(
+  id: string,
+  claimToken: string,
+  targetNpub: string,
+  targetPubkeyHex: string,
+  igHandle: string,
+  profileData?: string,
+  expiresAt?: string
+): Promise<Proposal> {
+  await ensureProposalTables();
+  const database = await getDb();
+
+  // Default expiration: 30 days from now
+  const expiration = expiresAt || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
+  database.run(
+    `INSERT INTO proposals (id, claim_token, target_npub, target_pubkey_hex, ig_handle, profile_data, expires_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [id, claimToken, targetNpub, targetPubkeyHex, igHandle, profileData || null, expiration]
+  );
+  saveDb(database);
+  return (await getProposal(id))!;
+}
+
+export async function getProposal(id: string): Promise<Proposal | undefined> {
+  await ensureProposalTables();
+  const database = await getDb();
+  const result = database.exec('SELECT * FROM proposals WHERE id = ?', [id]);
+  if (result.length === 0 || result[0].values.length === 0) return undefined;
+  return rowToObject<Proposal>(result[0].columns, result[0].values[0]);
+}
+
+export async function getProposalByToken(claimToken: string): Promise<Proposal | undefined> {
+  await ensureProposalTables();
+  const database = await getDb();
+  const result = database.exec('SELECT * FROM proposals WHERE claim_token = ?', [claimToken]);
+  if (result.length === 0 || result[0].values.length === 0) return undefined;
+  return rowToObject<Proposal>(result[0].columns, result[0].values[0]);
+}
+
+export async function updateProposalStatus(id: string, status: Proposal['status']): Promise<void> {
+  const database = await getDb();
+  database.run('UPDATE proposals SET status = ? WHERE id = ?', [status, id]);
+  saveDb(database);
+}
+
+export async function markProposalClaimed(id: string): Promise<void> {
+  const database = await getDb();
+  database.run(
+    `UPDATE proposals SET status = 'claimed', claimed_at = datetime('now') WHERE id = ?`,
+    [id]
+  );
+  saveDb(database);
+}
+
+export async function createProposalPost(
+  proposalId: string,
+  postType: 'reel' | 'image' | 'carousel',
+  mediaItems: string,
+  caption?: string,
+  originalDate?: string,
+  thumbnailUrl?: string
+): Promise<ProposalPost> {
+  await ensureProposalTables();
+  const database = await getDb();
+
+  database.run(
+    `INSERT INTO proposal_posts (proposal_id, post_type, media_items, caption, original_date, thumbnail_url)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [proposalId, postType, mediaItems, caption || null, originalDate || null, thumbnailUrl || null]
+  );
+  saveDb(database);
+
+  // Get the last inserted post
+  const result = database.exec(
+    'SELECT * FROM proposal_posts WHERE proposal_id = ? ORDER BY id DESC LIMIT 1',
+    [proposalId]
+  );
+  return rowToObject<ProposalPost>(result[0].columns, result[0].values[0]);
+}
+
+export async function getProposalPosts(proposalId: string): Promise<ProposalPost[]> {
+  await ensureProposalTables();
+  const database = await getDb();
+  const result = database.exec(
+    'SELECT * FROM proposal_posts WHERE proposal_id = ? ORDER BY id',
+    [proposalId]
+  );
+  if (result.length === 0) return [];
+  return result[0].values.map(row => rowToObject<ProposalPost>(result[0].columns, row));
+}
+
+export async function updateProposalPostStatus(
+  postId: number,
+  status: ProposalPost['status'],
+  blossomUrls?: string
+): Promise<void> {
+  const database = await getDb();
+  if (blossomUrls) {
+    database.run(
+      'UPDATE proposal_posts SET status = ?, blossom_urls = ? WHERE id = ?',
+      [status, blossomUrls, postId]
+    );
+  } else {
+    database.run('UPDATE proposal_posts SET status = ? WHERE id = ?', [status, postId]);
+  }
+  saveDb(database);
+}
+
+export async function getProposalWithPosts(proposalId: string): Promise<{ proposal: Proposal; posts: ProposalPost[] } | null> {
+  const proposal = await getProposal(proposalId);
+  if (!proposal) return null;
+
+  const posts = await getProposalPosts(proposalId);
+  return { proposal, posts };
+}
+
+export async function getProposalByTokenWithPosts(claimToken: string): Promise<{ proposal: Proposal; posts: ProposalPost[] } | null> {
+  const proposal = await getProposalByToken(claimToken);
+  if (!proposal) return null;
+
+  const posts = await getProposalPosts(proposal.id);
+  return { proposal, posts };
+}
+
+export async function getPendingProposals(): Promise<Proposal[]> {
+  await ensureProposalTables();
+  const database = await getDb();
+  const result = database.exec(
+    "SELECT * FROM proposals WHERE status = 'pending' ORDER BY created_at"
+  );
+  if (result.length === 0) return [];
+  return result[0].values.map(row => rowToObject<Proposal>(result[0].columns, row));
+}
+
+export async function cleanupExpiredProposals(): Promise<number> {
+  await ensureProposalTables();
+  const database = await getDb();
+
+  // Get count of expired proposals
+  const countResult = database.exec(
+    "SELECT COUNT(*) as count FROM proposals WHERE expires_at < datetime('now') AND status != 'claimed'"
+  );
+  const count = countResult.length > 0 ? (countResult[0].values[0][0] as number) : 0;
+
+  if (count > 0) {
+    // Delete proposal posts first (foreign key)
+    database.run(`
+      DELETE FROM proposal_posts
+      WHERE proposal_id IN (
+        SELECT id FROM proposals WHERE expires_at < datetime('now') AND status != 'claimed'
+      )
+    `);
+
+    // Delete expired proposals
+    database.run("DELETE FROM proposals WHERE expires_at < datetime('now') AND status != 'claimed'");
+    saveDb(database);
+  }
+
+  return count;
+}

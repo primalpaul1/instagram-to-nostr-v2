@@ -171,3 +171,100 @@ def update_job_profile_published(
             """,
             (profile_blossom_url, job_id),
         )
+
+
+# ============================================
+# Proposal functions for third-party migrations
+# ============================================
+
+
+def get_pending_proposals(limit: int = 10) -> list[dict]:
+    """Get pending proposals that need media processing."""
+    with get_connection() as conn:
+        cursor = conn.execute(
+            """
+            SELECT * FROM proposals
+            WHERE status = 'pending'
+            ORDER BY created_at ASC
+            LIMIT ?
+            """,
+            (limit,),
+        )
+        return [dict(row) for row in cursor.fetchall()]
+
+
+def get_proposal_posts(proposal_id: str) -> list[dict]:
+    """Get all posts for a proposal."""
+    with get_connection() as conn:
+        cursor = conn.execute(
+            """
+            SELECT * FROM proposal_posts
+            WHERE proposal_id = ?
+            ORDER BY id ASC
+            """,
+            (proposal_id,),
+        )
+        return [dict(row) for row in cursor.fetchall()]
+
+
+def update_proposal_status(proposal_id: str, status: str):
+    """Update a proposal's status."""
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE proposals SET status = ? WHERE id = ?",
+            (status, proposal_id),
+        )
+
+
+def update_proposal_post_status(
+    post_id: int,
+    status: str,
+    blossom_urls: Optional[str] = None,
+):
+    """Update a proposal post's status and optionally blossom URLs."""
+    with get_connection() as conn:
+        if blossom_urls:
+            conn.execute(
+                """
+                UPDATE proposal_posts
+                SET status = ?, blossom_urls = ?
+                WHERE id = ?
+                """,
+                (status, blossom_urls, post_id),
+            )
+        else:
+            conn.execute(
+                "UPDATE proposal_posts SET status = ? WHERE id = ?",
+                (status, post_id),
+            )
+
+
+def cleanup_expired_proposals() -> int:
+    """Delete proposals that have expired and weren't claimed."""
+    with get_connection() as conn:
+        # Get count first
+        cursor = conn.execute(
+            """
+            SELECT COUNT(*) as count FROM proposals
+            WHERE expires_at < datetime('now') AND status != 'claimed'
+            """
+        )
+        count = cursor.fetchone()["count"]
+
+        if count > 0:
+            # Delete proposal posts first (foreign key)
+            conn.execute(
+                """
+                DELETE FROM proposal_posts
+                WHERE proposal_id IN (
+                    SELECT id FROM proposals
+                    WHERE expires_at < datetime('now') AND status != 'claimed'
+                )
+                """
+            )
+            # Delete proposals
+            conn.execute(
+                "DELETE FROM proposals WHERE expires_at < datetime('now') AND status != 'claimed'"
+            )
+
+        return count

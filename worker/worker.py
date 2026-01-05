@@ -26,6 +26,12 @@ from db import (
     update_job_status,
     update_job_profile_published,
     update_task_status,
+    # Proposal functions
+    get_pending_proposals,
+    get_proposal_posts,
+    update_proposal_status,
+    update_proposal_post_status,
+    cleanup_expired_proposals,
 )
 
 # Configuration
@@ -641,6 +647,88 @@ async def process_profile(job: dict) -> None:
         print(f"Error processing profile for job {job_id}: {e}")
 
 
+def generate_temp_keypair() -> tuple[str, str]:
+    """Generate a temporary keypair for Blossom uploads."""
+    import secrets
+    secret_key_bytes = secrets.token_bytes(32)
+    secret_key_hex = secret_key_bytes.hex()
+
+    # Get public key from secret
+    signing_key = SigningKey.from_string(secret_key_bytes, curve=SECP256k1)
+    verifying_key = signing_key.get_verifying_key()
+    public_key_hex = verifying_key.to_string()[:32].hex()
+
+    return public_key_hex, secret_key_hex
+
+
+async def process_proposal(proposal: dict) -> None:
+    """
+    Process a proposal - download media and upload to Blossom.
+    Uses a temporary keypair for Blossom auth (content-addressed, so same URL for same content).
+    """
+    proposal_id = proposal["id"]
+    print(f"Processing proposal {proposal_id} for @{proposal['ig_handle']}")
+
+    try:
+        # Mark as processing
+        update_proposal_status(proposal_id, "processing")
+
+        # Generate temp keypair for Blossom uploads
+        temp_public_key, temp_secret_key = generate_temp_keypair()
+
+        # Get all posts for this proposal
+        posts = get_proposal_posts(proposal_id)
+        print(f"Processing {len(posts)} posts for proposal {proposal_id}")
+
+        async with httpx.AsyncClient(timeout=300.0) as client:
+            for post in posts:
+                post_id = post["id"]
+                post_type = post["post_type"]
+
+                try:
+                    update_proposal_post_status(post_id, "uploading")
+
+                    # Parse media items
+                    media_items = json.loads(post["media_items"])
+
+                    # Upload each media item
+                    blossom_urls = []
+                    for item in media_items:
+                        print(f"Uploading {item['media_type']} for proposal post {post_id}")
+                        upload_result = await upload_media_to_blossom(
+                            client=client,
+                            media_url=item["url"],
+                            media_type=item["media_type"],
+                            public_key_hex=temp_public_key,
+                            secret_key_hex=temp_secret_key,
+                            width=item.get("width"),
+                            height=item.get("height"),
+                        )
+                        blossom_urls.append(upload_result["url"])
+
+                    # Update post with blossom URLs
+                    update_proposal_post_status(
+                        post_id,
+                        "ready",
+                        blossom_urls=json.dumps(blossom_urls),
+                    )
+                    print(f"Proposal post {post_id} uploaded: {len(blossom_urls)} files")
+
+                except Exception as e:
+                    print(f"Failed to process proposal post {post_id}: {e}")
+                    # Continue with other posts
+                    continue
+
+        # Mark proposal as ready
+        update_proposal_status(proposal_id, "ready")
+        print(f"Proposal {proposal_id} is ready for claiming")
+
+    except Exception as e:
+        print(f"Failed to process proposal {proposal_id}: {e}")
+        # Reset to pending for retry
+        update_proposal_status(proposal_id, "pending")
+
+
 async def worker_loop():
     """Main worker loop - polls for tasks and processes them."""
     print(f"Worker started with concurrency={CONCURRENCY}, max_retries={MAX_RETRIES}")
@@ -658,14 +746,33 @@ async def worker_loop():
         async with semaphore:
             await process_task(task)
 
+    # Track last cleanup time
+    last_cleanup = 0
+    CLEANUP_INTERVAL = 3600  # Run cleanup every hour
+
     while True:
         try:
+            # Periodic cleanup of expired proposals
+            now = time.time()
+            if now - last_cleanup > CLEANUP_INTERVAL:
+                deleted = cleanup_expired_proposals()
+                if deleted > 0:
+                    print(f"Cleaned up {deleted} expired proposals")
+                last_cleanup = now
+
             # Get and process pending profile events first
             profiles = get_jobs_with_unpublished_profiles(limit=5)
             if profiles:
                 print(f"Found {len(profiles)} profiles to publish")
                 for profile in profiles:
                     await process_profile(profile)
+
+            # Get and process pending proposals
+            proposals = get_pending_proposals(limit=3)
+            if proposals:
+                print(f"Found {len(proposals)} pending proposals")
+                for proposal in proposals:
+                    await process_proposal(proposal)
 
             # Get pending tasks
             tasks = get_pending_tasks(limit=CONCURRENCY * 2)
@@ -678,8 +785,8 @@ async def worker_loop():
                     *[process_with_semaphore(task) for task in tasks],
                     return_exceptions=True,
                 )
-            elif not profiles:
-                # No tasks or profiles, wait before polling again
+            elif not profiles and not proposals:
+                # No tasks, profiles, or proposals - wait before polling again
                 await asyncio.sleep(POLL_INTERVAL)
 
         except Exception as e:

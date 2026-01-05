@@ -116,6 +116,21 @@ export function hexToNpub(pubkeyHex: string): string {
 }
 
 /**
+ * Get the hex pubkey from an npub.
+ */
+export function npubToHex(npub: string): string | null {
+  try {
+    const decoded = nip19.decode(npub);
+    if (decoded.type === 'npub') {
+      return decoded.data;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Close the NIP-46 connection and cleanup resources.
  */
 export function closeConnection(connection: NIP46Connection | null): void {
