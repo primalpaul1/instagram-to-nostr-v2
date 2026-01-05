@@ -150,7 +150,9 @@
       connectionError = '';
       localKeypair = generateLocalKeypair();
       connectionSecret = generateSecret();
-      connectionURI = createConnectionURI(localKeypair.publicKey, connectionSecret);
+      // Pass current URL as return_url for mobile deep link flow
+      const returnUrl = typeof window !== 'undefined' ? window.location.href : undefined;
+      connectionURI = createConnectionURI(localKeypair.publicKey, connectionSecret, returnUrl);
       qrCodeDataUrl = await generateQRCode(connectionURI);
       waitForPrimalConnection();
     } catch (err) {

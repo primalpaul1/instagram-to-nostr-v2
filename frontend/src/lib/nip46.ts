@@ -24,12 +24,19 @@ export interface NIP46Connection {
 /**
  * Generate a nostrconnect:// URI for QR code display.
  * User scans this with Primal to establish connection.
+ * @param returnUrl - URL to redirect back to after approval (for mobile deep link flow)
  */
-export function createConnectionURI(localPubkey: string, secret: string): string {
+export function createConnectionURI(localPubkey: string, secret: string, returnUrl?: string): string {
   const relayParams = NIP46_RELAYS.map(r => `relay=${encodeURIComponent(r)}`).join('&');
   const perms = 'sign_event:0,sign_event:1,sign_event:24242';
 
-  return `nostrconnect://${localPubkey}?${relayParams}&secret=${secret}&name=${encodeURIComponent('Instagram to Nostr')}&perms=${encodeURIComponent(perms)}`;
+  let uri = `nostrconnect://${localPubkey}?${relayParams}&secret=${secret}&name=${encodeURIComponent('Insta to Primal')}&perms=${encodeURIComponent(perms)}`;
+
+  if (returnUrl) {
+    uri += `&return_url=${encodeURIComponent(returnUrl)}`;
+  }
+
+  return uri;
 }
 
 /**
