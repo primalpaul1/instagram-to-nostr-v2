@@ -527,7 +527,7 @@
     {:else if step === 'connect'}
       <div class="connect-step">
         <h2>Connect with Primal</h2>
-        <p class="subtitle">Scan with the Primal app to sign your posts</p>
+        <p class="subtitle">Sign your posts with Primal</p>
 
         <div class="qr-container">
           {#if connectionStatus === 'connected'}
@@ -546,6 +546,22 @@
               <button class="retry-btn" on:click={initNIP46Connection}>Try Again</button>
             </div>
           {:else if qrCodeDataUrl}
+            <!-- Login with Primal button for mobile -->
+            <a
+              href={connectionURI}
+              class="primal-login-btn"
+              aria-label="Login with Primal"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
+              </svg>
+              Login with Primal
+            </a>
+
+            <div class="divider">
+              <span>or scan QR code</span>
+            </div>
+
             <div class="qr-wrapper">
               <img src={qrCodeDataUrl} alt="Scan with Primal" class="qr-code" />
             </div>
@@ -1522,5 +1538,55 @@
 
   .delete-btn.restore:hover {
     background: rgba(var(--success-rgb), 0.1);
+  }
+
+  /* Login with Primal button */
+  .primal-login-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    width: 100%;
+    padding: 1rem 1.5rem;
+    background: linear-gradient(135deg, #8B5CF6 0%, #A855F7 50%, #D946EF 100%);
+    border: none;
+    border-radius: 0.875rem;
+    color: white;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+    transition: all 0.2s ease;
+    box-shadow: 0 4px 14px rgba(139, 92, 246, 0.4);
+  }
+
+  .primal-login-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(139, 92, 246, 0.5);
+  }
+
+  .primal-login-btn:active {
+    transform: translateY(0);
+  }
+
+  .primal-login-btn svg {
+    flex-shrink: 0;
+  }
+
+  .divider {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin: 1.5rem 0;
+    color: var(--text-muted);
+    font-size: 0.8125rem;
+  }
+
+  .divider::before,
+  .divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
   }
 </style>
