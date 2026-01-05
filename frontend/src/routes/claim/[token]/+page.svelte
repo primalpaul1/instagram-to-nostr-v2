@@ -75,8 +75,11 @@
   let selectedPostIndex: number | null = null;
   let editingCaption = '';
   let editedCaptions: Record<number, string> = {}; // postId -> edited caption
+  let excludedPosts: Set<number> = new Set(); // postIds to exclude from publishing
 
   $: selectedPost = selectedPostIndex !== null && proposal ? proposal.posts[selectedPostIndex] : null;
+  $: includedPosts = proposal ? proposal.posts.filter(p => !excludedPosts.has(p.id)) : [];
+  $: includedCount = includedPosts.length;
 
   $: completedCount = tasks.filter(t => t.status === 'complete').length;
   $: totalCount = tasks.length;
@@ -200,8 +203,8 @@
         return;
       }
 
-      // Verified! Set up tasks and start publishing
-      tasks = proposal.posts.map(post => ({ post, status: 'pending' }));
+      // Verified! Set up tasks for included posts only
+      tasks = includedPosts.map(post => ({ post, status: 'pending' }));
       step = 'publishing';
       await startPublishing();
     } catch (err) {
@@ -360,6 +363,33 @@
   function isPostEdited(post: ProposalPost): boolean {
     return post.id in editedCaptions;
   }
+
+  function isPostExcluded(post: ProposalPost): boolean {
+    return excludedPosts.has(post.id);
+  }
+
+  function toggleExclude(post: ProposalPost) {
+    if (excludedPosts.has(post.id)) {
+      excludedPosts.delete(post.id);
+    } else {
+      excludedPosts.add(post.id);
+    }
+    excludedPosts = excludedPosts; // trigger reactivity
+    closePostDetail();
+  }
+
+  function getMediaPreviewUrl(post: ProposalPost): string | null {
+    // For images, use the blossom URL directly
+    if (post.post_type === 'image' && post.blossom_urls[0]) {
+      return post.blossom_urls[0];
+    }
+    // For videos, use thumbnail if available
+    if (post.thumbnail_url) {
+      return post.thumbnail_url;
+    }
+    // Fallback: for videos without thumbnail, return null (will show icon)
+    return null;
+  }
 </script>
 
 <svelte:head>
@@ -413,7 +443,12 @@
           </div>
           <div class="summary-row">
             <span class="label">Content</span>
-            <span class="value">{proposal.posts.length} posts</span>
+            <span class="value">
+              {includedCount} of {proposal.posts.length} posts
+              {#if excludedPosts.size > 0}
+                <span class="excluded-note">({excludedPosts.size} removed)</span>
+              {/if}
+            </span>
           </div>
           <div class="summary-row">
             <span class="label">Publishing to</span>
@@ -424,33 +459,54 @@
         <div class="posts-preview">
           <div class="preview-header">
             <span>Preview</span>
-            <span class="edit-hint">Tap to edit captions</span>
+            <span class="edit-hint">Tap to edit or remove</span>
           </div>
           <div class="preview-grid">
             {#each proposal.posts as post, i}
-              <button class="preview-item" on:click={() => openPostDetail(i)}>
-                {#if post.thumbnail_url || post.blossom_urls[0]}
-                  <img src={post.thumbnail_url || post.blossom_urls[0]} alt="" />
+              <button
+                class="preview-item"
+                class:excluded={isPostExcluded(post)}
+                on:click={() => openPostDetail(i)}
+              >
+                {#if getMediaPreviewUrl(post)}
+                  <img src={getMediaPreviewUrl(post)} alt="" />
                 {:else}
                   <div class="placeholder">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                      <rect x="3" y="3" width="18" height="18" rx="2"/>
+                    {#if post.post_type === 'reel'}
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <polygon points="5 3 19 12 5 21 5 3"/>
+                      </svg>
+                    {:else}
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <rect x="3" y="3" width="18" height="18" rx="2"/>
+                        <circle cx="8.5" cy="8.5" r="1.5"/>
+                        <path d="M21 15l-5-5L5 21"/>
+                      </svg>
+                    {/if}
+                  </div>
+                {/if}
+                {#if isPostExcluded(post)}
+                  <div class="excluded-overlay">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <line x1="18" y1="6" x2="6" y2="18"/>
+                      <line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                  </div>
+                {:else}
+                  {#if isPostEdited(post)}
+                    <div class="edited-badge">
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                        <path d="M20 6L9 17l-5-5"/>
+                      </svg>
+                    </div>
+                  {/if}
+                  <div class="hover-overlay">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
+                      <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
                     </svg>
                   </div>
                 {/if}
-                {#if isPostEdited(post)}
-                  <div class="edited-badge">
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
-                      <path d="M20 6L9 17l-5-5"/>
-                    </svg>
-                  </div>
-                {/if}
-                <div class="hover-overlay">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
-                    <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                  </svg>
-                </div>
               </button>
             {/each}
           </div>
@@ -662,8 +718,31 @@
         </div>
 
         <div class="modal-footer">
-          <button class="secondary-btn" on:click={closePostDetail}>Cancel</button>
-          <button class="primary-btn small" on:click={saveCaption}>Save Changes</button>
+          <button
+            class="delete-btn"
+            class:restore={isPostExcluded(selectedPost)}
+            on:click={() => toggleExclude(selectedPost)}
+          >
+            {#if isPostExcluded(selectedPost)}
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M3 6h18"/>
+                <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+                <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+              </svg>
+              Restore Post
+            {:else}
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M3 6h18"/>
+                <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+                <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+              </svg>
+              Remove Post
+            {/if}
+          </button>
+          <div class="modal-actions">
+            <button class="secondary-btn" on:click={closePostDetail}>Cancel</button>
+            <button class="primary-btn small" on:click={saveCaption}>Save Changes</button>
+          </div>
         </div>
       </div>
     </div>
@@ -1368,16 +1447,80 @@
     color: var(--text-muted);
   }
 
+  .primary-btn.small {
+    padding: 0.625rem 1rem;
+    font-size: 0.875rem;
+  }
+
+  /* Excluded posts */
+  .preview-item.excluded {
+    opacity: 0.5;
+  }
+
+  .preview-item.excluded img {
+    filter: grayscale(0.8);
+  }
+
+  .preview-item.excluded:hover img {
+    transform: none;
+  }
+
+  .excluded-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--error, #ef4444);
+  }
+
+  .excluded-note {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    font-weight: 400;
+  }
+
+  /* Modal footer updates */
   .modal-footer {
     display: flex;
-    justify-content: flex-end;
+    justify-content: space-between;
+    align-items: center;
     gap: 0.75rem;
     padding: 1rem 1.25rem;
     border-top: 1px solid var(--border);
   }
 
-  .primary-btn.small {
+  .modal-actions {
+    display: flex;
+    gap: 0.75rem;
+  }
+
+  .delete-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
     padding: 0.625rem 1rem;
+    background: transparent;
+    border: 1px solid var(--error, #ef4444);
+    border-radius: 0.75rem;
+    color: var(--error, #ef4444);
     font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .delete-btn:hover {
+    background: rgba(var(--error-rgb, 239, 68, 68), 0.1);
+  }
+
+  .delete-btn.restore {
+    border-color: var(--success);
+    color: var(--success);
+  }
+
+  .delete-btn.restore:hover {
+    background: rgba(var(--success-rgb), 0.1);
   }
 </style>
