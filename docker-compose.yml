@@ -9,6 +9,7 @@ services:
       - BACKEND_URL=http://backend:8000
       - DATABASE_PATH=/data/instagram.db
       - NODE_ENV=production
+      - BODY_SIZE_LIMIT=524288000
     volumes:
       - ./data:/data
     depends_on:
