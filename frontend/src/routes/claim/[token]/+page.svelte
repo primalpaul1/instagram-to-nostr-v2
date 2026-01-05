@@ -206,7 +206,7 @@
   async function startPublishing() {
     if (!nip46Connection || !proposal) return;
 
-    const CONCURRENCY = 2;
+    const CONCURRENCY = 5;
 
     try {
       const queue: number[] = [...Array(tasks.length).keys()];
