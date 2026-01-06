@@ -310,3 +310,131 @@ def reset_stale_processing_proposals() -> int:
             )
 
         return count
+
+
+# ============================================
+# Gift functions for deterministic key derivation
+# ============================================
+
+
+def get_pending_gifts(limit: int = 10) -> list[dict]:
+    """Get pending gifts that need media processing."""
+    with get_connection() as conn:
+        cursor = conn.execute(
+            """
+            SELECT * FROM gifts
+            WHERE status = 'pending'
+            ORDER BY created_at ASC
+            LIMIT ?
+            """,
+            (limit,),
+        )
+        return [dict(row) for row in cursor.fetchall()]
+
+
+def get_gift_posts(gift_id: str) -> list[dict]:
+    """Get all posts for a gift."""
+    with get_connection() as conn:
+        cursor = conn.execute(
+            """
+            SELECT * FROM gift_posts
+            WHERE gift_id = ?
+            ORDER BY id ASC
+            """,
+            (gift_id,),
+        )
+        return [dict(row) for row in cursor.fetchall()]
+
+
+def update_gift_status(gift_id: str, status: str):
+    """Update a gift's status."""
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE gifts SET status = ? WHERE id = ?",
+            (status, gift_id),
+        )
+
+
+def update_gift_post_status(
+    post_id: int,
+    status: str,
+    blossom_urls: Optional[str] = None,
+):
+    """Update a gift post's status and optionally blossom URLs."""
+    with get_connection() as conn:
+        if blossom_urls:
+            conn.execute(
+                """
+                UPDATE gift_posts
+                SET status = ?, blossom_urls = ?
+                WHERE id = ?
+                """,
+                (status, blossom_urls, post_id),
+            )
+        else:
+            conn.execute(
+                "UPDATE gift_posts SET status = ? WHERE id = ?",
+                (status, post_id),
+            )
+
+
+def cleanup_expired_gifts() -> int:
+    """Delete gifts that have expired and weren't claimed."""
+    with get_connection() as conn:
+        # Get count first
+        cursor = conn.execute(
+            """
+            SELECT COUNT(*) as count FROM gifts
+            WHERE expires_at < datetime('now') AND status != 'claimed'
+            """
+        )
+        count = cursor.fetchone()["count"]
+
+        if count > 0:
+            # Delete gift posts first (foreign key)
+            conn.execute(
+                """
+                DELETE FROM gift_posts
+                WHERE gift_id IN (
+                    SELECT id FROM gifts
+                    WHERE expires_at < datetime('now') AND status != 'claimed'
+                )
+                """
+            )
+            # Delete gifts
+            conn.execute(
+                "DELETE FROM gifts WHERE expires_at < datetime('now') AND status != 'claimed'"
+            )
+
+        return count
+
+
+def reset_stale_processing_gifts() -> int:
+    """
+    Reset gifts stuck in 'processing' status back to 'pending'.
+    This handles cases where the worker was restarted mid-processing.
+    Also resets any 'uploading' posts back to 'pending'.
+    """
+    with get_connection() as conn:
+        # Count stale gifts
+        cursor = conn.execute(
+            "SELECT COUNT(*) as count FROM gifts WHERE status = 'processing'"
+        )
+        count = cursor.fetchone()["count"]
+
+        if count > 0:
+            # Reset gift_posts that were uploading
+            conn.execute(
+                """
+                UPDATE gift_posts
+                SET status = 'pending'
+                WHERE status = 'uploading'
+                AND gift_id IN (SELECT id FROM gifts WHERE status = 'processing')
+                """
+            )
+            # Reset gifts
+            conn.execute(
+                "UPDATE gifts SET status = 'pending' WHERE status = 'processing'"
+            )
+
+        return count

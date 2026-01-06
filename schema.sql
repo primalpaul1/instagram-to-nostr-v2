@@ -77,3 +77,37 @@ CREATE INDEX IF NOT EXISTS idx_proposals_claim_token ON proposals(claim_token);
 CREATE INDEX IF NOT EXISTS idx_proposals_status ON proposals(status);
 CREATE INDEX IF NOT EXISTS idx_proposals_expires_at ON proposals(expires_at);
 CREATE INDEX IF NOT EXISTS idx_proposal_posts_proposal_id ON proposal_posts(proposal_id);
+
+-- Gifts for deterministic key derivation (no npub required)
+CREATE TABLE IF NOT EXISTS gifts (
+  id TEXT PRIMARY KEY,
+  claim_token TEXT UNIQUE NOT NULL,
+  ig_handle TEXT NOT NULL,
+  profile_data TEXT,  -- JSON: {username, display_name, bio, profile_picture_url}
+  salt TEXT NOT NULL,  -- Random salt for key derivation
+  status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'ready', 'claimed', 'expired')),
+  claimed_at DATETIME,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  expires_at DATETIME NOT NULL
+);
+
+-- Posts within a gift
+CREATE TABLE IF NOT EXISTS gift_posts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  gift_id TEXT NOT NULL,
+  post_type TEXT NOT NULL CHECK (post_type IN ('reel', 'image', 'carousel')),
+  caption TEXT,
+  original_date TEXT,
+  media_items TEXT NOT NULL,  -- JSON array of original media URLs
+  blossom_urls TEXT,  -- JSON array of uploaded blossom URLs
+  thumbnail_url TEXT,
+  status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'uploading', 'ready', 'published')),
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (gift_id) REFERENCES gifts(id) ON DELETE CASCADE
+);
+
+-- Indexes for gifts
+CREATE INDEX IF NOT EXISTS idx_gifts_claim_token ON gifts(claim_token);
+CREATE INDEX IF NOT EXISTS idx_gifts_status ON gifts(status);
+CREATE INDEX IF NOT EXISTS idx_gifts_expires_at ON gifts(expires_at);
+CREATE INDEX IF NOT EXISTS idx_gift_posts_gift_id ON gift_posts(gift_id);

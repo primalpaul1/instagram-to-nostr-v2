@@ -440,3 +440,242 @@ export async function cleanupExpiredProposals(): Promise<number> {
 
   return count;
 }
+
+// ============================================
+// Gift functions for deterministic key derivation
+// ============================================
+
+export interface Gift {
+  id: string;
+  claim_token: string;
+  ig_handle: string;
+  profile_data: string | null;  // JSON string
+  salt: string;
+  status: 'pending' | 'processing' | 'ready' | 'claimed' | 'expired';
+  claimed_at: string | null;
+  created_at: string;
+  expires_at: string;
+}
+
+export interface GiftPost {
+  id: number;
+  gift_id: string;
+  post_type: 'reel' | 'image' | 'carousel';
+  caption: string | null;
+  original_date: string | null;
+  media_items: string;  // JSON string
+  blossom_urls: string | null;  // JSON string
+  thumbnail_url: string | null;
+  status: 'pending' | 'uploading' | 'ready' | 'published';
+  created_at: string;
+}
+
+export async function ensureGiftTables(): Promise<void> {
+  const database = await getDb();
+
+  // Check if gifts table exists
+  const result = database.exec(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='gifts'"
+  );
+
+  if (result.length === 0 || result[0].values.length === 0) {
+    // Create gifts tables
+    database.run(`
+      CREATE TABLE IF NOT EXISTS gifts (
+        id TEXT PRIMARY KEY,
+        claim_token TEXT UNIQUE NOT NULL,
+        ig_handle TEXT NOT NULL,
+        profile_data TEXT,
+        salt TEXT NOT NULL,
+        status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'ready', 'claimed', 'expired')),
+        claimed_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        expires_at DATETIME NOT NULL
+      )
+    `);
+
+    database.run(`
+      CREATE TABLE IF NOT EXISTS gift_posts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        gift_id TEXT NOT NULL,
+        post_type TEXT NOT NULL CHECK (post_type IN ('reel', 'image', 'carousel')),
+        caption TEXT,
+        original_date TEXT,
+        media_items TEXT NOT NULL,
+        blossom_urls TEXT,
+        thumbnail_url TEXT,
+        status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'uploading', 'ready', 'published')),
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (gift_id) REFERENCES gifts(id) ON DELETE CASCADE
+      )
+    `);
+
+    database.run('CREATE INDEX IF NOT EXISTS idx_gifts_claim_token ON gifts(claim_token)');
+    database.run('CREATE INDEX IF NOT EXISTS idx_gifts_status ON gifts(status)');
+    database.run('CREATE INDEX IF NOT EXISTS idx_gifts_expires_at ON gifts(expires_at)');
+    database.run('CREATE INDEX IF NOT EXISTS idx_gift_posts_gift_id ON gift_posts(gift_id)');
+
+    saveDb(database);
+  }
+}
+
+export async function createGift(
+  id: string,
+  claimToken: string,
+  igHandle: string,
+  salt: string,
+  profileData?: string,
+  expiresAt?: string
+): Promise<Gift> {
+  await ensureGiftTables();
+  const database = await getDb();
+
+  // Default expiration: 30 days from now
+  const expiration = expiresAt || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
+  database.run(
+    `INSERT INTO gifts (id, claim_token, ig_handle, salt, profile_data, expires_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [id, claimToken, igHandle, salt, profileData || null, expiration]
+  );
+  saveDb(database);
+  return (await getGift(id))!;
+}
+
+export async function getGift(id: string): Promise<Gift | undefined> {
+  await ensureGiftTables();
+  const database = await getDb();
+  const result = database.exec('SELECT * FROM gifts WHERE id = ?', [id]);
+  if (result.length === 0 || result[0].values.length === 0) return undefined;
+  return rowToObject<Gift>(result[0].columns, result[0].values[0]);
+}
+
+export async function getGiftByToken(claimToken: string): Promise<Gift | undefined> {
+  await ensureGiftTables();
+  const database = await getDb();
+  const result = database.exec('SELECT * FROM gifts WHERE claim_token = ?', [claimToken]);
+  if (result.length === 0 || result[0].values.length === 0) return undefined;
+  return rowToObject<Gift>(result[0].columns, result[0].values[0]);
+}
+
+export async function updateGiftStatus(id: string, status: Gift['status']): Promise<void> {
+  const database = await getDb();
+  database.run('UPDATE gifts SET status = ? WHERE id = ?', [status, id]);
+  saveDb(database);
+}
+
+export async function markGiftClaimed(id: string): Promise<void> {
+  const database = await getDb();
+  database.run(
+    `UPDATE gifts SET status = 'claimed', claimed_at = datetime('now') WHERE id = ?`,
+    [id]
+  );
+  saveDb(database);
+}
+
+export async function createGiftPost(
+  giftId: string,
+  postType: 'reel' | 'image' | 'carousel',
+  mediaItems: string,
+  caption?: string,
+  originalDate?: string,
+  thumbnailUrl?: string
+): Promise<GiftPost> {
+  await ensureGiftTables();
+  const database = await getDb();
+
+  database.run(
+    `INSERT INTO gift_posts (gift_id, post_type, media_items, caption, original_date, thumbnail_url)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [giftId, postType, mediaItems, caption || null, originalDate || null, thumbnailUrl || null]
+  );
+  saveDb(database);
+
+  // Get the last inserted post
+  const result = database.exec(
+    'SELECT * FROM gift_posts WHERE gift_id = ? ORDER BY id DESC LIMIT 1',
+    [giftId]
+  );
+  return rowToObject<GiftPost>(result[0].columns, result[0].values[0]);
+}
+
+export async function getGiftPosts(giftId: string): Promise<GiftPost[]> {
+  await ensureGiftTables();
+  const database = await getDb();
+  const result = database.exec(
+    'SELECT * FROM gift_posts WHERE gift_id = ? ORDER BY id',
+    [giftId]
+  );
+  if (result.length === 0) return [];
+  return result[0].values.map(row => rowToObject<GiftPost>(result[0].columns, row));
+}
+
+export async function updateGiftPostStatus(
+  postId: number,
+  status: GiftPost['status'],
+  blossomUrls?: string
+): Promise<void> {
+  const database = await getDb();
+  if (blossomUrls) {
+    database.run(
+      'UPDATE gift_posts SET status = ?, blossom_urls = ? WHERE id = ?',
+      [status, blossomUrls, postId]
+    );
+  } else {
+    database.run('UPDATE gift_posts SET status = ? WHERE id = ?', [status, postId]);
+  }
+  saveDb(database);
+}
+
+export async function getGiftWithPosts(giftId: string): Promise<{ gift: Gift; posts: GiftPost[] } | null> {
+  const gift = await getGift(giftId);
+  if (!gift) return null;
+
+  const posts = await getGiftPosts(giftId);
+  return { gift, posts };
+}
+
+export async function getGiftByTokenWithPosts(claimToken: string): Promise<{ gift: Gift; posts: GiftPost[] } | null> {
+  const gift = await getGiftByToken(claimToken);
+  if (!gift) return null;
+
+  const posts = await getGiftPosts(gift.id);
+  return { gift, posts };
+}
+
+export async function getPendingGifts(): Promise<Gift[]> {
+  await ensureGiftTables();
+  const database = await getDb();
+  const result = database.exec(
+    "SELECT * FROM gifts WHERE status = 'pending' ORDER BY created_at"
+  );
+  if (result.length === 0) return [];
+  return result[0].values.map(row => rowToObject<Gift>(result[0].columns, row));
+}
+
+export async function cleanupExpiredGifts(): Promise<number> {
+  await ensureGiftTables();
+  const database = await getDb();
+
+  // Get count of expired gifts
+  const countResult = database.exec(
+    "SELECT COUNT(*) as count FROM gifts WHERE expires_at < datetime('now') AND status != 'claimed'"
+  );
+  const count = countResult.length > 0 ? (countResult[0].values[0][0] as number) : 0;
+
+  if (count > 0) {
+    // Delete gift posts first (foreign key)
+    database.run(`
+      DELETE FROM gift_posts
+      WHERE gift_id IN (
+        SELECT id FROM gifts WHERE expires_at < datetime('now') AND status != 'claimed'
+      )
+    `);
+
+    // Delete expired gifts
+    database.run("DELETE FROM gifts WHERE expires_at < datetime('now') AND status != 'claimed'");
+    saveDb(database);
+  }
+
+  return count;
+}

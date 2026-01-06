@@ -33,6 +33,13 @@ from db import (
     update_proposal_post_status,
     cleanup_expired_proposals,
     reset_stale_processing_proposals,
+    # Gift functions
+    get_pending_gifts,
+    get_gift_posts,
+    update_gift_status,
+    update_gift_post_status,
+    cleanup_expired_gifts,
+    reset_stale_processing_gifts,
 )
 
 # Configuration
@@ -730,6 +737,75 @@ async def process_proposal(proposal: dict) -> None:
         update_proposal_status(proposal_id, "pending")
 
 
+async def process_gift(gift: dict) -> None:
+    """
+    Process a gift - download media and upload to Blossom.
+    Similar to proposals but for deterministic key derivation flow.
+    Uses a temporary keypair for Blossom auth (content-addressed, so same URL for same content).
+    """
+    gift_id = gift["id"]
+    print(f"Processing gift {gift_id} for @{gift['ig_handle']}")
+
+    try:
+        # Mark as processing
+        update_gift_status(gift_id, "processing")
+
+        # Generate temp keypair for Blossom uploads
+        temp_public_key, temp_secret_key = generate_temp_keypair()
+
+        # Get all posts for this gift
+        posts = get_gift_posts(gift_id)
+        print(f"Processing {len(posts)} posts for gift {gift_id}")
+
+        async with httpx.AsyncClient(timeout=300.0) as client:
+            for post in posts:
+                post_id = post["id"]
+                post_type = post["post_type"]
+
+                try:
+                    update_gift_post_status(post_id, "uploading")
+
+                    # Parse media items
+                    media_items = json.loads(post["media_items"])
+
+                    # Upload each media item
+                    blossom_urls = []
+                    for item in media_items:
+                        print(f"Uploading {item['media_type']} for gift post {post_id}")
+                        upload_result = await upload_media_to_blossom(
+                            client=client,
+                            media_url=item["url"],
+                            media_type=item["media_type"],
+                            public_key_hex=temp_public_key,
+                            secret_key_hex=temp_secret_key,
+                            width=item.get("width"),
+                            height=item.get("height"),
+                        )
+                        blossom_urls.append(upload_result["url"])
+
+                    # Update post with blossom URLs
+                    update_gift_post_status(
+                        post_id,
+                        "ready",
+                        blossom_urls=json.dumps(blossom_urls),
+                    )
+                    print(f"Gift post {post_id} uploaded: {len(blossom_urls)} files")
+
+                except Exception as e:
+                    print(f"Failed to process gift post {post_id}: {e}")
+                    # Continue with other posts
+                    continue
+
+        # Mark gift as ready
+        update_gift_status(gift_id, "ready")
+        print(f"Gift {gift_id} is ready for claiming")
+
+    except Exception as e:
+        print(f"Failed to process gift {gift_id}: {e}")
+        # Reset to pending for retry
+        update_gift_status(gift_id, "pending")
+
+
 async def worker_loop():
     """Main worker loop - polls for tasks and processes them."""
     print(f"Worker started with concurrency={CONCURRENCY}, max_retries={MAX_RETRIES}")
@@ -745,6 +821,11 @@ async def worker_loop():
     if reset_count > 0:
         print(f"Reset {reset_count} stale processing proposals")
 
+    # Reset any gifts that were stuck in 'processing' from previous runs
+    gift_reset_count = reset_stale_processing_gifts()
+    if gift_reset_count > 0:
+        print(f"Reset {gift_reset_count} stale processing gifts")
+
     # Semaphore for concurrency limiting
     semaphore = asyncio.Semaphore(CONCURRENCY)
 
@@ -758,12 +839,15 @@ async def worker_loop():
 
     while True:
         try:
-            # Periodic cleanup of expired proposals
+            # Periodic cleanup of expired proposals and gifts
             now = time.time()
             if now - last_cleanup > CLEANUP_INTERVAL:
-                deleted = cleanup_expired_proposals()
-                if deleted > 0:
-                    print(f"Cleaned up {deleted} expired proposals")
+                deleted_proposals = cleanup_expired_proposals()
+                if deleted_proposals > 0:
+                    print(f"Cleaned up {deleted_proposals} expired proposals")
+                deleted_gifts = cleanup_expired_gifts()
+                if deleted_gifts > 0:
+                    print(f"Cleaned up {deleted_gifts} expired gifts")
                 last_cleanup = now
 
             # Get and process pending profile events first
@@ -780,6 +864,13 @@ async def worker_loop():
                 for proposal in proposals:
                     await process_proposal(proposal)
 
+            # Get and process pending gifts
+            gifts = get_pending_gifts(limit=3)
+            if gifts:
+                print(f"Found {len(gifts)} pending gifts")
+                for gift in gifts:
+                    await process_gift(gift)
+
             # Get pending tasks
             tasks = get_pending_tasks(limit=CONCURRENCY * 2)
 
@@ -791,8 +882,8 @@ async def worker_loop():
                     *[process_with_semaphore(task) for task in tasks],
                     return_exceptions=True,
                 )
-            elif not profiles and not proposals:
-                # No tasks, profiles, or proposals - wait before polling again
+            elif not profiles and not proposals and not gifts:
+                # No tasks, profiles, proposals, or gifts - wait before polling again
                 await asyncio.sleep(POLL_INTERVAL)
 
         except Exception as e:
