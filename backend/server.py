@@ -192,22 +192,27 @@ async def fetch_videos_stream(handle: str):
                     if not edges:
                         break
 
-                    # Extract profile from first page
-                    if page == 0 and edges:
-                        first_node = edges[0].get("node", {})
-                        user_data = first_node.get("user") or first_node.get("owner") or {}
-                        if user_data:
-                            profile_pic = None
-                            hd_pic_info = user_data.get("hd_profile_pic_url_info", {})
-                            if hd_pic_info and hd_pic_info.get("url"):
-                                profile_pic = hd_pic_info.get("url")
-                            else:
-                                profile_pic = user_data.get("profile_pic_url")
-                            profile = {
-                                "username": user_data.get("username", handle),
-                                "display_name": user_data.get("full_name"),
-                                "profile_picture_url": profile_pic,
-                            }
+                    # Extract profile - find a post owned by the actual user (not a collab)
+                    if profile is None:
+                        for edge in edges:
+                            node = edge.get("node", {})
+                            user_data = node.get("user") or node.get("owner") or {}
+                            username = user_data.get("username", "").lower()
+
+                            # Only use profile data if it matches the handle we're fetching
+                            if username == handle.lower():
+                                profile_pic = None
+                                hd_pic_info = user_data.get("hd_profile_pic_url_info", {})
+                                if hd_pic_info and hd_pic_info.get("url"):
+                                    profile_pic = hd_pic_info.get("url")
+                                else:
+                                    profile_pic = user_data.get("profile_pic_url")
+                                profile = {
+                                    "username": user_data.get("username", handle),
+                                    "display_name": user_data.get("full_name"),
+                                    "profile_picture_url": profile_pic,
+                                }
+                                break  # Found a matching post, stop looking
 
                     # Process ALL edges (not just videos)
                     for edge in edges:
@@ -357,23 +362,28 @@ async def fetch_videos(request: FetchVideosRequest):
                 if not edges:
                     break  # No more posts
 
-                # Extract profile from first post's user data (only on first page)
-                if page == 0 and edges:
-                    first_node = edges[0].get("node", {})
-                    user_data = first_node.get("user") or first_node.get("owner") or {}
-                    if user_data:
-                        profile_pic = None
-                        hd_pic_info = user_data.get("hd_profile_pic_url_info", {})
-                        if hd_pic_info and hd_pic_info.get("url"):
-                            profile_pic = hd_pic_info.get("url")
-                        else:
-                            profile_pic = user_data.get("profile_pic_url")
+                # Extract profile - find a post owned by the actual user (not a collab)
+                if profile is None:
+                    for edge in edges:
+                        node = edge.get("node", {})
+                        user_data = node.get("user") or node.get("owner") or {}
+                        username = user_data.get("username", "").lower()
 
-                        profile = ProfileMetadata(
-                            username=user_data.get("username", handle),
-                            display_name=user_data.get("full_name"),
-                            profile_picture_url=profile_pic,
-                        )
+                        # Only use profile data if it matches the handle we're fetching
+                        if username == handle.lower():
+                            profile_pic = None
+                            hd_pic_info = user_data.get("hd_profile_pic_url_info", {})
+                            if hd_pic_info and hd_pic_info.get("url"):
+                                profile_pic = hd_pic_info.get("url")
+                            else:
+                                profile_pic = user_data.get("profile_pic_url")
+
+                            profile = ProfileMetadata(
+                                username=user_data.get("username", handle),
+                                display_name=user_data.get("full_name"),
+                                profile_picture_url=profile_pic,
+                            )
+                            break  # Found a matching post, stop looking
 
                 # Process edges for videos
                 for edge in edges:
