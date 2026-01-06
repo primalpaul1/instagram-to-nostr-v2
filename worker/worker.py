@@ -890,18 +890,39 @@ async def worker_loop():
     # Track last cleanup time
     last_cleanup = 0
     CLEANUP_INTERVAL = 3600  # Run cleanup every hour
+    DISK_WARNING_THRESHOLD = 80  # Warn when disk usage exceeds 80%
+
+    def check_disk_space():
+        """Check disk usage and warn if running low."""
+        try:
+            import shutil
+            total, used, free = shutil.disk_usage("/")
+            usage_percent = (used / total) * 100
+            free_gb = free / (1024 ** 3)
+
+            if usage_percent >= DISK_WARNING_THRESHOLD:
+                print(f"WARNING: Disk usage at {usage_percent:.1f}% ({free_gb:.1f} GB free)")
+                print("WARNING: Consider cleaning up old data or expanding storage")
+                return True
+            return False
+        except Exception as e:
+            print(f"Error checking disk space: {e}")
+            return False
 
     while True:
         try:
             # Periodic cleanup of expired proposals and gifts
             now = time.time()
             if now - last_cleanup > CLEANUP_INTERVAL:
+                # Check disk space first
+                check_disk_space()
+
                 deleted_proposals = cleanup_expired_proposals()
                 if deleted_proposals > 0:
-                    print(f"Cleaned up {deleted_proposals} expired proposals")
+                    print(f"Cleaned up {deleted_proposals} expired/old proposals")
                 deleted_gifts = cleanup_expired_gifts()
                 if deleted_gifts > 0:
-                    print(f"Cleaned up {deleted_gifts} expired gifts")
+                    print(f"Cleaned up {deleted_gifts} expired/old gifts")
                 last_cleanup = now
 
             # Get and process pending profile events first

@@ -251,13 +251,18 @@ def update_proposal_post_status(
 
 
 def cleanup_expired_proposals() -> int:
-    """Delete proposals that have expired and weren't claimed."""
+    """
+    Delete proposals that:
+    - Have expired and weren't claimed, OR
+    - Were claimed more than 7 days ago (no longer needed)
+    """
     with get_connection() as conn:
         # Get count first
         cursor = conn.execute(
             """
             SELECT COUNT(*) as count FROM proposals
-            WHERE expires_at < datetime('now') AND status != 'claimed'
+            WHERE (expires_at < datetime('now') AND status != 'claimed')
+               OR (status = 'claimed' AND claimed_at < datetime('now', '-7 days'))
             """
         )
         count = cursor.fetchone()["count"]
@@ -269,13 +274,18 @@ def cleanup_expired_proposals() -> int:
                 DELETE FROM proposal_posts
                 WHERE proposal_id IN (
                     SELECT id FROM proposals
-                    WHERE expires_at < datetime('now') AND status != 'claimed'
+                    WHERE (expires_at < datetime('now') AND status != 'claimed')
+                       OR (status = 'claimed' AND claimed_at < datetime('now', '-7 days'))
                 )
                 """
             )
             # Delete proposals
             conn.execute(
-                "DELETE FROM proposals WHERE expires_at < datetime('now') AND status != 'claimed'"
+                """
+                DELETE FROM proposals
+                WHERE (expires_at < datetime('now') AND status != 'claimed')
+                   OR (status = 'claimed' AND claimed_at < datetime('now', '-7 days'))
+                """
             )
 
         return count
@@ -388,13 +398,18 @@ def update_gift_post_status(
 
 
 def cleanup_expired_gifts() -> int:
-    """Delete gifts that have expired and weren't claimed."""
+    """
+    Delete gifts that:
+    - Have expired and weren't claimed, OR
+    - Were claimed more than 7 days ago (no longer needed)
+    """
     with get_connection() as conn:
         # Get count first
         cursor = conn.execute(
             """
             SELECT COUNT(*) as count FROM gifts
-            WHERE expires_at < datetime('now') AND status != 'claimed'
+            WHERE (expires_at < datetime('now') AND status != 'claimed')
+               OR (status = 'claimed' AND claimed_at < datetime('now', '-7 days'))
             """
         )
         count = cursor.fetchone()["count"]
@@ -406,13 +421,18 @@ def cleanup_expired_gifts() -> int:
                 DELETE FROM gift_posts
                 WHERE gift_id IN (
                     SELECT id FROM gifts
-                    WHERE expires_at < datetime('now') AND status != 'claimed'
+                    WHERE (expires_at < datetime('now') AND status != 'claimed')
+                       OR (status = 'claimed' AND claimed_at < datetime('now', '-7 days'))
                 )
                 """
             )
             # Delete gifts
             conn.execute(
-                "DELETE FROM gifts WHERE expires_at < datetime('now') AND status != 'claimed'"
+                """
+                DELETE FROM gifts
+                WHERE (expires_at < datetime('now') AND status != 'claimed')
+                   OR (status = 'claimed' AND claimed_at < datetime('now', '-7 days'))
+                """
             )
 
         return count
