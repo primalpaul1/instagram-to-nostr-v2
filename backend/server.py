@@ -304,6 +304,33 @@ async def fetch_videos_stream(handle: str):
                     page += 1
 
                 # Send final result
+                # If no profile found from posts (e.g., all collab posts), fetch profile directly
+                if not profile:
+                    try:
+                        profile_response = await client.get(
+                            f"https://instagram120.p.rapidapi.com/api/instagram/profile/{handle}",
+                            headers={
+                                "x-rapidapi-key": RAPIDAPI_KEY,
+                                "x-rapidapi-host": "instagram120.p.rapidapi.com"
+                            }
+                        )
+                        if profile_response.status_code == 200:
+                            profile_data = profile_response.json().get("result", {})
+                            profile_pic = None
+                            hd_pic_info = profile_data.get("hd_profile_pic_url_info", {})
+                            if hd_pic_info and hd_pic_info.get("url"):
+                                profile_pic = hd_pic_info.get("url")
+                            else:
+                                profile_pic = profile_data.get("profile_pic_url")
+                            profile = {
+                                "username": profile_data.get("username", handle),
+                                "display_name": profile_data.get("full_name"),
+                                "bio": profile_data.get("biography"),
+                                "profile_picture_url": profile_pic,
+                            }
+                    except Exception:
+                        pass  # Fall through to default
+
                 if not profile:
                     profile = {"username": handle}
 
@@ -444,7 +471,33 @@ async def fetch_videos(request: FetchVideosRequest):
                 max_id = end_cursor
                 page += 1
 
-            # Fallback if no profile extracted
+            # Fallback if no profile extracted - fetch profile directly
+            if not profile:
+                try:
+                    profile_response = await client.get(
+                        f"https://instagram120.p.rapidapi.com/api/instagram/profile/{handle}",
+                        headers={
+                            "x-rapidapi-key": RAPIDAPI_KEY,
+                            "x-rapidapi-host": "instagram120.p.rapidapi.com"
+                        }
+                    )
+                    if profile_response.status_code == 200:
+                        profile_data = profile_response.json().get("result", {})
+                        profile_pic = None
+                        hd_pic_info = profile_data.get("hd_profile_pic_url_info", {})
+                        if hd_pic_info and hd_pic_info.get("url"):
+                            profile_pic = hd_pic_info.get("url")
+                        else:
+                            profile_pic = profile_data.get("profile_pic_url")
+                        profile = ProfileMetadata(
+                            username=profile_data.get("username", handle),
+                            display_name=profile_data.get("full_name"),
+                            bio=profile_data.get("biography"),
+                            profile_picture_url=profile_pic,
+                        )
+                except Exception:
+                    pass  # Fall through to default
+
             if not profile:
                 profile = ProfileMetadata(username=handle)
 
