@@ -450,7 +450,7 @@ export interface Gift {
   claim_token: string;
   ig_handle: string;
   profile_data: string | null;  // JSON string
-  salt: string;
+  salt: string | null;  // No longer used - kept for backward compatibility
   status: 'pending' | 'processing' | 'ready' | 'claimed' | 'expired';
   claimed_at: string | null;
   created_at: string;
@@ -523,7 +523,6 @@ export async function createGift(
   id: string,
   claimToken: string,
   igHandle: string,
-  salt: string,
   profileData?: string,
   expiresAt?: string
 ): Promise<Gift> {
@@ -536,7 +535,7 @@ export async function createGift(
   database.run(
     `INSERT INTO gifts (id, claim_token, ig_handle, salt, profile_data, expires_at)
      VALUES (?, ?, ?, ?, ?, ?)`,
-    [id, claimToken, igHandle, salt, profileData || null, expiration]
+    [id, claimToken, igHandle, '', profileData || null, expiration]
   );
   saveDb(database);
   return (await getGift(id))!;

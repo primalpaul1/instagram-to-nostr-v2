@@ -1,13 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
-  import { finalizeEvent, type EventTemplate } from 'nostr-tools';
-  import { hexToBytes } from '@noble/hashes/utils';
-  import {
-    deriveKeypair,
-    validatePassword,
-    type DerivedKeypair
-  } from '$lib/keyDerivation';
+  import { finalizeEvent, getPublicKey, type EventTemplate } from 'nostr-tools';
+  import { nip19 } from 'nostr-tools';
+  import { bytesToHex, hexToBytes } from '@noble/hashes/utils';
   import {
     createMultiMediaPostEvent,
     createProfileEvent,
@@ -17,7 +13,7 @@
     type MediaUpload
   } from '$lib/signing';
 
-  type PageStep = 'loading' | 'password' | 'show_keys' | 'publishing' | 'complete' | 'error';
+  type PageStep = 'loading' | 'preview' | 'show_keys' | 'publishing' | 'complete' | 'error';
 
   interface GiftPost {
     id: number;
@@ -39,24 +35,24 @@
   interface Gift {
     status: string;
     handle: string;
-    salt: string;
     profile: Profile | null;
     posts: GiftPost[];
+  }
+
+  interface Keypair {
+    privateKeyHex: string;
+    privateKeyBytes: Uint8Array;
+    publicKeyHex: string;
+    nsec: string;
+    npub: string;
   }
 
   let step: PageStep = 'loading';
   let gift: Gift | null = null;
   let error = '';
 
-  // Password state
-  let password = '';
-  let confirmPassword = '';
-  let passwordValidation = { valid: false, message: '', strength: 'weak' as 'weak' | 'medium' | 'strong' };
-  let showPassword = false;
-  let showConfirmPassword = false;
-
   // Key state
-  let keypair: DerivedKeypair | null = null;
+  let keypair: Keypair | null = null;
   let keySaved = false;
   let nsecCopied = false;
 
@@ -72,15 +68,25 @@
   $: totalCount = tasks.length;
   $: progressPercent = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
 
-  $: passwordValidation = validatePassword(password);
-  $: passwordsMatch = password === confirmPassword && password.length > 0;
-  $: canCreateAccount = passwordValidation.valid && passwordsMatch;
-
   const token = $page.params.token;
 
   onMount(async () => {
     await loadGift();
   });
+
+  function generateKeypair(): Keypair {
+    const privateKeyBytes = crypto.getRandomValues(new Uint8Array(32));
+    const privateKeyHex = bytesToHex(privateKeyBytes);
+    const publicKeyHex = getPublicKey(privateKeyBytes);
+
+    return {
+      privateKeyHex,
+      privateKeyBytes,
+      publicKeyHex,
+      nsec: nip19.nsecEncode(privateKeyBytes),
+      npub: nip19.npubEncode(publicKeyHex)
+    };
+  }
 
   async function loadGift() {
     try {
@@ -117,22 +123,18 @@
       }
 
       gift = data;
-      step = 'password';
+      step = 'preview';
     } catch (err) {
       error = err instanceof Error ? err.message : 'Failed to load gift';
       step = 'error';
     }
   }
 
-  function createAccount() {
-    if (!canCreateAccount || !gift) return;
+  function claimAccount() {
+    if (!gift) return;
 
-    // Derive keypair from password + handle + salt
-    keypair = deriveKeypair(password, gift.handle, gift.salt);
-
-    // Clear password from memory
-    password = '';
-    confirmPassword = '';
+    // Generate a random keypair
+    keypair = generateKeypair();
 
     step = 'show_keys';
   }
@@ -311,8 +313,8 @@
         <a href="/" class="secondary-btn">Go to Homepage</a>
       </div>
 
-    {:else if step === 'password' && gift}
-      <div class="password-step">
+    {:else if step === 'preview' && gift}
+      <div class="preview-step">
         <div class="gift-icon">
           <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M20 12v6a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h6"/>
@@ -320,89 +322,68 @@
           </svg>
         </div>
         <h2>Claim Your Nostr Account</h2>
-        <p class="subtitle">Your @{gift.handle} content is ready! Create a password to set up your account.</p>
+        <p class="subtitle">Your @{gift.handle} content is ready to publish on Nostr!</p>
+
+        {#if gift.profile}
+          <div class="profile-preview">
+            {#if gift.profile.profile_picture_url}
+              <img src={gift.profile.profile_picture_url} alt={gift.profile.username} class="profile-pic" />
+            {:else}
+              <div class="profile-pic placeholder">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/>
+                  <circle cx="12" cy="7" r="4"/>
+                </svg>
+              </div>
+            {/if}
+            <div class="profile-info">
+              <span class="profile-name">{gift.profile.display_name || gift.profile.username}</span>
+              <span class="profile-handle">@{gift.handle}</span>
+            </div>
+          </div>
+        {/if}
 
         <div class="posts-preview">
           <span class="count">{gift.posts.length}</span>
           <span class="label">posts ready to publish</span>
         </div>
 
-        <form on:submit|preventDefault={createAccount}>
-          <div class="input-group">
-            <label for="password">Choose a Password</label>
-            <div class="password-input-wrapper">
-              <input
-                id="password"
-                type={showPassword ? 'text' : 'password'}
-                bind:value={password}
-                placeholder="Enter a strong password"
-                autocomplete="new-password"
-              />
-              <button type="button" class="toggle-password" on:click={() => showPassword = !showPassword}>
-                {#if showPassword}
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/>
-                    <line x1="1" y1="1" x2="23" y2="23"/>
+        <div class="posts-grid">
+          {#each gift.posts.slice(0, 6) as post}
+            <div class="post-thumb">
+              {#if post.thumbnail_url}
+                <img src={post.thumbnail_url} alt="" />
+              {:else if post.blossom_urls && post.blossom_urls.length > 0 && post.post_type !== 'reel'}
+                <img src={post.blossom_urls[0]} alt="" />
+              {:else}
+                <div class="placeholder">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
                   </svg>
-                {:else}
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-                    <circle cx="12" cy="12" r="3"/>
+                </div>
+              {/if}
+              {#if post.post_type === 'reel'}
+                <div class="video-badge">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                    <polygon points="5,3 19,12 5,21"/>
                   </svg>
-                {/if}
-              </button>
+                </div>
+              {/if}
             </div>
-            <div class="strength-indicator" class:weak={passwordValidation.strength === 'weak'} class:medium={passwordValidation.strength === 'medium'} class:strong={passwordValidation.strength === 'strong'}>
-              <div class="bar"></div>
-              <span class="message">{passwordValidation.message}</span>
+          {/each}
+          {#if gift.posts.length > 6}
+            <div class="post-thumb more">
+              <span>+{gift.posts.length - 6}</span>
             </div>
-          </div>
+          {/if}
+        </div>
 
-          <div class="input-group">
-            <label for="confirm-password">Confirm Password</label>
-            <div class="password-input-wrapper">
-              <input
-                id="confirm-password"
-                type={showConfirmPassword ? 'text' : 'password'}
-                bind:value={confirmPassword}
-                placeholder="Re-enter your password"
-                autocomplete="new-password"
-              />
-              <button type="button" class="toggle-password" on:click={() => showConfirmPassword = !showConfirmPassword}>
-                {#if showConfirmPassword}
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/>
-                    <line x1="1" y1="1" x2="23" y2="23"/>
-                  </svg>
-                {:else}
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-                    <circle cx="12" cy="12" r="3"/>
-                  </svg>
-                {/if}
-              </button>
-            </div>
-            {#if confirmPassword && !passwordsMatch}
-              <span class="input-hint error">Passwords do not match</span>
-            {:else if passwordsMatch}
-              <span class="input-hint success">Passwords match</span>
-            {/if}
-          </div>
-
-          <div class="info-box">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-            </svg>
-            <p>This password creates your Nostr private key. Choose something strong - you can't reset it!</p>
-          </div>
-
-          <button type="submit" class="primary-btn" disabled={!canCreateAccount}>
-            Create My Account
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M5 12h14M12 5l7 7-7 7"/>
-            </svg>
-          </button>
-        </form>
+        <button class="primary-btn" on:click={claimAccount}>
+          Claim My Account
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M5 12h14M12 5l7 7-7 7"/>
+          </svg>
+        </button>
       </div>
 
     {:else if step === 'show_keys' && keypair}
@@ -627,7 +608,7 @@
     margin-bottom: 2rem;
   }
 
-  .password-step, .keys-step {
+  .preview-step, .keys-step {
     text-align: center;
   }
 
@@ -641,6 +622,101 @@
     justify-content: center;
     color: white;
     margin: 0 auto 1.5rem;
+  }
+
+  .profile-preview {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1rem;
+    background: var(--bg-tertiary);
+    border-radius: 0.75rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .profile-pic {
+    width: 3.5rem;
+    height: 3.5rem;
+    border-radius: 50%;
+    object-fit: cover;
+    flex-shrink: 0;
+  }
+
+  .profile-pic.placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-primary);
+    color: var(--text-muted);
+  }
+
+  .profile-info {
+    text-align: left;
+  }
+
+  .profile-name {
+    display: block;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .profile-handle {
+    font-size: 0.875rem;
+    color: var(--text-muted);
+  }
+
+  .posts-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .post-thumb {
+    aspect-ratio: 1;
+    border-radius: 0.5rem;
+    overflow: hidden;
+    position: relative;
+    background: var(--bg-tertiary);
+  }
+
+  .post-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .post-thumb .placeholder {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+  }
+
+  .post-thumb .video-badge {
+    position: absolute;
+    bottom: 4px;
+    right: 4px;
+    width: 1.25rem;
+    height: 1.25rem;
+    background: rgba(0, 0, 0, 0.7);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+  }
+
+  .post-thumb.more {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    font-weight: 600;
+    font-size: 0.875rem;
   }
 
   h2 {
@@ -675,173 +751,6 @@
   .posts-preview .label {
     color: var(--text-secondary);
     font-size: 0.875rem;
-  }
-
-  form {
-    display: flex;
-    flex-direction: column;
-    gap: 1.25rem;
-    text-align: left;
-  }
-
-  .input-group {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-
-  .input-group label {
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: var(--text-secondary);
-  }
-
-  .password-input-wrapper {
-    display: flex;
-    align-items: center;
-    background: var(--bg-tertiary);
-    border: 1px solid var(--border-light);
-    border-radius: 0.75rem;
-    overflow: hidden;
-  }
-
-  .password-input-wrapper:focus-within {
-    border-color: #a855f7;
-  }
-
-  .password-input-wrapper input {
-    flex: 1;
-    padding: 0.875rem 1rem;
-    background: transparent;
-    border: none;
-    color: var(--text-primary);
-    font-size: 1rem;
-    outline: none;
-  }
-
-  .toggle-password {
-    padding: 0.875rem;
-    background: transparent;
-    border: none;
-    color: var(--text-muted);
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-  }
-
-  .toggle-password:hover {
-    color: var(--text-secondary);
-  }
-
-  .strength-indicator {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
-  .strength-indicator .bar {
-    height: 4px;
-    width: 60px;
-    background: var(--border);
-    border-radius: 2px;
-    transition: background 0.2s;
-  }
-
-  .strength-indicator.weak .bar {
-    background: linear-gradient(90deg, #ef4444 0%, #ef4444 33%, var(--border) 33%);
-  }
-
-  .strength-indicator.medium .bar {
-    background: linear-gradient(90deg, #f59e0b 0%, #f59e0b 66%, var(--border) 66%);
-  }
-
-  .strength-indicator.strong .bar {
-    background: #22c55e;
-  }
-
-  .strength-indicator .message {
-    font-size: 0.75rem;
-    color: var(--text-muted);
-  }
-
-  .input-hint {
-    font-size: 0.75rem;
-    color: var(--text-muted);
-  }
-
-  .input-hint.error {
-    color: #ef4444;
-  }
-
-  .input-hint.success {
-    color: #22c55e;
-  }
-
-  .info-box {
-    display: flex;
-    gap: 0.75rem;
-    padding: 1rem;
-    background: rgba(147, 51, 234, 0.1);
-    border: 1px solid rgba(147, 51, 234, 0.2);
-    border-radius: 0.75rem;
-    text-align: left;
-  }
-
-  .info-box svg {
-    color: #a855f7;
-    flex-shrink: 0;
-    margin-top: 2px;
-  }
-
-  .info-box p {
-    font-size: 0.875rem;
-    color: var(--text-secondary);
-    margin: 0;
-    line-height: 1.5;
-  }
-
-  .primary-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    padding: 0.875rem 1.5rem;
-    background: linear-gradient(135deg, #a855f7 0%, #8b5cf6 100%);
-    border: none;
-    border-radius: 0.75rem;
-    color: white;
-    font-size: 1rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.2s ease;
-  }
-
-  .primary-btn:hover:not(:disabled) {
-    transform: translateY(-1px);
-    box-shadow: 0 4px 20px rgba(168, 85, 247, 0.4);
-  }
-
-  .primary-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .secondary-btn {
-    padding: 0.75rem 1.25rem;
-    background: transparent;
-    border: 1px solid var(--border-light);
-    border-radius: 0.75rem;
-    color: var(--text-primary);
-    font-size: 0.9375rem;
-    font-weight: 500;
-    cursor: pointer;
-    text-decoration: none;
-    display: inline-block;
-  }
-
-  .secondary-btn:hover {
-    border-color: #a855f7;
-    color: #a855f7;
   }
 
   /* Keys step */
@@ -937,6 +846,50 @@
   .checkbox-label span {
     font-size: 0.875rem;
     color: var(--text-primary);
+  }
+
+  .primary-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.875rem 1.5rem;
+    background: linear-gradient(135deg, #a855f7 0%, #8b5cf6 100%);
+    border: none;
+    border-radius: 0.75rem;
+    color: white;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .primary-btn:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 20px rgba(168, 85, 247, 0.4);
+  }
+
+  .primary-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .secondary-btn {
+    padding: 0.75rem 1.25rem;
+    background: transparent;
+    border: 1px solid var(--border-light);
+    border-radius: 0.75rem;
+    color: var(--text-primary);
+    font-size: 0.9375rem;
+    font-weight: 500;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-block;
+  }
+
+  .secondary-btn:hover {
+    border-color: #a855f7;
+    color: #a855f7;
   }
 
   /* Publishing step */

@@ -67,7 +67,6 @@ export const GET: RequestHandler = async ({ params }) => {
     return json({
       status: gift.status,
       handle: gift.ig_handle,
-      salt: gift.salt,  // Needed for client-side key derivation
       profile,
       posts: formattedPosts,
       createdAt: gift.created_at,

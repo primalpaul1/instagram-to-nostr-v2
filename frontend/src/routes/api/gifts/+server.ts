@@ -16,11 +16,6 @@ function generateClaimToken(): string {
     .slice(0, 16);
 }
 
-function generateSalt(): string {
-  // Generate a secure random salt for key derivation
-  return crypto.randomUUID();
-}
-
 interface MediaItemInput {
   url: string;
   media_type: 'image' | 'video';
@@ -62,17 +57,15 @@ export const POST: RequestHandler = async ({ request, url }) => {
       );
     }
 
-    // Create the gift with a random salt
+    // Create the gift
     const giftId = generateId();
     const claimToken = generateClaimToken();
-    const salt = generateSalt();
     const profileData = profile ? JSON.stringify(profile) : undefined;
 
     await createGift(
       giftId,
       claimToken,
       handle,
-      salt,
       profileData
     );
 
