@@ -355,6 +355,15 @@ def update_gift_status(gift_id: str, status: str):
         )
 
 
+def update_gift_profile_data(gift_id: str, profile_data: str):
+    """Update a gift's profile_data JSON."""
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE gifts SET profile_data = ? WHERE id = ?",
+            (profile_data, gift_id),
+        )
+
+
 def update_gift_post_status(
     post_id: int,
     status: str,

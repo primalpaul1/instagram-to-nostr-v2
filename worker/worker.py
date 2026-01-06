@@ -37,6 +37,7 @@ from db import (
     get_pending_gifts,
     get_gift_posts,
     update_gift_status,
+    update_gift_profile_data,
     update_gift_post_status,
     cleanup_expired_gifts,
     reset_stale_processing_gifts,
@@ -758,6 +759,59 @@ async def process_gift(gift: dict) -> None:
         print(f"Processing {len(posts)} posts for gift {gift_id}")
 
         async with httpx.AsyncClient(timeout=300.0) as client:
+            # Upload profile picture if present
+            profile_data = gift.get("profile_data")
+            if profile_data:
+                try:
+                    profile = json.loads(profile_data)
+                    profile_picture_url = profile.get("profile_picture_url")
+
+                    if profile_picture_url and not profile_picture_url.startswith("https://blossom"):
+                        print(f"Uploading profile picture for gift {gift_id}")
+                        try:
+                            # Download profile picture
+                            pic_response = await client.get(profile_picture_url, follow_redirects=True)
+                            pic_response.raise_for_status()
+                            pic_content = pic_response.content
+                            pic_hash = hashlib.sha256(pic_content).hexdigest()
+
+                            # Determine content type
+                            content_type = pic_response.headers.get("content-type", "image/jpeg")
+                            if "image" not in content_type:
+                                content_type = "image/jpeg"
+
+                            # Create Blossom auth for upload
+                            auth_event = create_blossom_auth_event(temp_public_key, temp_secret_key, pic_hash, len(pic_content))
+                            auth_header = f"Nostr {base64.b64encode(json.dumps(auth_event).encode()).decode()}"
+
+                            # Upload to Blossom
+                            upload_response = await client.put(
+                                f"{BLOSSOM_SERVER}/upload",
+                                content=pic_content,
+                                headers={
+                                    "Authorization": auth_header,
+                                    "Content-Type": content_type,
+                                    "X-SHA-256": pic_hash,
+                                },
+                            )
+
+                            if upload_response.status_code in (200, 201):
+                                upload_data = upload_response.json()
+                                blossom_pic_url = upload_data.get("url") or f"{BLOSSOM_SERVER}/{pic_hash}"
+
+                                # Update profile with blossom URL
+                                profile["profile_picture_url"] = blossom_pic_url
+                                update_gift_profile_data(gift_id, json.dumps(profile))
+                                print(f"Profile picture uploaded to {blossom_pic_url}")
+                            else:
+                                print(f"Failed to upload profile picture: {upload_response.text}")
+                        except Exception as e:
+                            print(f"Error uploading profile picture: {e}")
+                            # Continue without the profile picture
+                except json.JSONDecodeError:
+                    print(f"Failed to parse profile_data for gift {gift_id}")
+
+            # Process posts
             for post in posts:
                 post_id = post["id"]
                 post_type = post["post_type"]
