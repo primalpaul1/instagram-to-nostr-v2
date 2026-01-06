@@ -262,9 +262,9 @@
   async function startPublishing() {
     if (!nip46Connection || !proposal) return;
 
-    // Keep concurrency low - NIP-46 signers may struggle with high concurrency
-    // and overwrite timestamps when overwhelmed
-    const CONCURRENCY = 3;
+    // Sign sequentially - NIP-46 signers overwrite timestamps when processing
+    // multiple concurrent requests. Sequential signing preserves original dates.
+    const CONCURRENCY = 1;
     signedEvents = [];
     publishedPostIds = [];
 
@@ -349,6 +349,9 @@
 
       // Sign with NIP-46
       const signedPost = await signWithNIP46(nip46Connection, postEvent);
+
+      // Small delay between signings to help signer preserve timestamps
+      await new Promise(resolve => setTimeout(resolve, 100));
 
       tasks[index] = { ...tasks[index], status: 'publishing' };
       tasks = [...tasks];
