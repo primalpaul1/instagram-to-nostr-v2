@@ -127,14 +127,25 @@ def update_job_status(job_id: str):
         else:
             new_status = "processing"
 
-        conn.execute(
-            """
-            UPDATE jobs
-            SET status = ?, updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
-            """,
-            (new_status, job_id),
-        )
+        # Delete secret key when job completes (security: don't store keys longer than needed)
+        if new_status in ("complete", "error"):
+            conn.execute(
+                """
+                UPDATE jobs
+                SET status = ?, secret_key_hex = 'DELETED', updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (new_status, job_id),
+            )
+        else:
+            conn.execute(
+                """
+                UPDATE jobs
+                SET status = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (new_status, job_id),
+            )
 
 
 def get_jobs_with_unpublished_profiles(limit: int = 10) -> list[dict]:
