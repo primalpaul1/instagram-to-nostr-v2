@@ -264,7 +264,7 @@
 
     // Sign sequentially - NIP-46 signers overwrite timestamps when processing
     // multiple concurrent requests. Sequential signing preserves original dates.
-    const CONCURRENCY = 1;
+    const CONCURRENCY = 4;
     signedEvents = [];
     publishedPostIds = [];
 

@@ -48,7 +48,7 @@
   let activeIndices: Set<number> = new Set();
 
   const BLOSSOM_SERVER = 'https://blossom.primal.net';
-  const CONCURRENCY = 2; // Process 2 posts at a time
+  const CONCURRENCY = 4; // Process 4 posts at a time
 
   $: completedCount = tasks.filter(t => t.status === 'complete').length;
   $: totalCount = tasks.length;
