@@ -631,11 +631,11 @@
     margin-bottom: 2rem;
   }
 
-  .preview-step, .keys-step {
+  .preview-step {
     text-align: center;
   }
 
-  .gift-icon, .key-icon {
+  .gift-icon {
     width: 4rem;
     height: 4rem;
     background: linear-gradient(135deg, #a855f7 0%, #8b5cf6 100%);
@@ -774,101 +774,6 @@
   .posts-preview .label {
     color: var(--text-secondary);
     font-size: 0.875rem;
-  }
-
-  /* Keys step */
-  .key-card {
-    background: var(--bg-tertiary);
-    border: 1px solid var(--border);
-    border-radius: 0.75rem;
-    padding: 1rem;
-    margin-bottom: 1rem;
-    text-align: left;
-  }
-
-  .key-card.warning {
-    border-color: #f59e0b;
-    background: rgba(245, 158, 11, 0.1);
-  }
-
-  .key-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 0.5rem;
-  }
-
-  .key-label {
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: var(--text-secondary);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-  }
-
-  .key-value {
-    display: block;
-    font-size: 0.8125rem;
-    font-family: 'SF Mono', Monaco, monospace;
-    color: var(--text-primary);
-    word-break: break-all;
-    line-height: 1.5;
-  }
-
-  .key-value.nsec {
-    color: #f59e0b;
-  }
-
-  .copy-btn {
-    display: flex;
-    align-items: center;
-    gap: 0.25rem;
-    padding: 0.375rem 0.625rem;
-    background: var(--bg-secondary);
-    border: 1px solid var(--border);
-    border-radius: 0.375rem;
-    color: var(--text-secondary);
-    font-size: 0.75rem;
-    cursor: pointer;
-  }
-
-  .copy-btn:hover {
-    border-color: #a855f7;
-    color: #a855f7;
-  }
-
-  .warning-text {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    margin-top: 0.75rem;
-    padding-top: 0.75rem;
-    border-top: 1px solid rgba(245, 158, 11, 0.3);
-    font-size: 0.75rem;
-    color: #f59e0b;
-  }
-
-  .checkbox-label {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 1rem;
-    background: var(--bg-tertiary);
-    border: 1px solid var(--border);
-    border-radius: 0.75rem;
-    cursor: pointer;
-    margin-bottom: 1rem;
-  }
-
-  .checkbox-label input {
-    width: 1.25rem;
-    height: 1.25rem;
-    accent-color: #a855f7;
-  }
-
-  .checkbox-label span {
-    font-size: 0.875rem;
-    color: var(--text-primary);
   }
 
   .primary-btn {
@@ -1065,84 +970,6 @@
     justify-content: center;
     color: white;
     margin: 0 auto 1.5rem;
-  }
-
-  .cta-cards {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-    margin-bottom: 1.5rem;
-  }
-
-  .cta-card {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    padding: 1rem;
-    background: var(--bg-tertiary);
-    border: 1px solid var(--border);
-    border-radius: 0.75rem;
-    text-decoration: none;
-    color: inherit;
-    transition: all 0.2s;
-  }
-
-  .cta-card.primary {
-    background: linear-gradient(135deg, rgba(168, 85, 247, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%);
-    border-color: rgba(168, 85, 247, 0.3);
-  }
-
-  .cta-card:hover {
-    border-color: #a855f7;
-  }
-
-  .cta-icon {
-    width: 2.5rem;
-    height: 2.5rem;
-    background: var(--bg-secondary);
-    border-radius: 0.5rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #a855f7;
-    flex-shrink: 0;
-  }
-
-  .cta-content {
-    text-align: left;
-  }
-
-  .cta-title {
-    display: block;
-    font-weight: 600;
-    font-size: 0.9375rem;
-    color: var(--text-primary);
-  }
-
-  .cta-subtitle {
-    font-size: 0.8125rem;
-    color: var(--text-secondary);
-  }
-
-  .key-reminder {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    padding: 0.75rem 1rem;
-    background: rgba(147, 51, 234, 0.1);
-    border-radius: 0.5rem;
-    font-size: 0.8125rem;
-    color: var(--text-secondary);
-  }
-
-  .key-reminder svg {
-    color: #a855f7;
-  }
-
-  .key-reminder code {
-    font-family: 'SF Mono', Monaco, monospace;
-    color: #a855f7;
   }
 
   /* Enhanced complete step */
