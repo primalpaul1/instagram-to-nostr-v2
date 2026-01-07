@@ -719,7 +719,7 @@ async def fetch_tiktok_stream(handle: str):
                     max_cursor = posts_data.get("max_cursor", 0)
 
                 # Send final result
-                yield f"data: {json.dumps({'posts': posts, 'profile': profile, 'source': 'tiktok'})}\n\n"
+                yield f"data: {json.dumps({'done': True, 'posts': posts, 'profile': profile, 'source': 'tiktok'})}\n\n"
 
         except Exception as e:
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
