@@ -166,32 +166,6 @@ async def fetch_videos_stream(handle: str):
                 max_pages = 50
                 page = 0
 
-                # Fetch profile directly from profile API (more reliable than extracting from posts)
-                try:
-                    profile_response = await client.get(
-                        f"https://instagram120.p.rapidapi.com/api/instagram/profile/{handle}",
-                        headers={
-                            "x-rapidapi-key": RAPIDAPI_KEY,
-                            "x-rapidapi-host": "instagram120.p.rapidapi.com"
-                        }
-                    )
-                    if profile_response.status_code == 200:
-                        profile_data = profile_response.json().get("result", {})
-                        profile_pic = None
-                        hd_pic_info = profile_data.get("hd_profile_pic_url_info", {})
-                        if hd_pic_info and hd_pic_info.get("url"):
-                            profile_pic = hd_pic_info.get("url")
-                        else:
-                            profile_pic = profile_data.get("profile_pic_url")
-                        profile = {
-                            "username": profile_data.get("username", handle),
-                            "display_name": profile_data.get("full_name"),
-                            "bio": profile_data.get("biography"),
-                            "profile_picture_url": profile_pic,
-                        }
-                except Exception:
-                    pass  # Will use fallback below
-
                 while page < max_pages:
                     response = await client.post(
                         "https://instagram120.p.rapidapi.com/api/instagram/posts",
@@ -217,6 +191,38 @@ async def fetch_videos_stream(handle: str):
 
                     if not edges:
                         break
+
+                    # Extract profile from posts - check owner first, then coauthors
+                    if profile is None:
+                        for edge in edges:
+                            node = edge.get("node", {})
+
+                            # First check if owner matches
+                            user_data = node.get("user") or node.get("owner") or {}
+                            if user_data.get("username", "").lower() == handle.lower():
+                                profile_pic = user_data.get("profile_pic_url")
+                                hd_pic_info = user_data.get("hd_profile_pic_url_info", {})
+                                if hd_pic_info and hd_pic_info.get("url"):
+                                    profile_pic = hd_pic_info.get("url")
+                                profile = {
+                                    "username": user_data.get("username", handle),
+                                    "display_name": user_data.get("full_name"),
+                                    "profile_picture_url": profile_pic,
+                                }
+                                break
+
+                            # Check coauthors for collab posts
+                            coauthors = node.get("coauthor_producers", [])
+                            for coauthor in coauthors:
+                                if coauthor.get("username", "").lower() == handle.lower():
+                                    profile = {
+                                        "username": coauthor.get("username", handle),
+                                        "display_name": coauthor.get("full_name"),
+                                        "profile_picture_url": coauthor.get("profile_pic_url"),
+                                    }
+                                    break
+                            if profile:
+                                break
 
                     # Process ALL edges (not just videos)
                     for edge in edges:
@@ -339,32 +345,6 @@ async def fetch_videos(request: FetchVideosRequest):
             max_pages = 50  # Safety limit - allows up to ~600 videos
             page = 0
 
-            # Fetch profile directly from profile API (more reliable than extracting from posts)
-            try:
-                profile_response = await client.get(
-                    f"https://instagram120.p.rapidapi.com/api/instagram/profile/{handle}",
-                    headers={
-                        "x-rapidapi-key": RAPIDAPI_KEY,
-                        "x-rapidapi-host": "instagram120.p.rapidapi.com"
-                    }
-                )
-                if profile_response.status_code == 200:
-                    profile_data = profile_response.json().get("result", {})
-                    profile_pic = None
-                    hd_pic_info = profile_data.get("hd_profile_pic_url_info", {})
-                    if hd_pic_info and hd_pic_info.get("url"):
-                        profile_pic = hd_pic_info.get("url")
-                    else:
-                        profile_pic = profile_data.get("profile_pic_url")
-                    profile = ProfileMetadata(
-                        username=profile_data.get("username", handle),
-                        display_name=profile_data.get("full_name"),
-                        bio=profile_data.get("biography"),
-                        profile_picture_url=profile_pic,
-                    )
-            except Exception:
-                pass  # Will use fallback below
-
             while page < max_pages:
                 # Fetch posts from Instagram120 API (POST request)
                 response = await client.post(
@@ -391,6 +371,38 @@ async def fetch_videos(request: FetchVideosRequest):
 
                 if not edges:
                     break  # No more posts
+
+                # Extract profile from posts - check owner first, then coauthors
+                if profile is None:
+                    for edge in edges:
+                        node = edge.get("node", {})
+
+                        # First check if owner matches
+                        user_data = node.get("user") or node.get("owner") or {}
+                        if user_data.get("username", "").lower() == handle.lower():
+                            profile_pic = user_data.get("profile_pic_url")
+                            hd_pic_info = user_data.get("hd_profile_pic_url_info", {})
+                            if hd_pic_info and hd_pic_info.get("url"):
+                                profile_pic = hd_pic_info.get("url")
+                            profile = ProfileMetadata(
+                                username=user_data.get("username", handle),
+                                display_name=user_data.get("full_name"),
+                                profile_picture_url=profile_pic,
+                            )
+                            break
+
+                        # Check coauthors for collab posts
+                        coauthors = node.get("coauthor_producers", [])
+                        for coauthor in coauthors:
+                            if coauthor.get("username", "").lower() == handle.lower():
+                                profile = ProfileMetadata(
+                                    username=coauthor.get("username", handle),
+                                    display_name=coauthor.get("full_name"),
+                                    profile_picture_url=coauthor.get("profile_pic_url"),
+                                )
+                                break
+                        if profile:
+                            break
 
                 # Process edges for videos
                 for edge in edges:
