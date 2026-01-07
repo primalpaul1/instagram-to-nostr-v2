@@ -632,7 +632,8 @@ async def fetch_tiktok_stream(handle: str):
                     "profile_picture_url": avatar_url,
                 }
 
-                yield f"data: {json.dumps({'progress': f'Found user {profile[\"username\"]}, fetching posts...'})}\n\n"
+                username = profile["username"]
+                yield f"data: {json.dumps({'progress': f'Found user {username}, fetching posts...'})}\n\n"
 
                 # Fetch user posts with pagination
                 while page < max_pages:
