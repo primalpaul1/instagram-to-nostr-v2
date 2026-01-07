@@ -781,8 +781,7 @@ async def process_gift(gift: dict) -> None:
                                 content_type = "image/jpeg"
 
                             # Create Blossom auth for upload
-                            auth_event = create_blossom_auth_event(temp_public_key, temp_secret_key, pic_hash, len(pic_content))
-                            auth_header = f"Nostr {base64.b64encode(json.dumps(auth_event).encode()).decode()}"
+                            auth_header = create_blossom_auth_event(temp_public_key, temp_secret_key, pic_hash)
 
                             # Upload to Blossom
                             upload_response = await client.put(
