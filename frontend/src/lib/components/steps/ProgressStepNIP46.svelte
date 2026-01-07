@@ -13,6 +13,26 @@
     type MediaUpload
   } from '$lib/signing';
   import { closeConnection } from '$lib/nip46';
+  import { generateSecretKey, getPublicKey, finalizeEvent, type EventTemplate, type Event } from 'nostr-tools';
+
+  // Temp keypair for Blossom uploads - much faster than NIP-46 round trips
+  interface TempKeypair {
+    publicKey: string;
+    secretKey: Uint8Array;
+  }
+
+  function generateTempKeypair(): TempKeypair {
+    const secretKey = generateSecretKey();
+    const publicKey = getPublicKey(secretKey);
+    return { publicKey, secretKey };
+  }
+
+  function signBlossomAuthLocally(
+    event: Omit<Event, 'sig'>,
+    secretKey: Uint8Array
+  ): Event {
+    return finalizeEvent(event as EventTemplate, secretKey);
+  }
 
   interface TaskStatus {
     post: PostInfo;
@@ -55,6 +75,10 @@
     if (isProcessing) return;
     isProcessing = true;
 
+    // Generate temp keypair for Blossom uploads - much faster than NIP-46 round trips
+    // This keypair is ephemeral (not stored) and only used for Blossom auth
+    const tempKeypair = generateTempKeypair();
+
     try {
       // Create a queue of task indices
       const queue: number[] = [...Array(tasks.length).keys()];
@@ -66,7 +90,7 @@
           if (index !== undefined) {
             activeIndices.add(index);
             activeIndices = activeIndices; // Trigger reactivity
-            await processPost(index);
+            await processPost(index, tempKeypair);
             activeIndices.delete(index);
             activeIndices = activeIndices;
           }
@@ -88,7 +112,7 @@
 
   async function uploadMediaItem(
     mediaItem: MediaItemInfo,
-    pubkey: string
+    tempKeypair: TempKeypair
   ): Promise<MediaUpload> {
     // Check cache first (from pre-download)
     let mediaData = getMediaCache(mediaItem.url);
@@ -109,9 +133,10 @@
     }
     const sha256 = await calculateSHA256(mediaData);
 
-    // Create and sign auth event
-    const authEvent = createBlossomAuthEvent(pubkey, sha256, mediaData.byteLength);
-    const signedAuth = await signWithNIP46($wizard.nip46Connection!, authEvent);
+    // Create and sign auth event locally (much faster than NIP-46 round trip)
+    // Blossom uses content-addressed storage, so it doesn't matter who signs the auth
+    const authEvent = createBlossomAuthEvent(tempKeypair.publicKey, sha256, mediaData.byteLength);
+    const signedAuth = signBlossomAuthLocally(authEvent, tempKeypair.secretKey);
     const authHeader = createBlossomAuthHeader(signedAuth);
 
     // Determine content type
@@ -146,7 +171,7 @@
     };
   }
 
-  async function processPost(index: number) {
+  async function processPost(index: number, tempKeypair: TempKeypair) {
     const task = tasks[index];
     if (!$wizard.nip46Connection || !$wizard.nip46Pubkey) {
       tasks[index] = { ...task, status: 'error', error: 'No NIP-46 connection' };
@@ -175,9 +200,9 @@
         tasks = [...tasks];
       };
 
-      // Upload all items in parallel, preserving order
+      // Upload all items in parallel using temp keypair for Blossom auth (fast, local signing)
       const uploadPromises = mediaItems.map((item, i) =>
-        uploadMediaItem(item, $wizard.nip46Pubkey!).then(upload => {
+        uploadMediaItem(item, tempKeypair).then(upload => {
           updateProgress();
           return { index: i, upload };
         })
