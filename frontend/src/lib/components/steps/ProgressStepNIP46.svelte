@@ -230,16 +230,16 @@
       tasks[index] = { ...tasks[index], status: 'publishing' };
       tasks = [...tasks];
 
-      const publishResult = await publishToRelays(signedPost, NOSTR_RELAYS);
+      // Publish to relays and import to Primal cache in parallel (they're independent)
+      const [publishResult] = await Promise.all([
+        publishToRelays(signedPost, NOSTR_RELAYS),
+        importToPrimalCache([signedPost]).catch(err => {
+          console.warn('Failed to import to Primal cache:', err);
+        })
+      ]);
 
       if (publishResult.success.length === 0) {
         throw new Error('Failed to publish to any relay');
-      }
-
-      try {
-        await importToPrimalCache([signedPost]);
-      } catch (err) {
-        console.warn('Failed to import to Primal cache:', err);
       }
 
       tasks[index] = {

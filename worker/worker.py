@@ -490,12 +490,11 @@ async def process_task(task: dict) -> None:
                 "height": task.get("height"),
             }]
 
-        # Upload all media items
-        media_uploads = []
+        # Upload all media items in parallel for faster carousel processing
         async with httpx.AsyncClient(timeout=300.0) as client:
-            for item in media_items:
+            async def upload_item(item):
                 print(f"Uploading {item['media_type']} for task {task_id}")
-                upload_result = await upload_media_to_blossom(
+                return await upload_media_to_blossom(
                     client=client,
                     media_url=item["url"],
                     media_type=item["media_type"],
@@ -504,7 +503,7 @@ async def process_task(task: dict) -> None:
                     width=item.get("width"),
                     height=item.get("height"),
                 )
-                media_uploads.append(upload_result)
+            media_uploads = await asyncio.gather(*[upload_item(item) for item in media_items])
 
         # Get primary blossom URL (first item)
         primary_blossom_url = media_uploads[0]["url"] if media_uploads else None

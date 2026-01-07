@@ -314,11 +314,11 @@ export async function publishToRelays(
 export async function importToPrimalCache(events: Event[]): Promise<boolean> {
   if (events.length === 0) return false;
 
-  // Try sending via import_events first
-  const importResult = await sendImportEvents(events);
-
-  // Also try sending as regular EVENT messages to the cache
-  const eventResult = await sendEventsToCache(events);
+  // Try both methods in parallel - they're independent and we just need one to succeed
+  const [importResult, eventResult] = await Promise.all([
+    sendImportEvents(events).catch(() => false),
+    sendEventsToCache(events).catch(() => false)
+  ]);
 
   return importResult || eventResult;
 }
