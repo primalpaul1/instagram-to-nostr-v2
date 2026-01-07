@@ -13,7 +13,7 @@
     type MediaUpload
   } from '$lib/signing';
 
-  type PageStep = 'loading' | 'preview' | 'show_keys' | 'publishing' | 'complete' | 'error';
+  type PageStep = 'loading' | 'preview' | 'publishing' | 'complete' | 'error';
 
   interface GiftPost {
     id: number;
@@ -53,8 +53,8 @@
 
   // Key state
   let keypair: Keypair | null = null;
-  let keySaved = false;
   let nsecCopied = false;
+  let keyDownloaded = false;
 
   // Publishing state
   interface TaskStatus {
@@ -130,13 +130,15 @@
     }
   }
 
-  function claimAccount() {
+  async function claimAccount() {
     if (!gift) return;
 
     // Generate a random keypair
     keypair = generateKeypair();
 
-    step = 'show_keys';
+    // Go directly to publishing
+    step = 'publishing';
+    await startPublishing();
   }
 
   function copyNsec() {
@@ -144,6 +146,18 @@
     navigator.clipboard.writeText(keypair.nsec);
     nsecCopied = true;
     setTimeout(() => nsecCopied = false, 2000);
+  }
+
+  function downloadKey() {
+    if (!keypair) return;
+    const blob = new Blob([keypair.nsec], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'primal-key.txt';
+    a.click();
+    URL.revokeObjectURL(url);
+    keyDownloaded = true;
   }
 
   async function startPublishing() {
@@ -386,60 +400,6 @@
         </button>
       </div>
 
-    {:else if step === 'show_keys' && keypair}
-      <div class="keys-step">
-        <div class="key-icon">
-          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 11-7.778 7.778 5.5 5.5 0 017.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>
-          </svg>
-        </div>
-        <h2>Save Your Private Key!</h2>
-        <p class="subtitle">This is your Nostr identity. Write it down and keep it safe - you'll need it to log in.</p>
-
-        <div class="key-card warning">
-          <div class="key-header">
-            <span class="key-label">Your Private Key (nsec)</span>
-            <button class="copy-btn small" on:click={copyNsec}>
-              {#if nsecCopied}
-                Copied!
-              {:else}
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-                  <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
-                </svg>
-                Copy
-              {/if}
-            </button>
-          </div>
-          <code class="key-value nsec">{keypair.nsec}</code>
-          <div class="warning-text">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
-              <line x1="12" y1="9" x2="12" y2="13"/>
-              <line x1="12" y1="17" x2="12.01" y2="17"/>
-            </svg>
-            Never share this key. Anyone with it can control your account.
-          </div>
-        </div>
-
-        <div class="key-card">
-          <span class="key-label">Your Public Key (npub)</span>
-          <code class="key-value">{keypair.npub}</code>
-        </div>
-
-        <label class="checkbox-label">
-          <input type="checkbox" bind:checked={keySaved} />
-          <span>I've saved my private key somewhere safe</span>
-        </label>
-
-        <button class="primary-btn" disabled={!keySaved} on:click={startPublishing}>
-          Continue to Publishing
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M5 12h14M12 5l7 7-7 7"/>
-          </svg>
-        </button>
-      </div>
-
     {:else if step === 'publishing'}
       <div class="publishing-step">
         <h2>Publishing Your Content</h2>
@@ -500,39 +460,102 @@
         <h2>Welcome to Nostr!</h2>
         <p class="subtitle">Your account has been created and {completedCount} posts published.</p>
 
-        <div class="cta-cards">
-          <a href="https://primal.net/p/{keypair.npub}" target="_blank" rel="noopener" class="cta-card primary">
-            <div class="cta-icon">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/>
-                <polyline points="15 3 21 3 21 9"/>
-                <line x1="10" y1="14" x2="21" y2="3"/>
-              </svg>
-            </div>
-            <div class="cta-content">
-              <span class="cta-title">View Your Profile</span>
-              <span class="cta-subtitle">See your posts on Primal</span>
-            </div>
-          </a>
+        <a href="https://primal.net/p/{keypair.npub}" target="_blank" rel="noopener" class="view-profile-btn">
+          View Your Profile on Primal
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/>
+            <polyline points="15 3 21 3 21 9"/>
+            <line x1="10" y1="14" x2="21" y2="3"/>
+          </svg>
+        </a>
 
-          <div class="cta-card">
-            <div class="cta-icon">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 11-7.778 7.778 5.5 5.5 0 017.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>
-              </svg>
-            </div>
-            <div class="cta-content">
-              <span class="cta-title">Remember Your Key</span>
-              <span class="cta-subtitle">Use your nsec to log in to any Nostr app</span>
+        <div class="whats-next">
+          <h3>What's Next?</h3>
+
+          <div class="step-card">
+            <div class="step-number">1</div>
+            <div class="step-content">
+              <h4>Save Your Key</h4>
+              <p>This is your Nostr identity - keep it safe!</p>
+              <div class="key-actions">
+                <button class="action-btn" on:click={copyNsec}>
+                  {#if nsecCopied}
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M20 6L9 17l-5-5"/>
+                    </svg>
+                    Copied!
+                  {:else}
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                      <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+                    </svg>
+                    Copy Key
+                  {/if}
+                </button>
+                <button class="action-btn" on:click={downloadKey}>
+                  {#if keyDownloaded}
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M20 6L9 17l-5-5"/>
+                    </svg>
+                    Downloaded!
+                  {:else}
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                      <polyline points="7 10 12 15 17 10"/>
+                      <line x1="12" y1="15" x2="12" y2="3"/>
+                    </svg>
+                    Download Key
+                  {/if}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
 
-        <div class="key-reminder">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-          </svg>
-          <span>Your private key: <code>{keypair.nsec.slice(0, 20)}...</code></span>
+          <div class="step-card">
+            <div class="step-number">2</div>
+            <div class="step-content">
+              <h4>Download Primal on your phone</h4>
+              <p>Get the app to access your content anywhere</p>
+              <div class="download-row">
+                <div class="qr-wrapper">
+                  <img
+                    src="https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=https://primal.net/downloads&bgcolor=ffffff&color=000000"
+                    alt="QR Code to download Primal"
+                    width="120"
+                    height="120"
+                  />
+                </div>
+                <div class="store-buttons">
+                  <a href="https://apps.apple.com/us/app/primal/id1673134518" target="_blank" rel="noopener noreferrer" class="store-btn">
+                    <svg width="20" height="24" viewBox="0 0 20 24" fill="currentColor">
+                      <path d="M16.52 12.46c-.03-2.59 2.11-3.84 2.21-3.9-1.21-1.76-3.08-2-3.75-2.03-1.58-.17-3.11.94-3.91.94-.82 0-2.06-.92-3.39-.9-1.72.03-3.33 1.02-4.22 2.57-1.82 3.14-.46 7.76 1.28 10.3.87 1.24 1.89 2.62 3.23 2.57 1.3-.05 1.79-.83 3.36-.83 1.56 0 2.01.83 3.37.8 1.4-.02 2.28-1.25 3.12-2.5 1-1.43 1.41-2.83 1.43-2.9-.03-.01-2.73-1.05-2.76-4.12h.03zM13.89 4.43c.7-.87 1.18-2.05 1.05-3.25-1.01.04-2.27.69-3 1.54-.64.76-1.22 2-1.07 3.17 1.14.08 2.31-.57 3.02-1.46z"/>
+                    </svg>
+                    <div class="store-text">
+                      <span class="store-label">Download on the</span>
+                      <span class="store-name">App Store</span>
+                    </div>
+                  </a>
+                  <a href="https://play.google.com/store/apps/details?id=net.primal.android" target="_blank" rel="noopener noreferrer" class="store-btn">
+                    <svg width="20" height="22" viewBox="0 0 20 22" fill="currentColor">
+                      <path d="M1 1.16v19.68c0 .67.74 1.07 1.32.71l16.36-9.84c.58-.35.58-1.17 0-1.51L2.32.36C1.74 0 1 .4 1 1.07v.09z"/>
+                    </svg>
+                    <div class="store-text">
+                      <span class="store-label">Get it on</span>
+                      <span class="store-name">Google Play</span>
+                    </div>
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="step-card">
+            <div class="step-number">3</div>
+            <div class="step-content">
+              <h4>Log in with your key</h4>
+              <p>Open Primal, tap "Login", then "Use login key" and paste your Primal Key</p>
+            </div>
+          </div>
         </div>
       </div>
     {/if}
@@ -1120,5 +1143,178 @@
   .key-reminder code {
     font-family: 'SF Mono', Monaco, monospace;
     color: #a855f7;
+  }
+
+  /* Enhanced complete step */
+  .view-profile-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.875rem 1.5rem;
+    background: linear-gradient(135deg, #a855f7 0%, #8b5cf6 100%);
+    border: none;
+    border-radius: 0.75rem;
+    color: white;
+    font-size: 1rem;
+    font-weight: 600;
+    text-decoration: none;
+    transition: all 0.2s ease;
+    margin-bottom: 2rem;
+  }
+
+  .view-profile-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 20px rgba(168, 85, 247, 0.4);
+  }
+
+  .whats-next {
+    text-align: left;
+    margin-top: 1rem;
+  }
+
+  .whats-next h3 {
+    font-size: 1.125rem;
+    font-weight: 600;
+    margin-bottom: 1rem;
+    color: var(--text-primary);
+  }
+
+  .step-card {
+    display: flex;
+    gap: 1rem;
+    padding: 1.25rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 0.75rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .step-number {
+    width: 2rem;
+    height: 2rem;
+    background: linear-gradient(135deg, #a855f7 0%, #8b5cf6 100%);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 0.875rem;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+
+  .step-content {
+    flex: 1;
+  }
+
+  .step-content h4 {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 0.25rem;
+  }
+
+  .step-content p {
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.75rem;
+    line-height: 1.4;
+  }
+
+  .key-actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .action-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.5rem 0.875rem;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    color: var(--text-primary);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .action-btn:hover {
+    border-color: #a855f7;
+    color: #a855f7;
+  }
+
+  .action-btn svg {
+    flex-shrink: 0;
+  }
+
+  .download-row {
+    display: flex;
+    gap: 1rem;
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .qr-wrapper {
+    background: white;
+    padding: 0.5rem;
+    border-radius: 0.5rem;
+    flex-shrink: 0;
+  }
+
+  .qr-wrapper img {
+    display: block;
+  }
+
+  .store-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    flex: 1;
+    min-width: 160px;
+  }
+
+  .store-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.625rem 1rem;
+    background: #000;
+    border: 1px solid #333;
+    border-radius: 0.5rem;
+    color: white;
+    text-decoration: none;
+    transition: all 0.2s;
+  }
+
+  .store-btn:hover {
+    background: #1a1a1a;
+    border-color: #555;
+  }
+
+  .store-btn svg {
+    flex-shrink: 0;
+  }
+
+  .store-text {
+    display: flex;
+    flex-direction: column;
+    text-align: left;
+  }
+
+  .store-label {
+    font-size: 0.625rem;
+    color: #aaa;
+    line-height: 1.2;
+  }
+
+  .store-name {
+    font-size: 0.875rem;
+    font-weight: 600;
+    line-height: 1.2;
   }
 </style>
