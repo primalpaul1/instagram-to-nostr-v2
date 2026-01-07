@@ -567,6 +567,165 @@ async def stream_upload(request: StreamUploadRequest):
             raise HTTPException(status_code=500, detail=f"Blossom upload error: {str(e)}")
 
 
+# ============================================================================
+# TikTok API Endpoints
+# ============================================================================
+
+@app.get("/tiktok-stream/{handle}")
+async def fetch_tiktok_stream(handle: str):
+    """
+    Stream TikTok video fetch progress using Server-Sent Events.
+    Similar to Instagram endpoint but uses ScrapTik API.
+    """
+    if not RAPIDAPI_KEY:
+        async def error_generator():
+            yield f"data: {json.dumps({'error': 'RAPIDAPI_KEY not configured'})}\n\n"
+        return StreamingResponse(error_generator(), media_type="text/event-stream")
+
+    async def generate():
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                profile = None
+                posts = []
+                max_cursor = 0
+                max_pages = 50
+                page = 0
+
+                # First, get user info to get user_id
+                yield f"data: {json.dumps({'progress': 'Looking up TikTok user...'})}\n\n"
+
+                user_response = await client.get(
+                    f"https://scraptik.p.rapidapi.com/get-user?username={handle}",
+                    headers={
+                        "x-rapidapi-key": RAPIDAPI_KEY,
+                        "x-rapidapi-host": "scraptik.p.rapidapi.com"
+                    }
+                )
+
+                if user_response.status_code != 200:
+                    yield f"data: {json.dumps({'error': f'TikTok user {handle} not found'})}\n\n"
+                    return
+
+                # Decompress if gzipped
+                try:
+                    import gzip
+                    user_data = json.loads(gzip.decompress(user_response.content))
+                except:
+                    user_data = user_response.json()
+
+                user_info = user_data.get("user", {})
+                user_id = user_info.get("uid")
+
+                if not user_id:
+                    yield f"data: {json.dumps({'error': f'Could not find user ID for {handle}'})}\n\n"
+                    return
+
+                # Extract profile
+                avatar_url = None
+                avatar_larger = user_info.get("avatar_larger", {})
+                if avatar_larger and avatar_larger.get("url_list"):
+                    avatar_url = avatar_larger["url_list"][0]
+
+                profile = {
+                    "username": user_info.get("unique_id", handle),
+                    "display_name": user_info.get("nickname"),
+                    "profile_picture_url": avatar_url,
+                }
+
+                yield f"data: {json.dumps({'progress': f'Found user {profile[\"username\"]}, fetching posts...'})}\n\n"
+
+                # Fetch user posts with pagination
+                while page < max_pages:
+                    posts_url = f"https://scraptik.p.rapidapi.com/user-posts?user_id={user_id}&count=30"
+                    if max_cursor:
+                        posts_url += f"&max_cursor={max_cursor}"
+
+                    posts_response = await client.get(
+                        posts_url,
+                        headers={
+                            "x-rapidapi-key": RAPIDAPI_KEY,
+                            "x-rapidapi-host": "scraptik.p.rapidapi.com"
+                        }
+                    )
+
+                    if posts_response.status_code != 200:
+                        break
+
+                    # Decompress if gzipped
+                    try:
+                        import gzip
+                        posts_data = json.loads(gzip.decompress(posts_response.content))
+                    except:
+                        posts_data = posts_response.json()
+
+                    aweme_list = posts_data.get("aweme_list", [])
+                    if not aweme_list:
+                        break
+
+                    # Process posts
+                    for aweme in aweme_list:
+                        aweme_id = aweme.get("aweme_id", "")
+                        desc = aweme.get("desc", "")
+                        create_time = aweme.get("create_time")
+
+                        # Get video info
+                        video_info = aweme.get("video", {})
+                        play_addr = video_info.get("play_addr", {})
+                        video_urls = play_addr.get("url_list", [])
+
+                        if not video_urls:
+                            continue
+
+                        # Get thumbnail
+                        cover = video_info.get("cover", {})
+                        thumbnail_urls = cover.get("url_list", [])
+                        thumbnail_url = thumbnail_urls[0] if thumbnail_urls else None
+
+                        # Duration is in milliseconds
+                        duration_ms = video_info.get("duration", 0)
+                        duration_sec = duration_ms / 1000 if duration_ms else None
+
+                        # Convert timestamp to ISO format
+                        original_date = None
+                        if create_time:
+                            from datetime import datetime
+                            original_date = datetime.fromtimestamp(create_time).isoformat()
+
+                        media_items = [{
+                            "url": video_urls[0],
+                            "media_type": "video",
+                            "width": video_info.get("width"),
+                            "height": video_info.get("height"),
+                            "duration": duration_sec,
+                            "thumbnail_url": thumbnail_url
+                        }]
+
+                        posts.append({
+                            "id": aweme_id,
+                            "post_type": "reel",  # TikTok videos are like reels
+                            "caption": desc,
+                            "original_date": original_date,
+                            "thumbnail_url": thumbnail_url,
+                            "media_items": media_items
+                        })
+
+                    page += 1
+                    yield f"data: {json.dumps({'progress': f'Fetched {len(posts)} posts...'})}\n\n"
+
+                    # Check for more pages
+                    if not posts_data.get("has_more"):
+                        break
+                    max_cursor = posts_data.get("max_cursor", 0)
+
+                # Send final result
+                yield f"data: {json.dumps({'posts': posts, 'profile': profile, 'source': 'tiktok'})}\n\n"
+
+        except Exception as e:
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

@@ -18,12 +18,22 @@ export const POST: RequestHandler = async ({ request }) => {
     // Validate URL is a video source we trust
     const parsedUrl = new URL(url);
     const allowedHosts = [
+      // Instagram CDN
       'instagram.com',
       'cdninstagram.com',
       'fbcdn.net',
       'scontent.cdninstagram.com',
       'scontent-',
-      'video.cdninstagram.com'
+      'video.cdninstagram.com',
+      // TikTok CDN
+      'tiktokcdn.com',
+      'tiktokcdn-eu.com',
+      'tiktokcdn-us.com',
+      'musical.ly',
+      'muscdn.com',
+      'byteoversea.com',
+      'ibytedtos.com',
+      'ipstatp.com'
     ];
 
     const isAllowed = allowedHosts.some(
