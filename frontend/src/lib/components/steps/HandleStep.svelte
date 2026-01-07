@@ -12,8 +12,10 @@
     type NIP46Connection
   } from '$lib/nip46';
 
+  export let defaultPlatform: 'instagram' | 'tiktok' = 'instagram';
+
   let handle = '';
-  let platform: 'instagram' | 'tiktok' = 'instagram';
+  let platform: 'instagram' | 'tiktok' = defaultPlatform;
   let loading = false;
   let videoCount = 0;
   let fetchedVideos: any[] = [];
