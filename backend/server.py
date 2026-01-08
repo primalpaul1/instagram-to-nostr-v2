@@ -571,11 +571,15 @@ async def stream_upload(request: StreamUploadRequest):
 # TikTok API Endpoints
 # ============================================================================
 
+MAX_TIKTOK_POSTS = 100  # Limit TikTok posts to avoid API quota issues
+
+
 @app.get("/tiktok-stream/{handle}")
 async def fetch_tiktok_stream(handle: str):
     """
     Stream TikTok video fetch progress using Server-Sent Events.
     Similar to Instagram endpoint but uses ScrapTik API.
+    Limited to MAX_TIKTOK_POSTS to manage API quota.
     """
     if not RAPIDAPI_KEY:
         async def error_generator():
@@ -636,7 +640,7 @@ async def fetch_tiktok_stream(handle: str):
                 yield f"data: {json.dumps({'progress': f'Found user {username}, fetching posts...'})}\n\n"
 
                 # Fetch user posts with pagination
-                while page < max_pages:
+                while page < max_pages and len(posts) < MAX_TIKTOK_POSTS:
                     posts_url = f"https://scraptik.p.rapidapi.com/user-posts?user_id={user_id}&count=30"
                     if max_cursor:
                         posts_url += f"&max_cursor={max_cursor}"
@@ -711,7 +715,13 @@ async def fetch_tiktok_stream(handle: str):
                         })
 
                     page += 1
-                    yield f"data: {json.dumps({'progress': f'Fetched {len(posts)} posts...'})}\n\n"
+
+                    # Send progress update with full data (like Instagram) to enable "Continue" button
+                    yield f"data: {json.dumps({'progress': True, 'count': len(posts), 'posts': posts, 'profile': profile})}\n\n"
+
+                    # Check if we've hit the limit
+                    if len(posts) >= MAX_TIKTOK_POSTS:
+                        break
 
                     # Check for more pages
                     if not posts_data.get("has_more"):
