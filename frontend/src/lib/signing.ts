@@ -165,22 +165,21 @@ export function createMultiMediaPostEvent(
   }
   content += urls.join('\n');
 
-  // Use current timestamp for now - historical dates may cause signer issues
-  // TODO: Re-enable original dates once signer issue is resolved
-  const createdAt = Math.floor(Date.now() / 1000);
-  // if (originalDate) {
-  //   try {
-  //     const dateStr = originalDate.includes('Z') || originalDate.includes('+') || originalDate.includes('-', 10)
-  //       ? originalDate
-  //       : originalDate + 'Z';
-  //     const date = new Date(dateStr);
-  //     if (!isNaN(date.getTime())) {
-  //       createdAt = Math.floor(date.getTime() / 1000);
-  //     }
-  //   } catch {
-  //     // Use current time if parsing fails
-  //   }
-  // }
+  // Parse original date for created_at timestamp
+  let createdAt = Math.floor(Date.now() / 1000);
+  if (originalDate) {
+    try {
+      const dateStr = originalDate.includes('Z') || originalDate.includes('+') || originalDate.includes('-', 10)
+        ? originalDate
+        : originalDate + 'Z';
+      const date = new Date(dateStr);
+      if (!isNaN(date.getTime())) {
+        createdAt = Math.floor(date.getTime() / 1000);
+      }
+    } catch {
+      // Use current time if parsing fails
+    }
+  }
 
   return {
     kind: 1,
