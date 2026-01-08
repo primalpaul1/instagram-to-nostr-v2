@@ -48,16 +48,53 @@
   let activeIndices: Set<number> = new Set();
 
   const BLOSSOM_SERVER = 'https://blossom.primal.net';
-  const CONCURRENCY = 4; // Process 4 posts at a time
+  const CONCURRENCY = 2; // Process 2 posts at a time (reduced to avoid signer issues)
+  const SIGN_TIMEOUT = 30000; // 30 second timeout for signing
+  const SIGN_RETRIES = 2; // Retry failed signs
 
   // Signing queue - only one NIP-46 signing request at a time to avoid overwhelming the remote signer
   let signingQueue: Promise<void> = Promise.resolve();
 
+  function delay(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+    return Promise.race([
+      promise,
+      new Promise<T>((_, reject) =>
+        setTimeout(() => reject(new Error('Signing timeout')), ms)
+      )
+    ]);
+  }
+
   async function withSigningQueue<T>(fn: () => Promise<T>): Promise<T> {
     // Chain onto the queue so signing happens one at a time
-    const result = signingQueue.then(fn);
+    const result = signingQueue.then(async () => {
+      await delay(500); // Small delay between signs to give wallet breathing room
+      return fn();
+    });
     signingQueue = result.then(() => {}, () => {}); // Swallow errors in queue chain
     return result;
+  }
+
+  async function signWithRetry(
+    connection: typeof $wizard.nip46Connection,
+    event: Parameters<typeof signWithNIP46>[1]
+  ): Promise<Awaited<ReturnType<typeof signWithNIP46>>> {
+    let lastError: Error | null = null;
+    for (let attempt = 0; attempt <= SIGN_RETRIES; attempt++) {
+      try {
+        return await withTimeout(signWithNIP46(connection!, event), SIGN_TIMEOUT);
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error('Sign failed');
+        console.warn(`Sign attempt ${attempt + 1} failed:`, lastError.message);
+        if (attempt < SIGN_RETRIES) {
+          await delay(1000); // Wait 1s before retry
+        }
+      }
+    }
+    throw lastError;
   }
 
   $: completedCount = tasks.filter(t => t.status === 'complete').length;
@@ -235,9 +272,9 @@
         task.post.original_date
       );
 
-      // Use signing queue to serialize NIP-46 requests (one at a time)
+      // Use signing queue to serialize NIP-46 requests (one at a time) with retry
       const signedPost = await withSigningQueue(() =>
-        signWithNIP46($wizard.nip46Connection!, postEvent)
+        signWithRetry($wizard.nip46Connection, postEvent)
       );
 
       tasks[index] = { ...tasks[index], status: 'publishing' };
