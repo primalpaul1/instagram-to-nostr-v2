@@ -752,37 +752,37 @@ def html_to_markdown(html: str, base_url: str = '') -> tuple[str, list[str]]:
     from bs4 import BeautifulSoup
     from markdownify import markdownify as md
     import re
-    import json
 
     soup = BeautifulSoup(html, 'html.parser')
+
+    # Helper to extract clean S3 URL from Substack CDN wrapper
+    def clean_substack_cdn_url(url: str) -> str:
+        if not url:
+            return url
+        # Substack CDN URLs contain the real S3 URL at the end, URL-encoded
+        # e.g. https://substackcdn.com/image/fetch/.../https%3A%2F%2Fsubstack-post-media...
+        if 'substackcdn.com' in url and 'substack-post-media' in url:
+            import urllib.parse
+            # Find the encoded S3 URL
+            if 'https%3A%2F%2Fsubstack-post-media' in url:
+                idx = url.find('https%3A%2F%2Fsubstack-post-media')
+                return urllib.parse.unquote(url[idx:])
+        return url
 
     # Extract image URLs for later upload
     images = []
     for img in soup.find_all('img'):
-        src = None
-
-        # Try to get clean URL from data-attrs (Substack stores original S3 URLs here)
-        data_attrs = img.get('data-attrs', '')
-        if data_attrs:
-            try:
-                attrs = json.loads(data_attrs)
-                # Substack uses 'src' for the clean S3 URL
-                if 'src' in attrs and 'substack' in attrs.get('src', ''):
-                    src = attrs['src']
-            except (json.JSONDecodeError, TypeError):
-                pass
-
-        # Fall back to regular src attribute
-        if not src:
-            src = img.get('src', '')
+        src = img.get('src', '')
 
         if src:
             # Handle relative URLs
             if src.startswith('/') and base_url:
                 src = base_url.rstrip('/') + src
-            # Skip data URIs and very small placeholder images
+            # Skip data URIs
             if not src.startswith('data:'):
-                images.append(src)
+                # Clean Substack CDN URLs to get direct S3 URLs
+                clean_src = clean_substack_cdn_url(src)
+                images.append(clean_src)
 
     # Remove unwanted elements
     for elem in soup.find_all(['script', 'style', 'iframe', 'noscript']):
@@ -937,7 +937,7 @@ async def fetch_rss_stream(feed_url: str):
                             return urllib.parse.unquote(url[idx:])
                     return url
 
-                # Prefer first inline image (now extracts clean S3 URLs from data-attrs)
+                # Prefer first inline image (already cleaned in html_to_markdown)
                 if inline_images:
                     image_url = inline_images[0]
 
