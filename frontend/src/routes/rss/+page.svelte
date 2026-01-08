@@ -385,7 +385,8 @@
           tasks = tasks;
         } catch (err) {
           console.warn('Failed to upload header image:', err);
-          // Continue without header image
+          // Fall back to original URL if Blossom upload fails
+          headerImageUrl = task.article.image_url;
         }
       }
 
