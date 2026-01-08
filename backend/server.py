@@ -737,6 +737,233 @@ async def fetch_tiktok_stream(handle: str):
     return StreamingResponse(generate(), media_type="text/event-stream")
 
 
+# ============================================================================
+# RSS Feed API Endpoints
+# ============================================================================
+
+MAX_RSS_ARTICLES = 50  # Limit articles per feed
+
+
+def html_to_markdown(html: str, base_url: str = '') -> tuple[str, list[str]]:
+    """
+    Convert HTML content to clean Markdown.
+    Returns: (markdown_content, list_of_image_urls)
+    """
+    from bs4 import BeautifulSoup
+    from markdownify import markdownify as md
+    import re
+
+    soup = BeautifulSoup(html, 'html.parser')
+
+    # Extract image URLs for later upload
+    images = []
+    for img in soup.find_all('img'):
+        src = img.get('src', '')
+        if src:
+            # Handle relative URLs
+            if src.startswith('/') and base_url:
+                src = base_url.rstrip('/') + src
+            images.append(src)
+
+    # Remove unwanted elements
+    for elem in soup.find_all(['script', 'style', 'iframe', 'noscript']):
+        elem.decompose()
+
+    # Convert to Markdown
+    markdown = md(
+        str(soup),
+        heading_style='ATX',
+        bullets='-',
+    )
+
+    # Clean up excessive whitespace
+    markdown = re.sub(r'\n{3,}', '\n\n', markdown)
+    markdown = markdown.strip()
+
+    return markdown, images
+
+
+def extract_slug_from_url(url: str) -> str:
+    """Extract a clean slug from URL for d-tag."""
+    from urllib.parse import urlparse
+    import re
+
+    parsed = urlparse(url)
+    path = parsed.path.strip('/')
+
+    # Get the last path segment
+    slug = path.split('/')[-1] if path else ''
+
+    # Clean up the slug
+    slug = re.sub(r'[^a-zA-Z0-9-]', '-', slug)
+    slug = re.sub(r'-+', '-', slug).strip('-')
+
+    # Fallback if empty
+    if not slug:
+        import hashlib
+        slug = hashlib.md5(url.encode()).hexdigest()[:12]
+
+    return slug.lower()
+
+
+@app.get("/rss-stream")
+async def fetch_rss_stream(feed_url: str):
+    """
+    Stream RSS feed fetch and parse progress using Server-Sent Events.
+    Parses RSS/Atom feeds, converts HTML to Markdown for NIP-23 articles.
+    """
+    import feedparser
+    from urllib.parse import urlparse
+
+    async def generate():
+        try:
+            yield f"data: {json.dumps({'progress': 'Fetching RSS feed...'})}\n\n"
+
+            # Fetch the RSS feed
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.get(feed_url, follow_redirects=True)
+
+                if response.status_code != 200:
+                    yield f"data: {json.dumps({'error': f'Failed to fetch feed: HTTP {response.status_code}'})}\n\n"
+                    return
+
+                feed_content = response.text
+
+            # Parse the feed
+            feed = feedparser.parse(feed_content)
+
+            if feed.bozo and not feed.entries:
+                yield f"data: {json.dumps({'error': 'Invalid RSS feed format'})}\n\n"
+                return
+
+            # Extract feed metadata
+            feed_meta = {
+                'title': feed.feed.get('title', 'Unknown Feed'),
+                'description': feed.feed.get('description', feed.feed.get('subtitle', '')),
+                'link': feed.feed.get('link', ''),
+                'image_url': None
+            }
+
+            # Try to get feed image
+            if hasattr(feed.feed, 'image') and feed.feed.image:
+                feed_meta['image_url'] = feed.feed.image.get('href', feed.feed.image.get('url'))
+
+            # Get base URL for relative links
+            parsed_url = urlparse(feed_url)
+            base_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
+
+            yield f"data: {json.dumps({'progress': f'Found {len(feed.entries)} articles, processing...'})}\n\n"
+
+            articles = []
+
+            for entry in feed.entries[:MAX_RSS_ARTICLES]:
+                # Get article content (prefer content:encoded for full article)
+                content_html = ''
+                if hasattr(entry, 'content') and entry.content:
+                    content_html = entry.content[0].get('value', '')
+                elif hasattr(entry, 'summary'):
+                    content_html = entry.summary
+                elif hasattr(entry, 'description'):
+                    content_html = entry.description
+
+                if not content_html:
+                    continue
+
+                # Convert HTML to Markdown
+                content_markdown, inline_images = html_to_markdown(content_html, base_url)
+
+                # Get article link and generate slug for d-tag
+                link = entry.get('link', '')
+                identifier = extract_slug_from_url(link) if link else f"article-{len(articles)}"
+
+                # Get title
+                title = entry.get('title', 'Untitled')
+
+                # Get publication date
+                published_at = None
+                if hasattr(entry, 'published_parsed') and entry.published_parsed:
+                    from datetime import datetime
+                    try:
+                        dt = datetime(*entry.published_parsed[:6])
+                        published_at = str(int(dt.timestamp()))
+                    except:
+                        pass
+
+                # Get summary (first 300 chars of content if not provided)
+                summary = entry.get('summary', '')
+                if summary:
+                    # Strip HTML from summary
+                    from bs4 import BeautifulSoup
+                    summary = BeautifulSoup(summary, 'html.parser').get_text()
+                    summary = ' '.join(summary.split())[:300]
+                if not summary and content_markdown:
+                    summary = ' '.join(content_markdown.split())[:300]
+                    if len(summary) == 300:
+                        summary += '...'
+
+                # Get header image (from enclosure, media, or first inline image)
+                image_url = None
+
+                # Try enclosure first (podcasts, media feeds)
+                if hasattr(entry, 'enclosures') and entry.enclosures:
+                    for enc in entry.enclosures:
+                        if enc.get('type', '').startswith('image'):
+                            image_url = enc.get('href', enc.get('url'))
+                            break
+
+                # Try media:content
+                if not image_url and hasattr(entry, 'media_content'):
+                    for media in entry.media_content:
+                        if media.get('type', '').startswith('image') or media.get('medium') == 'image':
+                            image_url = media.get('url')
+                            break
+
+                # Try media:thumbnail
+                if not image_url and hasattr(entry, 'media_thumbnail'):
+                    if entry.media_thumbnail:
+                        image_url = entry.media_thumbnail[0].get('url')
+
+                # Fall back to first inline image
+                if not image_url and inline_images:
+                    image_url = inline_images[0]
+
+                # Extract hashtags from categories/tags
+                hashtags = []
+                if hasattr(entry, 'tags'):
+                    for tag in entry.tags[:5]:  # Limit to 5 tags
+                        term = tag.get('term', '').strip()
+                        if term:
+                            # Clean up hashtag
+                            clean_tag = term.lower().replace(' ', '-').replace('#', '')
+                            if clean_tag:
+                                hashtags.append(clean_tag)
+
+                articles.append({
+                    'id': identifier,
+                    'title': title,
+                    'summary': summary,
+                    'content_markdown': content_markdown,
+                    'content_html': content_html,
+                    'published_at': published_at,
+                    'link': link,
+                    'image_url': image_url,
+                    'hashtags': hashtags,
+                    'inline_images': inline_images
+                })
+
+                # Send progress updates
+                if len(articles) % 5 == 0:
+                    yield f"data: {json.dumps({'progress': True, 'count': len(articles), 'articles': articles, 'feed': feed_meta})}\n\n"
+
+            # Send final result
+            yield f"data: {json.dumps({'done': True, 'articles': articles, 'feed': feed_meta, 'source': 'rss'})}\n\n"
+
+        except Exception as e:
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

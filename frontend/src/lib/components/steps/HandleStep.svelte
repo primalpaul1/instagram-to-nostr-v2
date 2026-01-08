@@ -414,6 +414,16 @@
           <span class="option-desc">Migrate posts for someone else</span>
         </div>
       </a>
+      <a href="/rss" class="option-btn rss-btn">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M4 11a9 9 0 0 1 9 9M4 4a16 16 0 0 1 16 16"/>
+          <circle cx="5" cy="19" r="1" fill="currentColor"/>
+        </svg>
+        <div class="option-text">
+          <span class="option-title">Import Blog/RSS</span>
+          <span class="option-desc">Publish articles as long-form content</span>
+        </div>
+      </a>
     </div>
   </div>
 </div>
@@ -934,5 +944,9 @@
 
   .gift-btn:hover svg {
     color: #F59E0B;
+  }
+
+  .rss-btn:hover svg {
+    color: #F97316;
   }
 </style>

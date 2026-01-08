@@ -220,6 +220,74 @@ export function createProfileEvent(
   };
 }
 
+export interface ArticleMetadata {
+  identifier: string;  // d-tag (URL slug)
+  title: string;
+  summary?: string;
+  imageUrl?: string;   // Blossom URL for header image
+  publishedAt?: string; // Unix timestamp as string
+  hashtags?: string[];
+  content: string;     // Markdown content
+}
+
+/**
+ * Create a long-form content event (NIP-23 kind 30023).
+ * These are addressable, replaceable events with d-tag.
+ * Optimized for display on Primal's Reads feed.
+ */
+export function createLongFormContentEvent(
+  pubkey: string,
+  article: ArticleMetadata
+): Omit<Event, 'sig'> {
+  const tags: string[][] = [
+    ['d', article.identifier],
+    ['title', article.title],
+  ];
+
+  // Summary for Primal feed preview
+  if (article.summary) {
+    tags.push(['summary', article.summary]);
+  }
+
+  // Header image for Primal display
+  if (article.imageUrl) {
+    tags.push(['image', article.imageUrl]);
+  }
+
+  // Original publication date
+  if (article.publishedAt) {
+    tags.push(['published_at', article.publishedAt]);
+  }
+
+  // Hashtags as t-tags for discoverability
+  if (article.hashtags) {
+    for (const tag of article.hashtags) {
+      const cleanTag = tag.toLowerCase().replace(/^#/, '').trim();
+      if (cleanTag) {
+        tags.push(['t', cleanTag]);
+      }
+    }
+  }
+
+  // Parse created_at from published_at or use current time
+  let createdAt = Math.floor(Date.now() / 1000);
+  if (article.publishedAt) {
+    const timestamp = parseInt(article.publishedAt, 10);
+    if (!isNaN(timestamp)) {
+      createdAt = timestamp;
+    }
+  }
+
+  return {
+    kind: 30023,
+    pubkey,
+    created_at: createdAt,
+    tags,
+    content: article.content,  // Pure Markdown
+    id: '' // Will be filled by signer
+  };
+}
+
 /**
  * Sign an event using NIP-46 connection.
  */
