@@ -752,18 +752,37 @@ def html_to_markdown(html: str, base_url: str = '') -> tuple[str, list[str]]:
     from bs4 import BeautifulSoup
     from markdownify import markdownify as md
     import re
+    import json
 
     soup = BeautifulSoup(html, 'html.parser')
 
     # Extract image URLs for later upload
     images = []
     for img in soup.find_all('img'):
-        src = img.get('src', '')
+        src = None
+
+        # Try to get clean URL from data-attrs (Substack stores original S3 URLs here)
+        data_attrs = img.get('data-attrs', '')
+        if data_attrs:
+            try:
+                attrs = json.loads(data_attrs)
+                # Substack uses 'src' for the clean S3 URL
+                if 'src' in attrs and 'substack' in attrs.get('src', ''):
+                    src = attrs['src']
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        # Fall back to regular src attribute
+        if not src:
+            src = img.get('src', '')
+
         if src:
             # Handle relative URLs
             if src.startswith('/') and base_url:
                 src = base_url.rstrip('/') + src
-            images.append(src)
+            # Skip data URIs and very small placeholder images
+            if not src.startswith('data:'):
+                images.append(src)
 
     # Remove unwanted elements
     for elem in soup.find_all(['script', 'style', 'iframe', 'noscript']):
@@ -901,31 +920,46 @@ async def fetch_rss_stream(feed_url: str):
                     if len(summary) == 300:
                         summary += '...'
 
-                # Get header image (from enclosure, media, or first inline image)
+                # Get header image (prefer inline images with clean URLs)
                 image_url = None
 
-                # Try enclosure first (podcasts, media feeds)
-                if hasattr(entry, 'enclosures') and entry.enclosures:
+                # Helper to extract clean S3 URL from Substack CDN wrapper
+                def clean_substack_url(url: str) -> str:
+                    if not url:
+                        return url
+                    # Substack CDN URLs contain the real S3 URL at the end, URL-encoded
+                    # e.g. https://substackcdn.com/image/fetch/.../https%3A%2F%2Fsubstack-post-media...
+                    if 'substackcdn.com' in url and 'substack-post-media' in url:
+                        import urllib.parse
+                        # Find the encoded S3 URL
+                        if 'https%3A%2F%2Fsubstack-post-media' in url:
+                            idx = url.find('https%3A%2F%2Fsubstack-post-media')
+                            return urllib.parse.unquote(url[idx:])
+                    return url
+
+                # Prefer first inline image (now extracts clean S3 URLs from data-attrs)
+                if inline_images:
+                    image_url = inline_images[0]
+
+                # Try enclosure if no inline images
+                if not image_url and hasattr(entry, 'enclosures') and entry.enclosures:
                     for enc in entry.enclosures:
                         if enc.get('type', '').startswith('image'):
-                            image_url = enc.get('href', enc.get('url'))
+                            enc_url = enc.get('href', enc.get('url'))
+                            image_url = clean_substack_url(enc_url)
                             break
 
                 # Try media:content
                 if not image_url and hasattr(entry, 'media_content'):
                     for media in entry.media_content:
                         if media.get('type', '').startswith('image') or media.get('medium') == 'image':
-                            image_url = media.get('url')
+                            image_url = clean_substack_url(media.get('url'))
                             break
 
                 # Try media:thumbnail
                 if not image_url and hasattr(entry, 'media_thumbnail'):
                     if entry.media_thumbnail:
-                        image_url = entry.media_thumbnail[0].get('url')
-
-                # Fall back to first inline image
-                if not image_url and inline_images:
-                    image_url = inline_images[0]
+                        image_url = clean_substack_url(entry.media_thumbnail[0].get('url'))
 
                 # Extract hashtags from categories/tags
                 hashtags = []
