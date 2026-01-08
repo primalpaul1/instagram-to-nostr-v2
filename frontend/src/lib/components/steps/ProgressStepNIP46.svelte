@@ -50,6 +50,16 @@
   const BLOSSOM_SERVER = 'https://blossom.primal.net';
   const CONCURRENCY = 4; // Process 4 posts at a time
 
+  // Signing queue - only one NIP-46 signing request at a time to avoid overwhelming the remote signer
+  let signingQueue: Promise<void> = Promise.resolve();
+
+  async function withSigningQueue<T>(fn: () => Promise<T>): Promise<T> {
+    // Chain onto the queue so signing happens one at a time
+    const result = signingQueue.then(fn);
+    signingQueue = result.then(() => {}, () => {}); // Swallow errors in queue chain
+    return result;
+  }
+
   $: completedCount = tasks.filter(t => t.status === 'complete').length;
   $: totalCount = tasks.length;
   $: errorCount = tasks.filter(t => t.status === 'error').length;
@@ -225,7 +235,10 @@
         task.post.original_date
       );
 
-      const signedPost = await signWithNIP46($wizard.nip46Connection, postEvent);
+      // Use signing queue to serialize NIP-46 requests (one at a time)
+      const signedPost = await withSigningQueue(() =>
+        signWithNIP46($wizard.nip46Connection!, postEvent)
+      );
 
       tasks[index] = { ...tasks[index], status: 'publishing' };
       tasks = [...tasks];
