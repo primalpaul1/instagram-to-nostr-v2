@@ -392,6 +392,30 @@
       </div>
     </div>
   </div>
+
+  <div class="other-options">
+    <h3>Other options</h3>
+    <div class="option-buttons">
+      <a href="/propose" class="option-btn propose-btn">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 5v14M5 12h14"/>
+        </svg>
+        <div class="option-text">
+          <span class="option-title">Propose a Migration</span>
+          <span class="option-desc">Suggest someone join Nostr</span>
+        </div>
+      </a>
+      <a href="/gift" class="option-btn gift-btn">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M20 12v10H4V12M2 7h20v5H2zM12 22V7M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7zM12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/>
+        </svg>
+        <div class="option-text">
+          <span class="option-title">Gift a Migration</span>
+          <span class="option-desc">Migrate posts for someone else</span>
+        </div>
+      </a>
+    </div>
+  </div>
 </div>
 
 <style>
@@ -841,5 +865,74 @@
     flex: 1;
     height: 1px;
     background: var(--border);
+  }
+
+  .other-options {
+    margin-top: 2rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border);
+  }
+
+  .other-options h3 {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 1rem;
+  }
+
+  .option-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .option-btn {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1rem 1.25rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-light);
+    border-radius: 0.75rem;
+    text-decoration: none;
+    color: var(--text-primary);
+    transition: all 0.2s ease;
+  }
+
+  .option-btn:hover {
+    border-color: var(--accent);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  }
+
+  .option-btn svg {
+    flex-shrink: 0;
+    color: var(--accent);
+  }
+
+  .option-text {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .option-title {
+    font-weight: 600;
+    font-size: 0.9375rem;
+  }
+
+  .option-desc {
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+  }
+
+  .propose-btn:hover svg {
+    color: #10B981;
+  }
+
+  .gift-btn:hover svg {
+    color: #F59E0B;
   }
 </style>
