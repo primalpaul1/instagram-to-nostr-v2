@@ -4,8 +4,9 @@
 
 <div class="app-container">
   <header>
-    <h1>Insta to Primal</h1>
-    <p class="tagline">Migrate your Instagram videos to Nostr</p>
+    <h1>Own Your Posts</h1>
+    <p class="tagline">Bring your content to Primal. Keep it forever.</p>
+    <a href="/why" class="why-link">Why Primal?</a>
   </header>
 
   <main>
@@ -58,6 +59,21 @@
   .tagline {
     color: var(--text-secondary);
     font-size: 1rem;
+  }
+
+  .why-link {
+    display: inline-block;
+    margin-top: 0.75rem;
+    color: var(--accent);
+    font-size: 0.875rem;
+    font-weight: 500;
+    text-decoration: none;
+    transition: opacity 0.2s;
+  }
+
+  .why-link:hover {
+    opacity: 0.8;
+    text-decoration: underline;
   }
 
   main {

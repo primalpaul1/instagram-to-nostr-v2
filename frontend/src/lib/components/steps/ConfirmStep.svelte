@@ -68,8 +68,8 @@
 
 <div class="confirm-step">
   <div class="header">
-    <h2>Ready to migrate</h2>
-    <p class="subtitle">Review your selection before starting</p>
+    <h2>Ready to own your posts</h2>
+    <p class="subtitle">Review what you're bringing to Primal</p>
   </div>
 
   <div class="summary-card">
@@ -163,7 +163,7 @@
           <line x1="12" y1="9" x2="12" y2="13"/>
           <line x1="12" y1="17" x2="12.01" y2="17"/>
         </svg>
-        <span>Keep this tab open during migration</span>
+        <span>Keep this tab open during publishing</span>
       </div>
     {/if}
   </div>
@@ -180,7 +180,7 @@
         <span class="spinner"></span>
         Starting...
       {:else}
-        Start Migration
+        Claim My Posts
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M5 12h14M12 5l7 7-7 7"/>
         </svg>

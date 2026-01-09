@@ -323,20 +323,20 @@
 </script>
 
 <svelte:head>
-  <title>Create Gift Account | Insta to Primal</title>
+  <title>Gift Freedom | Own Your Posts</title>
 </svelte:head>
 
 <div class="gift-page">
   <header>
-    <a href="/" class="logo">Insta to Primal</a>
+    <a href="/" class="logo">Own Your Posts</a>
     <span class="badge">Gift Mode</span>
   </header>
 
   <main>
     {#if step === 'input'}
       <div class="input-step">
-        <h1>Create a Gift Account</h1>
-        <p class="subtitle">Prepare content for someone new to Nostr. They'll create their account with a password.</p>
+        <h1>Gift Freedom</h1>
+        <p class="subtitle">Help someone new own their content on Nostr. They'll create their account with a password.</p>
 
         {#if error}
           <div class="error-banner">{error}</div>

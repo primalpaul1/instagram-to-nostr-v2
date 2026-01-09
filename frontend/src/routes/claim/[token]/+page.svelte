@@ -451,12 +451,12 @@
 </script>
 
 <svelte:head>
-  <title>Claim Your Content | Insta to Primal</title>
+  <title>Claim Your Content | Own Your Posts</title>
 </svelte:head>
 
 <div class="claim-page">
   <header>
-    <a href="/" class="logo">Insta to Primal</a>
+    <a href="/" class="logo">Own Your Posts</a>
   </header>
 
   <main>
@@ -713,8 +713,8 @@
             <path d="M20 6L9 17l-5-5"/>
           </svg>
         </div>
-        <h2>Migration Complete!</h2>
-        <p class="subtitle">Your Instagram content is now on Nostr</p>
+        <h2>You Own Your Posts!</h2>
+        <p class="subtitle">Your content is now yours forever on Primal</p>
 
         <div class="stats-card">
           <div class="stat">

@@ -345,20 +345,20 @@
 </script>
 
 <svelte:head>
-  <title>Propose Migration | Insta to Primal</title>
+  <title>Invite a Friend | Own Your Posts</title>
 </svelte:head>
 
 <div class="propose-page">
   <header>
-    <a href="/" class="logo">Insta to Primal</a>
-    <span class="badge">Propose Mode</span>
+    <a href="/" class="logo">Own Your Posts</a>
+    <span class="badge">Invite Mode</span>
   </header>
 
   <main>
     {#if step === 'input'}
       <div class="input-step">
-        <h1>Propose a Migration</h1>
-        <p class="subtitle">Fetch someone's Instagram content and create a claim link for them</p>
+        <h1>Invite a Friend</h1>
+        <p class="subtitle">Help someone own their content by preparing it for them</p>
 
         {#if error}
           <div class="error-banner">{error}</div>

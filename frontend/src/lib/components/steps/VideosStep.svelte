@@ -129,8 +129,8 @@
 
 <div class="videos-step">
   <div class="header">
-    <h2>Select content to migrate</h2>
-    <p class="subtitle">Choose which posts you want to migrate to Nostr</p>
+    <h2>Choose posts to own forever</h2>
+    <p class="subtitle">Select the content you want to bring to Primal</p>
   </div>
 
   <div class="tabs">

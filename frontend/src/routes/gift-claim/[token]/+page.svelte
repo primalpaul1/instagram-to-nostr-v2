@@ -298,12 +298,12 @@
 </script>
 
 <svelte:head>
-  <title>Claim Your Gift | Insta to Primal</title>
+  <title>Claim Your Posts | Own Your Posts</title>
 </svelte:head>
 
 <div class="gift-claim-page">
   <header>
-    <a href="/" class="logo">Insta to Primal</a>
+    <a href="/" class="logo">Own Your Posts</a>
   </header>
 
   <main>

@@ -245,7 +245,7 @@
 <div class="handle-step">
   <div class="hero-section">
     <h2>Enter your {platform === 'tiktok' ? 'TikTok' : 'Instagram'} handle</h2>
-    <p class="subtitle">We'll fetch your public content and help you migrate it to Nostr</p>
+    <p class="subtitle">We'll find your posts so you can own them forever on Primal</p>
   </div>
 
   <div class="platform-selector">
@@ -376,19 +376,19 @@
     <div class="steps-list">
       <div class="step-item">
         <div class="step-icon">1</div>
-        <span>We fetch your public Instagram content</span>
+        <span>We find your public posts</span>
       </div>
       <div class="step-item">
         <div class="step-icon">2</div>
-        <span>You choose which posts to migrate</span>
+        <span>You choose which ones to keep</span>
       </div>
       <div class="step-item">
         <div class="step-icon">3</div>
-        <span>Media is uploaded to Blossom</span>
+        <span>Your media is stored permanently</span>
       </div>
       <div class="step-item">
         <div class="step-icon">4</div>
-        <span>Posts are published to Nostr</span>
+        <span>You own your posts on Primal</span>
       </div>
     </div>
   </div>
@@ -401,8 +401,8 @@
           <path d="M12 5v14M5 12h14"/>
         </svg>
         <div class="option-text">
-          <span class="option-title">Propose a Migration</span>
-          <span class="option-desc">Suggest someone join Nostr</span>
+          <span class="option-title">Invite a Friend</span>
+          <span class="option-desc">Help someone own their posts</span>
         </div>
       </a>
       <a href="/gift" class="option-btn gift-btn">
@@ -410,8 +410,8 @@
           <path d="M20 12v10H4V12M2 7h20v5H2zM12 22V7M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7zM12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/>
         </svg>
         <div class="option-text">
-          <span class="option-title">Gift a Migration</span>
-          <span class="option-desc">Migrate posts for someone else</span>
+          <span class="option-title">Gift Freedom</span>
+          <span class="option-desc">Move posts for someone else</span>
         </div>
       </a>
       <a href="/rss" class="option-btn rss-btn">
@@ -421,7 +421,7 @@
         </svg>
         <div class="option-text">
           <span class="option-title">Import Blog/RSS</span>
-          <span class="option-desc">Publish articles as long-form content</span>
+          <span class="option-desc">Own your articles on Primal</span>
         </div>
       </a>
     </div>

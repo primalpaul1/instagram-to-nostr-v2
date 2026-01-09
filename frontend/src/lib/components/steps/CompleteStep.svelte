@@ -23,8 +23,8 @@
         <path d="M20 6L9 17l-5-5"/>
       </svg>
     </div>
-    <h2>Migration Complete!</h2>
-    <p class="subtitle">Your content is now live on Nostr</p>
+    <h2>You Own Your Posts!</h2>
+    <p class="subtitle">Your content is now yours forever on Primal</p>
   </div>
 
   <a href={primalUrl} target="_blank" rel="noopener noreferrer" class="primal-cta">
@@ -95,9 +95,9 @@
         <div class="step-number">3</div>
         <div class="step-content">
           <h4>Tell your friends!</h4>
-          <p>Help others break free from Instagram and own their content</p>
-          <a href="https://instatoprimal.com" class="share-link" target="_blank" rel="noopener noreferrer">
-            <span>instatoprimal.com</span>
+          <p>Help others own their content forever</p>
+          <a href="https://ownyourposts.com" class="share-link" target="_blank" rel="noopener noreferrer">
+            <span>ownyourposts.com</span>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
               <path d="M7 17L17 7M17 7H7M17 7v10"/>
             </svg>
@@ -134,10 +134,10 @@
         </div>
         <div class="freedom-content">
           <h4>Tell your friends</h4>
-          <p>Help others break free from Instagram. Share the migration tool and grow the decentralized community.</p>
+          <p>Help others own their content and join the decentralized community.</p>
         </div>
-        <a href="https://instatoprimal.com" class="share-link" target="_blank" rel="noopener noreferrer">
-          <span>instatoprimal.com</span>
+        <a href="https://ownyourposts.com" class="share-link" target="_blank" rel="noopener noreferrer">
+          <span>ownyourposts.com</span>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
             <path d="M7 17L17 7M17 7H7M17 7v10"/>
           </svg>
@@ -151,7 +151,7 @@
       <path d="M1 4v6h6"/>
       <path d="M3.51 15a9 9 0 102.13-9.36L1 10"/>
     </svg>
-    Migrate Another Account
+    Own More Posts
   </button>
 </div>
 

@@ -346,8 +346,8 @@
         <path d="M21 13v1a4 4 0 01-4 4H3"/>
       </svg>
     </div>
-    <h2>Migration in progress</h2>
-    <p class="subtitle">Primal is signing each video post</p>
+    <h2>Claiming your posts</h2>
+    <p class="subtitle">Your content is being published to Primal</p>
   </div>
 
   <div class="progress-card">
