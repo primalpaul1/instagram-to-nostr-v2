@@ -195,7 +195,7 @@
             const jsonStr = line.slice(6);
             try {
               const data = JSON.parse(jsonStr);
-              console.log('Parsed SSE:', Object.keys(data));
+              console.log('Parsed SSE keys:', Object.keys(data).join(', '), 'done?', !!data.done);
 
               if (data.error) {
                 throw new Error(data.error);
