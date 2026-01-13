@@ -157,7 +157,12 @@
         return;
       }
 
-      gift = data;
+      // Ensure arrays exist to prevent undefined errors
+      gift = {
+        ...data,
+        posts: data.posts || [],
+        articles: data.articles || []
+      };
       step = 'preview';
     } catch (err) {
       error = err instanceof Error ? err.message : 'Failed to load gift';
