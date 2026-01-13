@@ -238,7 +238,7 @@
                       wizard.setProfile({
                         username: data.feed.author_name || data.feed.title,
                         display_name: data.feed.author_name || data.feed.title,
-                        bio: data.feed.description,
+                        bio: data.feed.author_bio || data.feed.description,
                         profile_picture_url: data.feed.author_image || data.feed.image_url
                       });
                     }
@@ -304,7 +304,7 @@
           wizard.setProfile({
             username: fetchedFeedInfo.author_name || fetchedFeedInfo.title,
             display_name: fetchedFeedInfo.author_name || fetchedFeedInfo.title,
-            bio: fetchedFeedInfo.description,
+            bio: fetchedFeedInfo.author_bio || fetchedFeedInfo.description,
             profile_picture_url: fetchedFeedInfo.author_image || fetchedFeedInfo.image_url
           });
         }

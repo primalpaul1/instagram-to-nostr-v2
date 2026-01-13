@@ -862,20 +862,59 @@ async def fetch_rss_stream(feed_url: str):
                 'link': feed.feed.get('link', ''),
                 'image_url': None,
                 'author_name': None,
-                'author_image': None
+                'author_image': None,
+                'author_bio': None
             }
 
             # Try to get feed image
             if hasattr(feed.feed, 'image') and feed.feed.image:
                 feed_meta['image_url'] = feed.feed.image.get('href', feed.feed.image.get('url'))
-                # Use feed image as author image (common for Substack)
-                feed_meta['author_image'] = feed_meta['image_url']
 
             # Extract author from feed level
             if hasattr(feed.feed, 'author'):
                 feed_meta['author_name'] = feed.feed.author
             elif hasattr(feed.feed, 'author_detail') and feed.feed.author_detail:
                 feed_meta['author_name'] = feed.feed.author_detail.get('name')
+
+            # For Substack, scrape the publication page to get author photo and bio
+            if 'substack.com' in parsed_url.netloc:
+                try:
+                    import re
+                    # Fetch the Substack homepage
+                    pub_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
+                    async with httpx.AsyncClient(timeout=15.0) as pub_client:
+                        pub_response = await pub_client.get(pub_url, follow_redirects=True)
+                        if pub_response.status_code == 200:
+                            # Extract window._preloads JSON
+                            match = re.search(r'window\._preloads\s*=\s*JSON\.parse\("(.+?)"\);', pub_response.text)
+                            if match:
+                                import codecs
+                                # The JSON is escaped, decode it
+                                preloads_str = codecs.decode(match.group(1), 'unicode_escape')
+                                preloads = json.loads(preloads_str)
+                                pub_data = preloads.get('pub', {})
+
+                                # Extract author info
+                                if pub_data.get('author_name'):
+                                    feed_meta['author_name'] = pub_data['author_name']
+                                if pub_data.get('author_bio'):
+                                    feed_meta['author_bio'] = pub_data['author_bio']
+                                if pub_data.get('author_photo_url'):
+                                    # Clean up the CDN URL to get the actual image
+                                    photo_url = pub_data['author_photo_url']
+                                    # Substack CDN URLs contain the real S3 URL encoded
+                                    if 'substackcdn.com' in photo_url and 'substack-post-media' in photo_url:
+                                        import urllib.parse
+                                        if 'https%3A%2F%2Fsubstack-post-media' in photo_url:
+                                            idx = photo_url.find('https%3A%2F%2Fsubstack-post-media')
+                                            feed_meta['author_image'] = urllib.parse.unquote(photo_url[idx:])
+                                        else:
+                                            feed_meta['author_image'] = photo_url
+                                    else:
+                                        feed_meta['author_image'] = photo_url
+                except Exception as e:
+                    # If scraping fails, continue with RSS-only data
+                    print(f"Failed to scrape Substack author info: {e}")
 
             # Get base URL for relative links
             parsed_url = urlparse(feed_url)

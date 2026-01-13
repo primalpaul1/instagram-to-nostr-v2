@@ -81,6 +81,7 @@ export interface FeedInfo {
   image_url?: string;
   author_name?: string;
   author_image?: string;
+  author_bio?: string;
 }
 
 export type ContentType = 'posts' | 'articles';
