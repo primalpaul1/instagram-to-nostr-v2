@@ -8,9 +8,6 @@
   import ProgressStepNIP46 from '$lib/components/steps/ProgressStepNIP46.svelte';
   import CompleteStep from '$lib/components/steps/CompleteStep.svelte';
   import { wizard } from '$lib/stores/wizard';
-
-  // Debug: log step changes
-  $: console.log('+page.svelte: Current step is:', $wizard.step);
 </script>
 
 <WizardLayout>

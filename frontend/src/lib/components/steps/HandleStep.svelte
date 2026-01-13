@@ -181,10 +181,7 @@
 
       while (true) {
         const { done, value } = await reader.read();
-        if (done) {
-          console.log('Stream ended, remaining buffer:', buffer.length, 'chars');
-          break;
-        }
+        if (done) break;
 
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split('\n\n');
@@ -195,7 +192,6 @@
             const jsonStr = line.slice(6);
             try {
               const data = JSON.parse(jsonStr);
-              console.log('Parsed SSE keys:', Object.keys(data).join(', '), 'done?', !!data.done);
 
               if (data.error) {
                 throw new Error(data.error);
@@ -225,28 +221,21 @@
               }
 
               if (data.done) {
-                console.log('DONE received, articles:', data.articles?.length);
                 if (platform === 'rss') {
                   if (!data.articles || data.articles.length === 0) {
                     throw new Error('No articles found in this feed');
                   }
 
-                  console.log('Setting wizard state for RSS...');
                   wizard.clearNIP46();  // Reset authMode to 'generate' for password-based flow
                   wizard.setContentType('articles');
                   wizard.setHandle(feedUrl.trim());
                   const mappedArticles = (data.articles || []).map((a: any) => ({ ...a, selected: true }));
-                  console.log('Mapped articles:', mappedArticles.length);
                   wizard.setArticles(mappedArticles);
                   if (data.feed) {
                     wizard.setFeedInfo(data.feed);
                   }
-                  console.log('About to setStep keys');
                   wizard.setStep('keys');
-                  console.log('Step set to keys');
-                  // Force Svelte to update DOM
                   await tick();
-                  console.log('After tick, returning');
                   return;
                 } else {
                   if ((!data.videos || data.videos.length === 0) && (!data.posts || data.posts.length === 0)) {
@@ -266,7 +255,6 @@
                 return;
               }
             } catch (parseErr) {
-              console.log('Parse error:', parseErr instanceof Error ? parseErr.message : parseErr);
               if (parseErr instanceof Error && parseErr.message !== 'Unexpected end of JSON input') {
                 throw parseErr;
               }
@@ -289,29 +277,16 @@
   }
 
   function handlePause() {
-    console.log('handlePause called, abortController:', !!abortController);
-    if (!abortController) {
-      console.log('handlePause: No abortController, returning early');
-      return;
-    }
+    if (!abortController) return;
 
     if (platform === 'rss') {
-      console.log('handlePause RSS: articleCount=', articleCount, 'fetchedArticles.length=', fetchedArticles.length);
-      // Use articleCount check since fetchedArticles might have timing issues
-      if (articleCount === 0 && fetchedArticles.length === 0) {
-        console.log('handlePause: No articles, returning early');
-        return;
-      }
+      if (articleCount === 0 && fetchedArticles.length === 0) return;
 
-      console.log('handlePause: Aborting and setting wizard state for RSS');
       abortController.abort();
-
       wizard.clearNIP46();  // Reset authMode to 'generate' for password-based flow
       wizard.setContentType('articles');
       wizard.setHandle(feedUrl.trim());
-      // Use fetchedArticles if available, otherwise create placeholder
       const articles = fetchedArticles.length > 0 ? fetchedArticles : [];
-      console.log('handlePause: Setting articles:', articles.length);
       wizard.setArticles(articles.map((a: any) => ({ ...a, selected: true })));
       if (fetchedFeedInfo) {
         wizard.setFeedInfo(fetchedFeedInfo);
@@ -330,9 +305,7 @@
         wizard.setProfile(fetchedProfile);
       }
     }
-    console.log('handlePause: Calling wizard.setStep(keys)');
     wizard.setStep('keys');
-    console.log('handlePause: Step set to keys, done');
   }
 </script>
 

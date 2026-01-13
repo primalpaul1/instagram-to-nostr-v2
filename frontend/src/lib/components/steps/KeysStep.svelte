@@ -49,7 +49,6 @@ Store it somewhere safe!
   $: nip46Npub = $wizard.nip46Pubkey ? hexToNpub($wizard.nip46Pubkey) : '';
 
   onMount(() => {
-    console.log('KeysStep mounted, isNip46Mode:', isNip46Mode, 'keyPair:', !!keyPair, 'authMode:', $wizard.authMode);
     if (!isNip46Mode && !keyPair) {
       keyPair = generateKeyPair();
       wizard.setKeyPair(keyPair);
@@ -65,12 +64,7 @@ Store it somewhere safe!
   }
 
   function handleContinue() {
-    console.log('KeysStep handleContinue called, isNip46Mode:', isNip46Mode, 'downloaded:', downloaded);
-    if (!isNip46Mode && !downloaded) {
-      console.log('KeysStep: not downloaded yet, returning');
-      return;
-    }
-    console.log('KeysStep: setting step to videos');
+    if (!isNip46Mode && !downloaded) return;
     wizard.setStep('videos');
   }
 
