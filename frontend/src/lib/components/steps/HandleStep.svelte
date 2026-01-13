@@ -12,14 +12,18 @@
     type NIP46Connection
   } from '$lib/nip46';
 
-  export let defaultPlatform: 'instagram' | 'tiktok' = 'instagram';
+  export let defaultPlatform: 'instagram' | 'tiktok' | 'rss' = 'instagram';
 
   let handle = '';
-  let platform: 'instagram' | 'tiktok' = defaultPlatform;
+  let feedUrl = '';
+  let platform: 'instagram' | 'tiktok' | 'rss' = defaultPlatform;
   let loading = false;
   let videoCount = 0;
+  let articleCount = 0;
   let fetchedVideos: any[] = [];
   let fetchedPosts: any[] = [];
+  let fetchedArticles: any[] = [];
+  let fetchedFeedInfo: any = null;
   let fetchedProfile: any = null;
   let abortController: AbortController | null = null;
 
@@ -128,21 +132,37 @@
   }
 
   async function handleSubmit() {
-    if (!handle.trim()) return;
+    // Validate input based on platform
+    if (platform === 'rss') {
+      if (!feedUrl.trim()) return;
+    } else {
+      if (!handle.trim()) return;
+    }
 
     loading = true;
     videoCount = 0;
+    articleCount = 0;
     fetchedVideos = [];
+    fetchedArticles = [];
+    fetchedFeedInfo = null;
     fetchedProfile = null;
     abortController = new AbortController();
     wizard.setLoading(true);
     wizard.setError(null);
 
     try {
-      const cleanHandle = handle.replace('@', '').trim();
-      const endpoint = platform === 'tiktok'
-        ? `/api/tiktok-stream/${encodeURIComponent(cleanHandle)}`
-        : `/api/videos-stream/${encodeURIComponent(cleanHandle)}`;
+      let endpoint: string;
+
+      if (platform === 'rss') {
+        endpoint = `/api/rss-stream?feed_url=${encodeURIComponent(feedUrl.trim())}`;
+      } else if (platform === 'tiktok') {
+        const cleanHandle = handle.replace('@', '').trim();
+        endpoint = `/api/tiktok-stream/${encodeURIComponent(cleanHandle)}`;
+      } else {
+        const cleanHandle = handle.replace('@', '').trim();
+        endpoint = `/api/videos-stream/${encodeURIComponent(cleanHandle)}`;
+      }
+
       const response = await fetch(endpoint, {
         signal: abortController.signal
       });
@@ -178,28 +198,53 @@
               }
 
               if (data.progress) {
-                videoCount = data.count;
-                if (data.videos) {
-                  fetchedVideos = data.videos;
-                }
-                if (data.posts) {
-                  fetchedPosts = data.posts;
-                }
-                if (data.profile) {
-                  fetchedProfile = data.profile;
+                if (platform === 'rss') {
+                  articleCount = data.count || 0;
+                  if (data.articles) {
+                    fetchedArticles = data.articles;
+                  }
+                  if (data.feed) {
+                    fetchedFeedInfo = data.feed;
+                  }
+                } else {
+                  videoCount = data.count;
+                  if (data.videos) {
+                    fetchedVideos = data.videos;
+                  }
+                  if (data.posts) {
+                    fetchedPosts = data.posts;
+                  }
+                  if (data.profile) {
+                    fetchedProfile = data.profile;
+                  }
                 }
               }
 
               if (data.done) {
-                if ((!data.videos || data.videos.length === 0) && (!data.posts || data.posts.length === 0)) {
-                  throw new Error('No content found for this account');
-                }
+                if (platform === 'rss') {
+                  if (!data.articles || data.articles.length === 0) {
+                    throw new Error('No articles found in this feed');
+                  }
 
-                wizard.setHandle(cleanHandle);
-                wizard.setVideos((data.videos || []).map((v: any) => ({ ...v, selected: false })));
-                wizard.setPosts((data.posts || []).map((p: any) => ({ ...p, selected: false })));
-                if (data.profile) {
-                  wizard.setProfile(data.profile);
+                  wizard.setContentType('articles');
+                  wizard.setHandle(feedUrl.trim());
+                  wizard.setArticles((data.articles || []).map((a: any) => ({ ...a, selected: true })));
+                  if (data.feed) {
+                    wizard.setFeedInfo(data.feed);
+                  }
+                } else {
+                  if ((!data.videos || data.videos.length === 0) && (!data.posts || data.posts.length === 0)) {
+                    throw new Error('No content found for this account');
+                  }
+
+                  const cleanHandle = handle.replace('@', '').trim();
+                  wizard.setContentType('posts');
+                  wizard.setHandle(cleanHandle);
+                  wizard.setVideos((data.videos || []).map((v: any) => ({ ...v, selected: false })));
+                  wizard.setPosts((data.posts || []).map((p: any) => ({ ...p, selected: false })));
+                  if (data.profile) {
+                    wizard.setProfile(data.profile);
+                  }
                 }
                 wizard.setStep('keys');
                 return;
@@ -227,16 +272,29 @@
   }
 
   function handlePause() {
-    if (!abortController || (fetchedVideos.length === 0 && fetchedPosts.length === 0)) return;
+    if (platform === 'rss') {
+      if (!abortController || fetchedArticles.length === 0) return;
+      abortController.abort();
 
-    const cleanHandle = handle.replace('@', '').trim();
-    abortController.abort();
+      wizard.setContentType('articles');
+      wizard.setHandle(feedUrl.trim());
+      wizard.setArticles(fetchedArticles.map((a: any) => ({ ...a, selected: true })));
+      if (fetchedFeedInfo) {
+        wizard.setFeedInfo(fetchedFeedInfo);
+      }
+    } else {
+      if (!abortController || (fetchedVideos.length === 0 && fetchedPosts.length === 0)) return;
 
-    wizard.setHandle(cleanHandle);
-    wizard.setVideos(fetchedVideos.map((v: any) => ({ ...v, selected: false })));
-    wizard.setPosts(fetchedPosts.map((p: any) => ({ ...p, selected: false })));
-    if (fetchedProfile) {
-      wizard.setProfile(fetchedProfile);
+      const cleanHandle = handle.replace('@', '').trim();
+      abortController.abort();
+
+      wizard.setContentType('posts');
+      wizard.setHandle(cleanHandle);
+      wizard.setVideos(fetchedVideos.map((v: any) => ({ ...v, selected: false })));
+      wizard.setPosts(fetchedPosts.map((p: any) => ({ ...p, selected: false })));
+      if (fetchedProfile) {
+        wizard.setProfile(fetchedProfile);
+      }
     }
     wizard.setStep('keys');
   }
@@ -244,8 +302,13 @@
 
 <div class="handle-step">
   <div class="hero-section">
-    <h2>Enter your {platform === 'tiktok' ? 'TikTok' : 'Instagram'} handle</h2>
-    <p class="subtitle">We'll find your posts so you can own them forever on Primal</p>
+    {#if platform === 'rss'}
+      <h2>Enter your RSS feed URL</h2>
+      <p class="subtitle">We'll import your articles so you can own them forever on Primal</p>
+    {:else}
+      <h2>Enter your {platform === 'tiktok' ? 'TikTok' : 'Instagram'} handle</h2>
+      <p class="subtitle">We'll find your posts so you can own them forever on Primal</p>
+    {/if}
   </div>
 
   <div class="platform-selector">
@@ -273,44 +336,90 @@
       </svg>
       TikTok
     </button>
+    <button
+      type="button"
+      class="platform-btn"
+      class:active={platform === 'rss'}
+      on:click={() => platform = 'rss'}
+      disabled={loading}
+    >
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M4 11a9 9 0 0 1 9 9M4 4a16 16 0 0 1 16 16"/>
+        <circle cx="5" cy="19" r="1" fill="currentColor"/>
+      </svg>
+      Substack (RSS)
+    </button>
   </div>
 
   <form on:submit|preventDefault={handleSubmit}>
-    <div class="input-wrapper" class:focused={handle.length > 0} class:loading>
-      <span class="at-symbol">@</span>
-      <input
-        type="text"
-        bind:value={handle}
-        placeholder="username"
-        disabled={loading}
-        autocomplete="off"
-        autocapitalize="off"
-        spellcheck="false"
-      />
-      {#if loading}
-        <div class="input-spinner"></div>
-      {/if}
-    </div>
+    {#if platform === 'rss'}
+      <div class="input-wrapper url-input" class:focused={feedUrl.length > 0} class:loading>
+        <svg class="url-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+          <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+        </svg>
+        <input
+          type="url"
+          bind:value={feedUrl}
+          placeholder="https://yourblog.substack.com/feed"
+          disabled={loading}
+          autocomplete="off"
+          autocapitalize="off"
+          spellcheck="false"
+        />
+        {#if loading}
+          <div class="input-spinner"></div>
+        {/if}
+      </div>
+    {:else}
+      <div class="input-wrapper" class:focused={handle.length > 0} class:loading>
+        <span class="at-symbol">@</span>
+        <input
+          type="text"
+          bind:value={handle}
+          placeholder="username"
+          disabled={loading}
+          autocomplete="off"
+          autocapitalize="off"
+          spellcheck="false"
+        />
+        {#if loading}
+          <div class="input-spinner"></div>
+        {/if}
+      </div>
+    {/if}
 
-    <button type="submit" class="primary-btn" disabled={!handle.trim() || loading}>
+    <button type="submit" class="primary-btn" disabled={(platform === 'rss' ? !feedUrl.trim() : !handle.trim()) || loading}>
       {#if loading}
         <span class="btn-spinner"></span>
         <span class="btn-text">
-          {#if videoCount > 0}
-            Fetching... {videoCount} posts found
+          {#if platform === 'rss'}
+            {#if articleCount > 0}
+              Fetching... {articleCount} articles found
+            {:else}
+              Fetching articles...
+            {/if}
           {:else}
-            Searching for content...
+            {#if videoCount > 0}
+              Fetching... {videoCount} posts found
+            {:else}
+              Searching for content...
+            {/if}
           {/if}
         </span>
       {:else}
-        <span class="btn-text">Fetch Content</span>
+        <span class="btn-text">{platform === 'rss' ? 'Fetch Articles' : 'Fetch Content'}</span>
         <svg class="btn-arrow" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M5 12h14M12 5l7 7-7 7"/>
         </svg>
       {/if}
     </button>
 
-    {#if loading && videoCount > 0}
+    {#if loading && platform === 'rss' && articleCount > 0}
+      <button type="button" class="secondary-btn" on:click={handlePause}>
+        Continue with {articleCount} articles
+      </button>
+    {:else if loading && platform !== 'rss' && videoCount > 0}
       <button type="button" class="secondary-btn" on:click={handlePause}>
         Continue with {videoCount} posts
       </button>
@@ -412,16 +521,6 @@
         <div class="option-text">
           <span class="option-title">Gift Freedom</span>
           <span class="option-desc">Move posts for someone else</span>
-        </div>
-      </a>
-      <a href="/rss" class="option-btn rss-btn">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M4 11a9 9 0 0 1 9 9M4 4a16 16 0 0 1 16 16"/>
-          <circle cx="5" cy="19" r="1" fill="currentColor"/>
-        </svg>
-        <div class="option-text">
-          <span class="option-title">Import Blog/RSS</span>
-          <span class="option-desc">Own your articles on Primal</span>
         </div>
       </a>
       <a href="/gift" class="option-btn rss-gift-btn">
@@ -531,6 +630,16 @@
     font-size: 1.125rem;
     font-weight: 500;
     margin-right: 0.25rem;
+  }
+
+  .url-icon {
+    color: var(--text-muted);
+    flex-shrink: 0;
+    margin-right: 0.5rem;
+  }
+
+  .url-input input {
+    font-size: 0.9375rem;
   }
 
   input {
@@ -955,10 +1064,6 @@
 
   .gift-btn:hover svg {
     color: #F59E0B;
-  }
-
-  .rss-btn:hover svg {
-    color: #F97316;
   }
 
   .rss-gift-btn:hover svg {

@@ -61,12 +61,37 @@ export interface ProfileInfo {
   following?: number;
 }
 
+export interface ArticleInfo {
+  id: string;
+  title: string;
+  summary?: string;
+  content_markdown: string;
+  published_at?: string;
+  link?: string;
+  image_url?: string;
+  hashtags: string[];
+  inline_images: string[];
+  selected: boolean;
+}
+
+export interface FeedInfo {
+  title: string;
+  description?: string;
+  link?: string;
+  image_url?: string;
+}
+
+export type ContentType = 'posts' | 'articles';
+
 export interface WizardState {
   step: WizardStep;
   handle: string;
   keyPair: KeyPair | null;
   videos: VideoInfo[];  // Backwards compatibility - reels only
   posts: PostInfo[];    // All posts including images and carousels
+  articles: ArticleInfo[];  // RSS articles
+  feedInfo: FeedInfo | null;  // RSS feed metadata
+  contentType: ContentType;  // 'posts' or 'articles'
   profile: ProfileInfo | null;
   jobId: string | null;
   error: string | null;
@@ -97,6 +122,9 @@ const initialState: WizardState = {
   keyPair: null,
   videos: [],
   posts: [],
+  articles: [],
+  feedInfo: null,
+  contentType: 'posts',
   profile: null,
   jobId: null,
   error: null,
@@ -117,6 +145,9 @@ function createWizardStore() {
     setKeyPair: (keyPair: KeyPair) => update(s => ({ ...s, keyPair })),
     setVideos: (videos: VideoInfo[]) => update(s => ({ ...s, videos })),
     setPosts: (posts: PostInfo[]) => update(s => ({ ...s, posts })),
+    setArticles: (articles: ArticleInfo[]) => update(s => ({ ...s, articles })),
+    setFeedInfo: (feedInfo: FeedInfo | null) => update(s => ({ ...s, feedInfo })),
+    setContentType: (contentType: ContentType) => update(s => ({ ...s, contentType })),
     setProfile: (profile: ProfileInfo | null) => update(s => ({ ...s, profile })),
     // Toggle video (backwards compatibility)
     toggleVideo: (url: string) => update(s => ({
@@ -153,6 +184,22 @@ function createWizardStore() {
       posts: s.posts.map(p =>
         !postType || p.post_type === postType ? { ...p, selected: false } : p
       )
+    })),
+    // Toggle article by ID
+    toggleArticle: (id: string) => update(s => ({
+      ...s,
+      articles: s.articles.map(a =>
+        a.id === id ? { ...a, selected: !a.selected } : a
+      )
+    })),
+    // Select/deselect all articles
+    selectAllArticles: () => update(s => ({
+      ...s,
+      articles: s.articles.map(a => ({ ...a, selected: true }))
+    })),
+    deselectAllArticles: () => update(s => ({
+      ...s,
+      articles: s.articles.map(a => ({ ...a, selected: false }))
     })),
     setJobId: (jobId: string) => update(s => ({ ...s, jobId })),
     setError: (error: string | null) => update(s => ({ ...s, error })),
@@ -211,4 +258,15 @@ export const selectedReels = derived(
 export const selectedImagePosts = derived(
   wizard,
   $wizard => $wizard.posts.filter(p => (p.post_type === 'image' || p.post_type === 'carousel') && p.selected)
+);
+
+// Derived stores for articles
+export const selectedArticles = derived(
+  wizard,
+  $wizard => $wizard.articles.filter(a => a.selected)
+);
+
+export const selectedArticlesCount = derived(
+  selectedArticles,
+  $selected => $selected.length
 );

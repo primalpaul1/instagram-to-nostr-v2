@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import { wizard, reelPosts, imagePosts, selectedPosts, selectedPostsCount, setMediaCache, getMediaCache } from '$lib/stores/wizard';
-  import type { PostInfo, MediaItemInfo } from '$lib/stores/wizard';
+  import { wizard, reelPosts, imagePosts, selectedPosts, selectedPostsCount, selectedArticles, selectedArticlesCount, setMediaCache, getMediaCache } from '$lib/stores/wizard';
+  import type { PostInfo, MediaItemInfo, ArticleInfo } from '$lib/stores/wizard';
 
   // Pre-download state
   const MAX_CONCURRENT_DOWNLOADS = 3;
@@ -125,148 +125,257 @@
     const firstVideo = post.media_items.find(m => m.media_type === 'video');
     return firstVideo?.duration;
   }
+
+  // Article helpers
+  function formatArticleDate(dateStr?: string): string {
+    if (!dateStr) return '';
+    try {
+      // Handle Unix timestamps (backend returns these as strings)
+      const timestamp = parseInt(dateStr, 10);
+      if (!isNaN(timestamp) && timestamp > 0) {
+        return new Date(timestamp * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      }
+      return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    } catch {
+      return '';
+    }
+  }
+
+  function estimateReadTime(content: string): string {
+    const words = content.split(/\s+/).length;
+    const minutes = Math.ceil(words / 200);
+    return `${minutes} min read`;
+  }
 </script>
 
 <div class="videos-step">
-  <div class="header">
-    <h2>Choose posts to own forever</h2>
-    <p class="subtitle">Select the content you want to bring to Primal</p>
-  </div>
-
-  <div class="tabs">
-    <button
-      class="tab"
-      class:active={activeTab === 'reels'}
-      on:click={() => activeTab = 'reels'}
-    >
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <polygon points="5 3 19 12 5 21 5 3"/>
-      </svg>
-      Reels
-      <span class="tab-count">{$reelPosts.length}</span>
-    </button>
-    <button
-      class="tab"
-      class:active={activeTab === 'posts'}
-      on:click={() => activeTab = 'posts'}
-    >
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-        <circle cx="8.5" cy="8.5" r="1.5"/>
-        <polyline points="21 15 16 10 5 21"/>
-      </svg>
-      Posts
-      <span class="tab-count">{$imagePosts.length}</span>
-    </button>
-  </div>
-
-  <div class="toolbar">
-    <div class="selection-badge" class:has-selection={currentSelectedCount > 0}>
-      <span class="count">{currentSelectedCount}</span>
-      <span class="label">of {currentPosts.length} selected</span>
+  {#if $wizard.contentType === 'articles'}
+    <!-- Articles Selection UI -->
+    <div class="header">
+      <h2>Choose articles to own forever</h2>
+      <p class="subtitle">Select the articles you want to bring to Primal</p>
+      {#if $wizard.feedInfo}
+        <p class="feed-title">{$wizard.feedInfo.title}</p>
+      {/if}
     </div>
-    <div class="toolbar-actions">
-      <button class="text-btn" on:click={selectAllCurrentTab}>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <rect x="3" y="3" width="18" height="18" rx="2"/>
-          <path d="M9 12l2 2 4-4"/>
-        </svg>
-        Select All
-      </button>
-      <button class="text-btn" on:click={deselectAllCurrentTab}>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <rect x="3" y="3" width="18" height="18" rx="2"/>
-        </svg>
-        Clear
-      </button>
-    </div>
-  </div>
 
-  <div class="posts-grid">
-    {#each currentPosts as post (post.id)}
-      <button
-        class="post-card"
-        class:selected={post.selected}
-        on:click={() => wizard.togglePost(post.id)}
-      >
-        <div class="thumbnail-wrapper">
-          {#if post.thumbnail_url}
-            <img src={post.thumbnail_url} alt="" loading="lazy" />
-          {:else}
-            <div class="placeholder">
-              {#if post.post_type === 'reel'}
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                  <polygon points="5 3 19 12 5 21 5 3"/>
-                </svg>
-              {:else}
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-                  <circle cx="8.5" cy="8.5" r="1.5"/>
-                  <polyline points="21 15 16 10 5 21"/>
-                </svg>
-              {/if}
+    <div class="toolbar">
+      <div class="selection-badge" class:has-selection={$selectedArticlesCount > 0}>
+        <span class="count">{$selectedArticlesCount}</span>
+        <span class="label">of {$wizard.articles.length} selected</span>
+      </div>
+      <div class="toolbar-actions">
+        <button class="text-btn" on:click={() => wizard.selectAllArticles()}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="18" height="18" rx="2"/>
+            <path d="M9 12l2 2 4-4"/>
+          </svg>
+          Select All
+        </button>
+        <button class="text-btn" on:click={() => wizard.deselectAllArticles()}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="18" height="18" rx="2"/>
+          </svg>
+          Clear
+        </button>
+      </div>
+    </div>
+
+    <div class="articles-list">
+      {#each $wizard.articles as article (article.id)}
+        <button class="article-card" class:selected={article.selected} on:click={() => wizard.toggleArticle(article.id)}>
+          {#if article.image_url}
+            <div class="article-image">
+              <img src={article.image_url} alt="" loading="lazy" />
             </div>
           {/if}
-
-          {#if post.post_type === 'reel'}
-            {#if getFirstMediaDuration(post)}
-              <span class="duration">{formatDuration(getFirstMediaDuration(post))}</span>
+          <div class="article-content">
+            <h3>{article.title}</h3>
+            {#if article.summary}
+              <p class="article-summary">{article.summary}</p>
             {/if}
-          {/if}
-
-          {#if post.post_type === 'carousel'}
-            <span class="carousel-badge">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="2" y="2" width="16" height="16" rx="2"/>
-                <rect x="6" y="6" width="16" height="16" rx="2"/>
-              </svg>
-              {post.media_items.length}
-            </span>
-          {/if}
-
-          <div class="select-indicator" class:checked={post.selected}>
-            {#if post.selected}
+            <div class="article-meta">
+              {#if article.published_at}
+                <span class="date">{formatArticleDate(article.published_at)}</span>
+              {/if}
+              <span class="read-time">{estimateReadTime(article.content_markdown)}</span>
+              {#if article.hashtags && article.hashtags.length > 0}
+                <span class="tags">{article.hashtags.slice(0, 3).map(t => `#${t}`).join(' ')}</span>
+              {/if}
+            </div>
+          </div>
+          <div class="select-indicator" class:checked={article.selected}>
+            {#if article.selected}
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
                 <path d="M20 6L9 17l-5-5"/>
               </svg>
             {/if}
           </div>
-          <div class="overlay"></div>
+        </button>
+      {:else}
+        <div class="empty-state">
+          <p>No articles found</p>
         </div>
-        <div class="post-meta">
-          {#if post.caption}
-            <p class="caption">{post.caption.slice(0, 50)}{post.caption.length > 50 ? '...' : ''}</p>
-          {:else}
-            <p class="caption empty">No caption</p>
-          {/if}
-          <div class="details">
-            {#if post.original_date}
-              <span>{formatDate(post.original_date)}</span>
-            {/if}
-          </div>
-        </div>
-      </button>
-    {:else}
-      <div class="empty-state">
-        <p>No {activeTab === 'reels' ? 'reels' : 'posts'} found</p>
-      </div>
-    {/each}
-  </div>
+      {/each}
+    </div>
 
-  <div class="actions">
-    <button class="secondary-btn" on:click={handleBack}>
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M19 12H5M12 19l-7-7 7-7"/>
-      </svg>
-      Back
-    </button>
-    <button class="primary-btn" disabled={totalSelectedCount === 0} on:click={handleContinue}>
-      Continue with {totalSelectedCount} item{totalSelectedCount !== 1 ? 's' : ''}
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M5 12h14M12 5l7 7-7 7"/>
-      </svg>
-    </button>
-  </div>
+    <div class="actions">
+      <button class="secondary-btn" on:click={handleBack}>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M19 12H5M12 19l-7-7 7-7"/>
+        </svg>
+        Back
+      </button>
+      <button class="primary-btn" disabled={$selectedArticlesCount === 0} on:click={handleContinue}>
+        Continue with {$selectedArticlesCount} article{$selectedArticlesCount !== 1 ? 's' : ''}
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M5 12h14M12 5l7 7-7 7"/>
+        </svg>
+      </button>
+    </div>
+
+  {:else}
+    <!-- Posts Selection UI -->
+    <div class="header">
+      <h2>Choose posts to own forever</h2>
+      <p class="subtitle">Select the content you want to bring to Primal</p>
+    </div>
+
+    <div class="tabs">
+      <button
+        class="tab"
+        class:active={activeTab === 'reels'}
+        on:click={() => activeTab = 'reels'}
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polygon points="5 3 19 12 5 21 5 3"/>
+        </svg>
+        Reels
+        <span class="tab-count">{$reelPosts.length}</span>
+      </button>
+      <button
+        class="tab"
+        class:active={activeTab === 'posts'}
+        on:click={() => activeTab = 'posts'}
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+          <circle cx="8.5" cy="8.5" r="1.5"/>
+          <polyline points="21 15 16 10 5 21"/>
+        </svg>
+        Posts
+        <span class="tab-count">{$imagePosts.length}</span>
+      </button>
+    </div>
+
+    <div class="toolbar">
+      <div class="selection-badge" class:has-selection={currentSelectedCount > 0}>
+        <span class="count">{currentSelectedCount}</span>
+        <span class="label">of {currentPosts.length} selected</span>
+      </div>
+      <div class="toolbar-actions">
+        <button class="text-btn" on:click={selectAllCurrentTab}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="18" height="18" rx="2"/>
+            <path d="M9 12l2 2 4-4"/>
+          </svg>
+          Select All
+        </button>
+        <button class="text-btn" on:click={deselectAllCurrentTab}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="18" height="18" rx="2"/>
+          </svg>
+          Clear
+        </button>
+      </div>
+    </div>
+
+    <div class="posts-grid">
+      {#each currentPosts as post (post.id)}
+        <button
+          class="post-card"
+          class:selected={post.selected}
+          on:click={() => wizard.togglePost(post.id)}
+        >
+          <div class="thumbnail-wrapper">
+            {#if post.thumbnail_url}
+              <img src={post.thumbnail_url} alt="" loading="lazy" />
+            {:else}
+              <div class="placeholder">
+                {#if post.post_type === 'reel'}
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <polygon points="5 3 19 12 5 21 5 3"/>
+                  </svg>
+                {:else}
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                    <circle cx="8.5" cy="8.5" r="1.5"/>
+                    <polyline points="21 15 16 10 5 21"/>
+                  </svg>
+                {/if}
+              </div>
+            {/if}
+
+            {#if post.post_type === 'reel'}
+              {#if getFirstMediaDuration(post)}
+                <span class="duration">{formatDuration(getFirstMediaDuration(post))}</span>
+              {/if}
+            {/if}
+
+            {#if post.post_type === 'carousel'}
+              <span class="carousel-badge">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="2" y="2" width="16" height="16" rx="2"/>
+                  <rect x="6" y="6" width="16" height="16" rx="2"/>
+                </svg>
+                {post.media_items.length}
+              </span>
+            {/if}
+
+            <div class="select-indicator" class:checked={post.selected}>
+              {#if post.selected}
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                  <path d="M20 6L9 17l-5-5"/>
+                </svg>
+              {/if}
+            </div>
+            <div class="overlay"></div>
+          </div>
+          <div class="post-meta">
+            {#if post.caption}
+              <p class="caption">{post.caption.slice(0, 50)}{post.caption.length > 50 ? '...' : ''}</p>
+            {:else}
+              <p class="caption empty">No caption</p>
+            {/if}
+            <div class="details">
+              {#if post.original_date}
+                <span>{formatDate(post.original_date)}</span>
+              {/if}
+            </div>
+          </div>
+        </button>
+      {:else}
+        <div class="empty-state">
+          <p>No {activeTab === 'reels' ? 'reels' : 'posts'} found</p>
+        </div>
+      {/each}
+    </div>
+
+    <div class="actions">
+      <button class="secondary-btn" on:click={handleBack}>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M19 12H5M12 19l-7-7 7-7"/>
+        </svg>
+        Back
+      </button>
+      <button class="primary-btn" disabled={totalSelectedCount === 0} on:click={handleContinue}>
+        Continue with {totalSelectedCount} item{totalSelectedCount !== 1 ? 's' : ''}
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M5 12h14M12 5l7 7-7 7"/>
+        </svg>
+      </button>
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -638,6 +747,143 @@
 
     .tabs {
       flex-direction: column;
+    }
+  }
+
+  /* Article styles */
+  .feed-title {
+    font-size: 0.875rem;
+    color: var(--accent);
+    font-weight: 500;
+    margin-top: 0.25rem;
+  }
+
+  .articles-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    max-height: 420px;
+    overflow-y: auto;
+    margin-bottom: 1.5rem;
+    padding: 0.25rem;
+  }
+
+  .articles-list::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .articles-list::-webkit-scrollbar-track {
+    background: var(--bg-tertiary);
+    border-radius: 3px;
+  }
+
+  .articles-list::-webkit-scrollbar-thumb {
+    background: var(--border-light);
+    border-radius: 3px;
+  }
+
+  .article-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    padding: 1rem;
+    background: var(--bg-tertiary);
+    border: 2px solid transparent;
+    border-radius: 0.75rem;
+    cursor: pointer;
+    text-align: left;
+    transition: all 0.2s ease;
+    width: 100%;
+  }
+
+  .article-card:hover {
+    border-color: var(--border-light);
+  }
+
+  .article-card.selected {
+    border-color: var(--accent);
+    background: rgba(var(--accent-rgb), 0.05);
+  }
+
+  .article-image {
+    width: 80px;
+    height: 80px;
+    border-radius: 0.5rem;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+
+  .article-image img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .article-content {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .article-content h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+
+  .article-summary {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.5rem;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .article-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+
+  .article-card .select-indicator {
+    position: relative;
+    top: auto;
+    right: auto;
+    width: 1.5rem;
+    height: 1.5rem;
+    border: 2px solid var(--border);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: all 0.2s ease;
+    background: transparent;
+  }
+
+  .article-card .select-indicator.checked {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: white;
+  }
+
+  @media (max-width: 500px) {
+    .article-card {
+      flex-direction: column;
+    }
+
+    .article-image {
+      width: 100%;
+      height: 120px;
     }
   }
 </style>

@@ -1,7 +1,20 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { wizard } from '$lib/stores/wizard';
+  import { wizard, selectedArticles } from '$lib/stores/wizard';
+  import type { ArticleInfo } from '$lib/stores/wizard';
+  import {
+    createBlossomAuthEvent,
+    createLongFormContentEvent,
+    createBlossomAuthHeader,
+    calculateSHA256,
+    publishToRelays,
+    importToPrimalCache,
+    NOSTR_RELAYS,
+    type ArticleMetadata
+  } from '$lib/signing';
+  import { generateSecretKey, getPublicKey, finalizeEvent, type EventTemplate, type Event } from 'nostr-tools';
 
+  // Post task status (for backend job polling)
   interface TaskStatus {
     id: string;
     status: 'pending' | 'uploading' | 'publishing' | 'complete' | 'error';
@@ -16,23 +29,55 @@
     tasks: TaskStatus[];
   }
 
+  // Article task status (for client-side publishing)
+  interface ArticleTaskStatus {
+    article: ArticleInfo;
+    status: 'pending' | 'uploading' | 'signing' | 'publishing' | 'complete' | 'error';
+    blossomImageUrl?: string;
+    nostrEventId?: string;
+    error?: string;
+  }
+
+  // Posts state
   let jobStatus: JobStatus | null = null;
   let pollInterval: ReturnType<typeof setInterval>;
 
-  $: completedCount = jobStatus?.tasks.filter(t => t.status === 'complete').length ?? 0;
-  $: totalCount = jobStatus?.tasks.length ?? 0;
-  $: errorCount = jobStatus?.tasks.filter(t => t.status === 'error').length ?? 0;
+  // Articles state
+  let articleTasks: ArticleTaskStatus[] = [];
+  let isProcessingArticles = false;
+  let publishedEvents: Event[] = [];
+
+  const BLOSSOM_SERVER = 'https://blossom.primal.net';
+  const CONCURRENCY = 2;
+
+  // Reactive counts based on content type
+  $: isArticleMode = $wizard.contentType === 'articles';
+  $: completedCount = isArticleMode
+    ? articleTasks.filter(t => t.status === 'complete').length
+    : (jobStatus?.tasks.filter(t => t.status === 'complete').length ?? 0);
+  $: totalCount = isArticleMode
+    ? articleTasks.length
+    : (jobStatus?.tasks.length ?? 0);
+  $: errorCount = isArticleMode
+    ? articleTasks.filter(t => t.status === 'error').length
+    : (jobStatus?.tasks.filter(t => t.status === 'error').length ?? 0);
   $: progressPercent = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
+  $: allArticlesDone = isArticleMode && articleTasks.length > 0 && (completedCount + errorCount === totalCount);
 
   onMount(() => {
-    pollStatus();
-    pollInterval = setInterval(pollStatus, 2000);
+    if ($wizard.contentType === 'articles') {
+      startArticlePublishing();
+    } else {
+      pollStatus();
+      pollInterval = setInterval(pollStatus, 2000);
+    }
   });
 
   onDestroy(() => {
     if (pollInterval) clearInterval(pollInterval);
   });
 
+  // Posts: poll backend job status
   async function pollStatus() {
     if (!$wizard.jobId) return;
 
@@ -51,10 +96,192 @@
     }
   }
 
-  function getStatusLabel(status: TaskStatus['status']): string {
+  // Articles: client-side publishing
+  async function startArticlePublishing() {
+    const selected = $selectedArticles;
+    if (selected.length === 0) {
+      wizard.setStep('complete');
+      return;
+    }
+
+    articleTasks = selected.map(article => ({
+      article,
+      status: 'pending'
+    }));
+
+    isProcessingArticles = true;
+    await publishArticles();
+  }
+
+  async function publishArticles() {
+    if (!$wizard.keyPair) {
+      console.error('No keypair available');
+      return;
+    }
+
+    // Convert hex secret key to Uint8Array
+    const secretKeyHex = $wizard.keyPair.secretKey;
+    const secretKey = new Uint8Array(secretKeyHex.match(/.{1,2}/g)!.map(byte => parseInt(byte, 16)));
+    const publicKey = $wizard.keyPair.publicKey;
+
+    try {
+      const queue: number[] = [...Array(articleTasks.length).keys()];
+
+      async function processQueue() {
+        while (queue.length > 0) {
+          const index = queue.shift();
+          if (index !== undefined) {
+            await processArticle(index, secretKey, publicKey);
+          }
+        }
+      }
+
+      const workers = Array(CONCURRENCY).fill(null).map(() => processQueue());
+      await Promise.all(workers);
+
+      // Import all published events to Primal cache
+      if (publishedEvents.length > 0) {
+        await importToPrimalCache(publishedEvents);
+      }
+
+      wizard.setStep('complete');
+    } catch (err) {
+      console.error('Publishing error:', err);
+    } finally {
+      isProcessingArticles = false;
+    }
+  }
+
+  async function processArticle(index: number, secretKey: Uint8Array, publicKey: string) {
+    const task = articleTasks[index];
+
+    try {
+      // Step 1: Upload header image if exists
+      articleTasks[index].status = 'uploading';
+      articleTasks = articleTasks;
+
+      let headerImageUrl: string | undefined;
+      if (task.article.image_url) {
+        try {
+          headerImageUrl = await uploadImage(task.article.image_url, secretKey, publicKey);
+          articleTasks[index].blossomImageUrl = headerImageUrl;
+          articleTasks = articleTasks;
+        } catch (err) {
+          console.warn('Failed to upload header image:', err);
+          headerImageUrl = task.article.image_url;
+        }
+      }
+
+      // Step 2: Process inline images in content
+      let processedContent = task.article.content_markdown;
+      const imageRegex = /!\[([^\]]*)\]\(([^)]+)\)/g;
+      let match;
+      const imageReplacements: { original: string; blossom: string }[] = [];
+
+      const imagesToUpload: string[] = [];
+      while ((match = imageRegex.exec(task.article.content_markdown)) !== null) {
+        const imageUrl = match[2];
+        if (!imagesToUpload.includes(imageUrl)) {
+          imagesToUpload.push(imageUrl);
+        }
+      }
+
+      for (const imageUrl of imagesToUpload) {
+        try {
+          const blossomUrl = await uploadImage(imageUrl, secretKey, publicKey);
+          imageReplacements.push({ original: imageUrl, blossom: blossomUrl });
+        } catch (err) {
+          console.warn('Failed to upload inline image:', imageUrl, err);
+        }
+      }
+
+      for (const { original, blossom } of imageReplacements) {
+        processedContent = processedContent.split(original).join(blossom);
+      }
+
+      // Step 3: Create and sign the event
+      articleTasks[index].status = 'signing';
+      articleTasks = articleTasks;
+
+      const articleData: ArticleMetadata = {
+        identifier: task.article.id,
+        title: task.article.title,
+        summary: task.article.summary,
+        imageUrl: headerImageUrl,
+        publishedAt: task.article.published_at,
+        hashtags: task.article.hashtags || [],
+        content: processedContent
+      };
+
+      const eventTemplate = createLongFormContentEvent(publicKey, articleData);
+      const signedEvent = finalizeEvent(eventTemplate as EventTemplate, secretKey);
+
+      // Step 4: Publish to relays
+      articleTasks[index].status = 'publishing';
+      articleTasks = articleTasks;
+
+      const publishResult = await publishToRelays(signedEvent, NOSTR_RELAYS);
+
+      if (publishResult.success.length === 0) {
+        throw new Error('Failed to publish to any relay');
+      }
+
+      articleTasks[index].nostrEventId = signedEvent.id;
+      articleTasks[index].status = 'complete';
+      articleTasks = articleTasks;
+
+      publishedEvents.push(signedEvent);
+    } catch (err) {
+      console.error('Error processing article:', err);
+      articleTasks[index].status = 'error';
+      articleTasks[index].error = err instanceof Error ? err.message : 'Unknown error';
+      articleTasks = articleTasks;
+    }
+  }
+
+  async function uploadImage(imageUrl: string, secretKey: Uint8Array, publicKey: string): Promise<string> {
+    const response = await fetch('/api/proxy-video', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: imageUrl })
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to fetch image');
+    }
+
+    const imageData = await response.arrayBuffer();
+    const sha256 = await calculateSHA256(imageData);
+    const size = imageData.byteLength;
+    const contentType = response.headers.get('content-type') || 'image/jpeg';
+
+    const authEvent = createBlossomAuthEvent(publicKey, sha256, size);
+    const signedAuth = finalizeEvent(authEvent as EventTemplate, secretKey);
+    const authHeader = createBlossomAuthHeader(signedAuth);
+
+    const uploadResponse = await fetch(`${BLOSSOM_SERVER}/upload`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': authHeader,
+        'Content-Type': contentType,
+        'X-SHA-256': sha256
+      },
+      body: imageData
+    });
+
+    if (!uploadResponse.ok) {
+      throw new Error('Blossom upload failed');
+    }
+
+    const result = await uploadResponse.json();
+    return result.url || `${BLOSSOM_SERVER}/${sha256}`;
+  }
+
+  function getStatusLabel(status: TaskStatus['status'] | ArticleTaskStatus['status']): string {
     switch (status) {
       case 'pending': return 'Waiting';
       case 'uploading': return 'Uploading';
+      case 'signing': return 'Signing';
       case 'publishing': return 'Publishing';
       case 'complete': return 'Done';
       case 'error': return 'Failed';
@@ -73,8 +300,8 @@
         <path d="M21 13v1a4 4 0 01-4 4H3"/>
       </svg>
     </div>
-    <h2>Migration in progress</h2>
-    <p class="subtitle">Keep this page open while we migrate your content</p>
+    <h2>{isArticleMode ? 'Publishing articles' : 'Migration in progress'}</h2>
+    <p class="subtitle">Keep this page open while we {isArticleMode ? 'publish your articles' : 'migrate your content'}</p>
   </div>
 
   <div class="progress-card">
@@ -83,7 +310,7 @@
         <span class="current">{completedCount}</span>
         <span class="divider">/</span>
         <span class="total">{totalCount}</span>
-        <span class="label">posts</span>
+        <span class="label">{isArticleMode ? 'articles' : 'posts'}</span>
       </div>
       <span class="progress-percent">{Math.round(progressPercent)}%</span>
     </div>
@@ -92,41 +319,82 @@
     </div>
   </div>
 
-  {#if jobStatus}
-    <div class="tasks-list">
-      {#each jobStatus.tasks as task}
-        <div class="task-item" class:error={task.status === 'error'} class:complete={task.status === 'complete'} class:active={task.status === 'uploading' || task.status === 'publishing'}>
-          <div class="task-status">
-            {#if task.status === 'complete'}
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
-                <path d="M20 6L9 17l-5-5"/>
-              </svg>
-            {:else if task.status === 'error'}
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="18" y1="6" x2="6" y2="18"/>
-                <line x1="6" y1="6" x2="18" y2="18"/>
-              </svg>
-            {:else if task.status === 'uploading' || task.status === 'publishing'}
-              <div class="task-spinner"></div>
-            {:else}
-              <div class="task-pending"></div>
-            {/if}
+  {#if isArticleMode}
+    <!-- Article tasks (client-side) -->
+    {#if articleTasks.length > 0}
+      <div class="tasks-list">
+        {#each articleTasks as task}
+          <div class="task-item" class:error={task.status === 'error'} class:complete={task.status === 'complete'} class:active={task.status === 'uploading' || task.status === 'signing' || task.status === 'publishing'}>
+            <div class="task-status">
+              {#if task.status === 'complete'}
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                  <path d="M20 6L9 17l-5-5"/>
+                </svg>
+              {:else if task.status === 'error'}
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="18" y1="6" x2="6" y2="18"/>
+                  <line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              {:else if task.status === 'uploading' || task.status === 'signing' || task.status === 'publishing'}
+                <div class="task-spinner"></div>
+              {:else}
+                <div class="task-pending"></div>
+              {/if}
+            </div>
+            <div class="task-info">
+              <span class="task-caption">{task.article.title.slice(0, 40)}{task.article.title.length > 40 ? '...' : ''}</span>
+              <span class="task-label">{getStatusLabel(task.status)}</span>
+            </div>
           </div>
-          <div class="task-info">
-            <span class="task-caption">{task.caption?.slice(0, 35) || 'Untitled'}{(task.caption?.length ?? 0) > 35 ? '...' : ''}</span>
-            <span class="task-label">{getStatusLabel(task.status)}</span>
-          </div>
-        </div>
-        {#if task.status === 'error' && task.error}
-          <div class="task-error-msg">{task.error}</div>
-        {/if}
-      {/each}
-    </div>
+          {#if task.status === 'error' && task.error}
+            <div class="task-error-msg">{task.error}</div>
+          {/if}
+        {/each}
+      </div>
+    {:else}
+      <div class="loading-state">
+        <div class="loading-spinner"></div>
+        <span>Preparing articles...</span>
+      </div>
+    {/if}
   {:else}
-    <div class="loading-state">
-      <div class="loading-spinner"></div>
-      <span>Connecting to server...</span>
-    </div>
+    <!-- Post tasks (backend job polling) -->
+    {#if jobStatus}
+      <div class="tasks-list">
+        {#each jobStatus.tasks as task}
+          <div class="task-item" class:error={task.status === 'error'} class:complete={task.status === 'complete'} class:active={task.status === 'uploading' || task.status === 'publishing'}>
+            <div class="task-status">
+              {#if task.status === 'complete'}
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                  <path d="M20 6L9 17l-5-5"/>
+                </svg>
+              {:else if task.status === 'error'}
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="18" y1="6" x2="6" y2="18"/>
+                  <line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              {:else if task.status === 'uploading' || task.status === 'publishing'}
+                <div class="task-spinner"></div>
+              {:else}
+                <div class="task-pending"></div>
+              {/if}
+            </div>
+            <div class="task-info">
+              <span class="task-caption">{task.caption?.slice(0, 35) || 'Untitled'}{(task.caption?.length ?? 0) > 35 ? '...' : ''}</span>
+              <span class="task-label">{getStatusLabel(task.status)}</span>
+            </div>
+          </div>
+          {#if task.status === 'error' && task.error}
+            <div class="task-error-msg">{task.error}</div>
+          {/if}
+        {/each}
+      </div>
+    {:else}
+      <div class="loading-state">
+        <div class="loading-spinner"></div>
+        <span>Connecting to server...</span>
+      </div>
+    {/if}
   {/if}
 
   {#if errorCount > 0}
@@ -136,7 +404,7 @@
         <line x1="12" y1="8" x2="12" y2="12"/>
         <line x1="12" y1="16" x2="12.01" y2="16"/>
       </svg>
-      <span>{errorCount} post{errorCount !== 1 ? 's' : ''} failed. They will be skipped.</span>
+      <span>{errorCount} {isArticleMode ? 'article' : 'post'}{errorCount !== 1 ? 's' : ''} failed. They will be skipped.</span>
     </div>
   {/if}
 </div>
