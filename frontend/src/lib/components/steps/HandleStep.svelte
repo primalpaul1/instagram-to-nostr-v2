@@ -202,6 +202,7 @@
                   articleCount = data.count || 0;
                   if (data.articles) {
                     fetchedArticles = data.articles;
+                    console.log('Set fetchedArticles, length:', fetchedArticles.length);
                   }
                   if (data.feed) {
                     fetchedFeedInfo = data.feed;
@@ -272,8 +273,12 @@
   }
 
   function handlePause() {
+    console.log('handlePause called', { platform, abortController: !!abortController, fetchedArticlesLength: fetchedArticles.length, articleCount });
     if (platform === 'rss') {
-      if (!abortController || fetchedArticles.length === 0) return;
+      if (!abortController || fetchedArticles.length === 0) {
+        console.log('Early return - abortController:', !!abortController, 'fetchedArticles.length:', fetchedArticles.length);
+        return;
+      }
       abortController.abort();
 
       wizard.setContentType('articles');
