@@ -32,7 +32,9 @@ export const GET: RequestHandler = async ({ params }) => {
       try {
         const parsed = JSON.parse(gift.profile_data);
         if (gift.gift_type === 'articles') {
-          feed = parsed;
+          // Articles store { feed, profile } combined
+          feed = parsed.feed || parsed;  // Fallback for old data that only had feed
+          profile = parsed.profile || null;
         } else {
           profile = parsed;
         }
@@ -80,6 +82,7 @@ export const GET: RequestHandler = async ({ params }) => {
         gift_type: 'articles',
         handle: gift.ig_handle,
         feed,
+        profile,
         articles: formattedArticles,
         createdAt: gift.created_at,
         expiresAt: gift.expires_at

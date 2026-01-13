@@ -46,6 +46,9 @@
     title?: string;
     description?: string;
     image_url?: string;
+    author_name?: string;
+    author_image?: string;
+    author_bio?: string;
   }
 
   let step: Step = 'input';
@@ -174,6 +177,15 @@
                     selected: true
                   }));
                   feedInfo = data.feed || { url: feedUrl.trim() };
+                  // Set profile from feed author info (for Substack)
+                  if (data.feed && (data.feed.author_name || data.feed.title)) {
+                    profile = {
+                      username: data.feed.author_name || data.feed.title,
+                      display_name: data.feed.author_name || data.feed.title,
+                      bio: data.feed.author_bio || data.feed.description,
+                      profile_picture_url: data.feed.author_image || data.feed.image_url
+                    };
+                  }
                 } else {
                   if (!data.posts || data.posts.length === 0) {
                     throw new Error('No content found for this account');
@@ -277,7 +289,8 @@
             blossom_image_url: a.blossom_image_url,
             hashtags: a.hashtags
           })),
-          feed: feedInfo
+          feed: feedInfo,
+          profile
         };
       } else {
         const cleanHandle = handle.replace('@', '').trim();

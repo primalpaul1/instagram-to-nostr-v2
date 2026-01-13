@@ -215,8 +215,8 @@
     const publishedIds: number[] = [];
 
     try {
-      // First, publish profile if available (for post gifts)
-      if (gift.gift_type === 'posts' && gift.profile) {
+      // First, publish profile if available (for post or article gifts)
+      if (gift.profile) {
         const profileEvent = createProfileEvent(
           keypair.publicKeyHex,
           gift.profile.display_name || gift.profile.username,
@@ -432,7 +432,7 @@
           <p class="subtitle">Your @{gift.handle} content is ready to publish on Nostr!</p>
         {/if}
 
-        {#if gift.profile && !isArticleGift}
+        {#if gift.profile}
           <div class="profile-preview">
             {#if gift.profile.profile_picture_url}
               <img src={gift.profile.profile_picture_url} alt={gift.profile.username} class="profile-pic" />

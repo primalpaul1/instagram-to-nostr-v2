@@ -94,10 +94,10 @@ export const POST: RequestHandler = async ({ request, url }) => {
     const giftId = generateId();
     const claimToken = generateClaimToken();
 
-    // For articles, store feed info in profile_data; for posts, store profile
+    // For articles, store feed info AND profile in profile_data; for posts, store profile
     let profileData: string | undefined;
-    if (giftType === 'articles' && feed) {
-      profileData = JSON.stringify(feed);
+    if (giftType === 'articles') {
+      profileData = JSON.stringify({ feed, profile });
     } else if (profile) {
       profileData = JSON.stringify(profile);
     }
