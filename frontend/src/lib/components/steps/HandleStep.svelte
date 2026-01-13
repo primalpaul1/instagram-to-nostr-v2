@@ -231,12 +231,19 @@
                     throw new Error('No articles found in this feed');
                   }
 
+                  console.log('Setting wizard state for RSS...');
                   wizard.setContentType('articles');
                   wizard.setHandle(feedUrl.trim());
-                  wizard.setArticles((data.articles || []).map((a: any) => ({ ...a, selected: true })));
+                  const mappedArticles = (data.articles || []).map((a: any) => ({ ...a, selected: true }));
+                  console.log('Mapped articles:', mappedArticles.length);
+                  wizard.setArticles(mappedArticles);
                   if (data.feed) {
                     wizard.setFeedInfo(data.feed);
                   }
+                  console.log('About to setStep keys');
+                  wizard.setStep('keys');
+                  console.log('Step set to keys, returning');
+                  return;
                 } else {
                   if ((!data.videos || data.videos.length === 0) && (!data.posts || data.posts.length === 0)) {
                     throw new Error('No content found for this account');
