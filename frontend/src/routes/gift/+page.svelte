@@ -842,14 +842,14 @@
                   id="feedUrl"
                   type="text"
                   bind:value={feedUrl}
-                  placeholder="yourname.substack.com"
+                  placeholder="yourname.substack.com/feed"
                   autocomplete="off"
                 />
               </div>
               <div class="feed-examples">
                 <span class="examples-label">Examples:</span>
-                <span class="example">yourname.substack.com</span>
-                <span class="example">medium.com/@yourname</span>
+                <span class="example">yourname.substack.com/feed</span>
+                <span class="example">medium.com/feed/@yourname</span>
                 <span class="example">yourblog.com/feed</span>
               </div>
             </div>
