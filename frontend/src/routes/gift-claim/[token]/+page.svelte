@@ -332,8 +332,13 @@
       }
 
       // Batch import to Primal cache
+      // For articles, await to ensure they appear in Primal Reads
       if (signedEvents.length > 0) {
-        importToPrimalCache(signedEvents).catch(() => {});
+        if (gift.gift_type === 'articles') {
+          await importToPrimalCache(signedEvents);
+        } else {
+          importToPrimalCache(signedEvents).catch(() => {});
+        }
       }
 
       // Mark items as published
