@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, tick } from 'svelte';
   import { wizard } from '$lib/stores/wizard';
   import {
     createConnectionURI,
@@ -242,7 +242,10 @@
                   }
                   console.log('About to setStep keys');
                   wizard.setStep('keys');
-                  console.log('Step set to keys, returning');
+                  console.log('Step set to keys');
+                  // Force Svelte to update DOM
+                  await tick();
+                  console.log('After tick, returning');
                   return;
                 } else {
                   if ((!data.videos || data.videos.length === 0) && (!data.posts || data.posts.length === 0)) {
@@ -285,18 +288,28 @@
   }
 
   function handlePause() {
-    if (!abortController) return;
+    console.log('handlePause called, abortController:', !!abortController);
+    if (!abortController) {
+      console.log('handlePause: No abortController, returning early');
+      return;
+    }
 
     if (platform === 'rss') {
+      console.log('handlePause RSS: articleCount=', articleCount, 'fetchedArticles.length=', fetchedArticles.length);
       // Use articleCount check since fetchedArticles might have timing issues
-      if (articleCount === 0 && fetchedArticles.length === 0) return;
+      if (articleCount === 0 && fetchedArticles.length === 0) {
+        console.log('handlePause: No articles, returning early');
+        return;
+      }
 
+      console.log('handlePause: Aborting and setting wizard state for RSS');
       abortController.abort();
 
       wizard.setContentType('articles');
       wizard.setHandle(feedUrl.trim());
       // Use fetchedArticles if available, otherwise create placeholder
       const articles = fetchedArticles.length > 0 ? fetchedArticles : [];
+      console.log('handlePause: Setting articles:', articles.length);
       wizard.setArticles(articles.map((a: any) => ({ ...a, selected: true })));
       if (fetchedFeedInfo) {
         wizard.setFeedInfo(fetchedFeedInfo);
@@ -315,7 +328,9 @@
         wizard.setProfile(fetchedProfile);
       }
     }
+    console.log('handlePause: Calling wizard.setStep(keys)');
     wizard.setStep('keys');
+    console.log('handlePause: Step set to keys, done');
   }
 </script>
 
