@@ -860,12 +860,22 @@ async def fetch_rss_stream(feed_url: str):
                 'title': feed.feed.get('title', 'Unknown Feed'),
                 'description': feed.feed.get('description', feed.feed.get('subtitle', '')),
                 'link': feed.feed.get('link', ''),
-                'image_url': None
+                'image_url': None,
+                'author_name': None,
+                'author_image': None
             }
 
             # Try to get feed image
             if hasattr(feed.feed, 'image') and feed.feed.image:
                 feed_meta['image_url'] = feed.feed.image.get('href', feed.feed.image.get('url'))
+                # Use feed image as author image (common for Substack)
+                feed_meta['author_image'] = feed_meta['image_url']
+
+            # Extract author from feed level
+            if hasattr(feed.feed, 'author'):
+                feed_meta['author_name'] = feed.feed.author
+            elif hasattr(feed.feed, 'author_detail') and feed.feed.author_detail:
+                feed_meta['author_name'] = feed.feed.author_detail.get('name')
 
             # Get base URL for relative links
             parsed_url = urlparse(feed_url)

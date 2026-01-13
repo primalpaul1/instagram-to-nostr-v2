@@ -233,6 +233,15 @@
                   wizard.setArticles(mappedArticles);
                   if (data.feed) {
                     wizard.setFeedInfo(data.feed);
+                    // Set profile from feed author info
+                    if (data.feed.author_name || data.feed.title) {
+                      wizard.setProfile({
+                        username: data.feed.author_name || data.feed.title,
+                        display_name: data.feed.author_name || data.feed.title,
+                        bio: data.feed.description,
+                        profile_picture_url: data.feed.author_image || data.feed.image_url
+                      });
+                    }
                   }
                   wizard.setStep('keys');
                   await tick();
@@ -290,6 +299,15 @@
       wizard.setArticles(articles.map((a: any) => ({ ...a, selected: true })));
       if (fetchedFeedInfo) {
         wizard.setFeedInfo(fetchedFeedInfo);
+        // Set profile from feed author info
+        if (fetchedFeedInfo.author_name || fetchedFeedInfo.title) {
+          wizard.setProfile({
+            username: fetchedFeedInfo.author_name || fetchedFeedInfo.title,
+            display_name: fetchedFeedInfo.author_name || fetchedFeedInfo.title,
+            bio: fetchedFeedInfo.description,
+            profile_picture_url: fetchedFeedInfo.author_image || fetchedFeedInfo.image_url
+          });
+        }
       }
     } else {
       if (fetchedVideos.length === 0 && fetchedPosts.length === 0) return;

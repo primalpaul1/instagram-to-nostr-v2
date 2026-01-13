@@ -5,6 +5,7 @@
   import {
     createBlossomAuthEvent,
     createLongFormContentEvent,
+    createProfileEvent,
     createBlossomAuthHeader,
     calculateSHA256,
     publishToRelays,
@@ -125,6 +126,33 @@
     const publicKey = $wizard.keyPair.publicKey;
 
     try {
+      // Publish profile event first if we have profile data
+      if ($wizard.profile) {
+        const profile = $wizard.profile;
+
+        // Upload profile picture to Blossom if exists
+        let profilePictureUrl: string | undefined;
+        if (profile.profile_picture_url) {
+          try {
+            profilePictureUrl = await uploadImage(profile.profile_picture_url, secretKey, publicKey);
+          } catch (err) {
+            console.warn('Failed to upload profile picture:', err);
+            profilePictureUrl = profile.profile_picture_url;
+          }
+        }
+
+        // Create and publish profile event (kind 0)
+        const profileEvent = createProfileEvent(
+          publicKey,
+          profile.display_name || profile.username,
+          profile.bio,
+          profilePictureUrl
+        );
+        const signedProfile = finalizeEvent(profileEvent as EventTemplate, secretKey);
+        await publishToRelays(signedProfile, NOSTR_RELAYS);
+        publishedEvents.push(signedProfile);
+      }
+
       const queue: number[] = [...Array(articleTasks.length).keys()];
 
       async function processQueue() {
