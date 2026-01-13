@@ -105,7 +105,7 @@ export const POST: RequestHandler = async ({ request, url }) => {
     // Use feed URL as handle for articles, otherwise use the provided handle
     const giftHandle = giftType === 'articles' ? (feed?.url || 'RSS Feed') : handle;
 
-    await createGift(
+    const gift = await createGift(
       giftId,
       claimToken,
       giftHandle,
@@ -113,6 +113,12 @@ export const POST: RequestHandler = async ({ request, url }) => {
       undefined, // expiresAt - use default
       giftType
     );
+
+    // For article gifts, mark as ready immediately (no media processing needed)
+    if (giftType === 'articles') {
+      const { updateGiftStatus } = await import('$lib/server/db');
+      await updateGiftStatus(giftId, 'ready');
+    }
 
     // Create gift posts or articles based on type
     if (giftType === 'posts' && posts) {
