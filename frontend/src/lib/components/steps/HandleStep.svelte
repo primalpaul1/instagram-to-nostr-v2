@@ -424,15 +424,15 @@
           <span class="option-desc">Own your articles on Primal</span>
         </div>
       </a>
-      <a href="/rss-gift" class="option-btn rss-gift-btn">
+      <a href="/gift" class="option-btn rss-gift-btn">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M4 19.5A2.5 2.5 0 016.5 17H20"/>
           <path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/>
           <path d="M12 6v4M10 8h4"/>
         </svg>
         <div class="option-text">
-          <span class="option-title">Gift Articles</span>
-          <span class="option-desc">Prepare articles for someone else</span>
+          <span class="option-title">Gift Content</span>
+          <span class="option-desc">Prepare content for someone else</span>
         </div>
       </a>
     </div>

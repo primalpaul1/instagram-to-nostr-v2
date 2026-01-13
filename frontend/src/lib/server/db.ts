@@ -451,6 +451,7 @@ export interface Gift {
   ig_handle: string;
   profile_data: string | null;  // JSON string
   salt: string | null;  // No longer used - kept for backward compatibility
+  gift_type: 'posts' | 'articles';
   status: 'pending' | 'processing' | 'ready' | 'claimed' | 'expired';
   claimed_at: string | null;
   created_at: string;
@@ -467,6 +468,21 @@ export interface GiftPost {
   blossom_urls: string | null;  // JSON string
   thumbnail_url: string | null;
   status: 'pending' | 'uploading' | 'ready' | 'published';
+  created_at: string;
+}
+
+export interface GiftArticle {
+  id: number;
+  gift_id: string;
+  title: string;
+  summary: string | null;
+  content_markdown: string;
+  published_at: string | null;
+  link: string | null;
+  image_url: string | null;
+  blossom_image_url: string | null;
+  hashtags: string | null;  // JSON string
+  status: 'pending' | 'ready' | 'published';
   created_at: string;
 }
 
@@ -487,6 +503,7 @@ export async function ensureGiftTables(): Promise<void> {
         ig_handle TEXT NOT NULL,
         profile_data TEXT,
         salt TEXT NOT NULL,
+        gift_type TEXT DEFAULT 'posts' CHECK (gift_type IN ('posts', 'articles')),
         status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'ready', 'claimed', 'expired')),
         claimed_at DATETIME,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -510,12 +527,67 @@ export async function ensureGiftTables(): Promise<void> {
       )
     `);
 
+    database.run(`
+      CREATE TABLE IF NOT EXISTS gift_articles (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        gift_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        summary TEXT,
+        content_markdown TEXT NOT NULL,
+        published_at TEXT,
+        link TEXT,
+        image_url TEXT,
+        blossom_image_url TEXT,
+        hashtags TEXT,
+        status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'ready', 'published')),
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (gift_id) REFERENCES gifts(id) ON DELETE CASCADE
+      )
+    `);
+
     database.run('CREATE INDEX IF NOT EXISTS idx_gifts_claim_token ON gifts(claim_token)');
     database.run('CREATE INDEX IF NOT EXISTS idx_gifts_status ON gifts(status)');
     database.run('CREATE INDEX IF NOT EXISTS idx_gifts_expires_at ON gifts(expires_at)');
     database.run('CREATE INDEX IF NOT EXISTS idx_gift_posts_gift_id ON gift_posts(gift_id)');
+    database.run('CREATE INDEX IF NOT EXISTS idx_gift_articles_gift_id ON gift_articles(gift_id)');
 
     saveDb(database);
+  } else {
+    // Table exists, check if gift_type column exists
+    const colCheck = database.exec("PRAGMA table_info(gifts)");
+    const columns = colCheck.length > 0 ? colCheck[0].values.map(row => row[1]) : [];
+
+    if (!columns.includes('gift_type')) {
+      database.run("ALTER TABLE gifts ADD COLUMN gift_type TEXT DEFAULT 'posts' CHECK (gift_type IN ('posts', 'articles'))");
+      saveDb(database);
+    }
+
+    // Check if gift_articles table exists
+    const articlesCheck = database.exec(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='gift_articles'"
+    );
+
+    if (articlesCheck.length === 0 || articlesCheck[0].values.length === 0) {
+      database.run(`
+        CREATE TABLE IF NOT EXISTS gift_articles (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          gift_id TEXT NOT NULL,
+          title TEXT NOT NULL,
+          summary TEXT,
+          content_markdown TEXT NOT NULL,
+          published_at TEXT,
+          link TEXT,
+          image_url TEXT,
+          blossom_image_url TEXT,
+          hashtags TEXT,
+          status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'ready', 'published')),
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (gift_id) REFERENCES gifts(id) ON DELETE CASCADE
+        )
+      `);
+      database.run('CREATE INDEX IF NOT EXISTS idx_gift_articles_gift_id ON gift_articles(gift_id)');
+      saveDb(database);
+    }
   }
 }
 
@@ -524,7 +596,8 @@ export async function createGift(
   claimToken: string,
   igHandle: string,
   profileData?: string,
-  expiresAt?: string
+  expiresAt?: string,
+  giftType: 'posts' | 'articles' = 'posts'
 ): Promise<Gift> {
   await ensureGiftTables();
   const database = await getDb();
@@ -533,9 +606,9 @@ export async function createGift(
   const expiration = expiresAt || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
   database.run(
-    `INSERT INTO gifts (id, claim_token, ig_handle, salt, profile_data, expires_at)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    [id, claimToken, igHandle, '', profileData || null, expiration]
+    `INSERT INTO gifts (id, claim_token, ig_handle, salt, profile_data, gift_type, expires_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [id, claimToken, igHandle, '', profileData || null, giftType, expiration]
   );
   saveDb(database);
   return (await getGift(id))!;
@@ -640,6 +713,75 @@ export async function getGiftByTokenWithPosts(claimToken: string): Promise<{ gif
 
   const posts = await getGiftPosts(gift.id);
   return { gift, posts };
+}
+
+// Gift article functions (for RSS/article gifts)
+
+export async function createGiftArticle(
+  giftId: string,
+  title: string,
+  contentMarkdown: string,
+  summary?: string,
+  publishedAt?: string,
+  link?: string,
+  imageUrl?: string,
+  blossomImageUrl?: string,
+  hashtags?: string[]
+): Promise<GiftArticle> {
+  await ensureGiftTables();
+  const database = await getDb();
+
+  database.run(
+    `INSERT INTO gift_articles (gift_id, title, summary, content_markdown, published_at, link, image_url, blossom_image_url, hashtags, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready')`,
+    [
+      giftId,
+      title,
+      summary || null,
+      contentMarkdown,
+      publishedAt || null,
+      link || null,
+      imageUrl || null,
+      blossomImageUrl || null,
+      hashtags ? JSON.stringify(hashtags) : null
+    ]
+  );
+  saveDb(database);
+
+  // Get the last inserted article
+  const result = database.exec(
+    'SELECT * FROM gift_articles WHERE gift_id = ? ORDER BY id DESC LIMIT 1',
+    [giftId]
+  );
+  return rowToObject<GiftArticle>(result[0].columns, result[0].values[0]);
+}
+
+export async function getGiftArticles(giftId: string): Promise<GiftArticle[]> {
+  await ensureGiftTables();
+  const database = await getDb();
+  const result = database.exec(
+    'SELECT * FROM gift_articles WHERE gift_id = ? ORDER BY id',
+    [giftId]
+  );
+  if (result.length === 0) return [];
+  return result[0].values.map(row => rowToObject<GiftArticle>(result[0].columns, row));
+}
+
+export async function updateGiftArticleStatus(
+  articleId: number,
+  status: GiftArticle['status']
+): Promise<void> {
+  const database = await getDb();
+  database.run('UPDATE gift_articles SET status = ? WHERE id = ?', [status, articleId]);
+  saveDb(database);
+}
+
+export async function getGiftByTokenWithArticles(claimToken: string): Promise<{ gift: Gift; articles: GiftArticle[] } | null> {
+  const gift = await getGiftByToken(claimToken);
+  if (!gift) return null;
+
+  const articles = await getGiftArticles(gift.id);
+  return { gift, articles };
 }
 
 export async function getPendingGifts(): Promise<Gift[]> {

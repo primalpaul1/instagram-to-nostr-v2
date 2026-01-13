@@ -7,10 +7,12 @@
   import {
     createMultiMediaPostEvent,
     createProfileEvent,
+    createLongFormContentEvent,
     publishToRelays,
     importToPrimalCache,
     NOSTR_RELAYS,
-    type MediaUpload
+    type MediaUpload,
+    type ArticleMetadata
   } from '$lib/signing';
 
   type PageStep = 'loading' | 'preview' | 'publishing' | 'complete' | 'error';
@@ -25,6 +27,19 @@
     status: string;
   }
 
+  interface GiftArticle {
+    id: number;
+    title: string;
+    summary: string | null;
+    content_markdown: string;
+    published_at: string | null;
+    link: string | null;
+    image_url: string | null;
+    blossom_image_url: string | null;
+    hashtags: string[];
+    status: string;
+  }
+
   interface Profile {
     username: string;
     display_name?: string;
@@ -32,11 +47,21 @@
     profile_picture_url?: string;
   }
 
+  interface Feed {
+    url: string;
+    title?: string;
+    description?: string;
+    image_url?: string;
+  }
+
   interface Gift {
     status: string;
+    gift_type: 'posts' | 'articles';
     handle: string;
     profile: Profile | null;
+    feed: Feed | null;
     posts: GiftPost[];
+    articles: GiftArticle[];
   }
 
   interface Keypair {
@@ -57,16 +82,26 @@
   let keyDownloaded = false;
 
   // Publishing state
-  interface TaskStatus {
+  interface PostTaskStatus {
+    type: 'post';
     post: GiftPost;
     status: 'pending' | 'signing' | 'publishing' | 'complete' | 'error';
     error?: string;
   }
+  interface ArticleTaskStatus {
+    type: 'article';
+    article: GiftArticle;
+    status: 'pending' | 'signing' | 'publishing' | 'complete' | 'error';
+    error?: string;
+  }
+  type TaskStatus = PostTaskStatus | ArticleTaskStatus;
   let tasks: TaskStatus[] = [];
 
   $: completedCount = tasks.filter(t => t.status === 'complete').length;
   $: totalCount = tasks.length;
   $: progressPercent = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
+  $: isArticleGift = gift?.gift_type === 'articles';
+  $: itemCount = isArticleGift ? gift?.articles?.length || 0 : gift?.posts?.length || 0;
 
   const token = $page.params.token;
 
@@ -163,16 +198,20 @@
   async function startPublishing() {
     if (!keypair || !gift) return;
 
-    // Set up tasks
-    tasks = gift.posts.map(post => ({ post, status: 'pending' }));
+    // Set up tasks based on gift type
+    if (gift.gift_type === 'articles') {
+      tasks = gift.articles.map(article => ({ type: 'article' as const, article, status: 'pending' as const }));
+    } else {
+      tasks = gift.posts.map(post => ({ type: 'post' as const, post, status: 'pending' as const }));
+    }
     step = 'publishing';
 
     const signedEvents: any[] = [];
-    const publishedPostIds: number[] = [];
+    const publishedIds: number[] = [];
 
     try {
-      // First, publish profile if available
-      if (gift.profile) {
+      // First, publish profile if available (for post gifts)
+      if (gift.gift_type === 'posts' && gift.profile) {
         const profileEvent = createProfileEvent(
           keypair.publicKeyHex,
           gift.profile.display_name || gift.profile.username,
@@ -185,7 +224,7 @@
         signedEvents.push(signedProfile);
       }
 
-      // Process posts sequentially
+      // Process items sequentially
       for (let i = 0; i < tasks.length; i++) {
         tasks[i] = { ...tasks[i], status: 'signing' };
         tasks = [...tasks];
@@ -193,45 +232,88 @@
         const task = tasks[i];
 
         try {
-          // Build media uploads from blossom URLs
-          const mediaUploads: MediaUpload[] = task.post.blossom_urls.map(url => ({
-            url,
-            sha256: url.split('/').pop() || '',
-            mimeType: task.post.post_type === 'reel' ? 'video/mp4' : 'image/jpeg',
-            size: 0,
-            width: undefined,
-            height: undefined
-          }));
+          let signedEvent: any;
 
-          // Create post event
-          const postEvent = createMultiMediaPostEvent(
-            keypair.publicKeyHex,
-            mediaUploads,
-            task.post.caption || undefined,
-            task.post.original_date || undefined
-          );
+          if (task.type === 'article') {
+            // Create long-form content event (kind 30023)
+            const article = task.article;
 
-          // Sign locally with derived key
-          const signedPost = finalizeEvent(postEvent as EventTemplate, hexToBytes(keypair.privateKeyHex));
+            // Generate identifier from title (URL-safe slug)
+            const identifier = article.title
+              .toLowerCase()
+              .replace(/[^a-z0-9]+/g, '-')
+              .replace(/^-|-$/g, '')
+              .slice(0, 50) + '-' + Date.now().toString(36);
+
+            // Parse published_at to Unix timestamp
+            let publishedAtTimestamp: string | undefined;
+            if (article.published_at) {
+              try {
+                const date = new Date(article.published_at);
+                if (!isNaN(date.getTime())) {
+                  publishedAtTimestamp = Math.floor(date.getTime() / 1000).toString();
+                }
+              } catch {
+                // Ignore parse errors
+              }
+            }
+
+            const articleMetadata: ArticleMetadata = {
+              identifier,
+              title: article.title,
+              summary: article.summary || undefined,
+              imageUrl: article.blossom_image_url || article.image_url || undefined,
+              publishedAt: publishedAtTimestamp,
+              hashtags: article.hashtags || undefined,
+              content: article.content_markdown
+            };
+
+            const articleEvent = createLongFormContentEvent(
+              keypair.publicKeyHex,
+              articleMetadata
+            );
+
+            signedEvent = finalizeEvent(articleEvent as EventTemplate, hexToBytes(keypair.privateKeyHex));
+          } else {
+            // Create post event (kind 1)
+            const post = task.post;
+            const mediaUploads: MediaUpload[] = post.blossom_urls.map(url => ({
+              url,
+              sha256: url.split('/').pop() || '',
+              mimeType: post.post_type === 'reel' ? 'video/mp4' : 'image/jpeg',
+              size: 0,
+              width: undefined,
+              height: undefined
+            }));
+
+            const postEvent = createMultiMediaPostEvent(
+              keypair.publicKeyHex,
+              mediaUploads,
+              post.caption || undefined,
+              post.original_date || undefined
+            );
+
+            signedEvent = finalizeEvent(postEvent as EventTemplate, hexToBytes(keypair.privateKeyHex));
+          }
 
           tasks[i] = { ...tasks[i], status: 'publishing' };
           tasks = [...tasks];
 
           // Publish to relays
-          const publishResult = await publishToRelays(signedPost, NOSTR_RELAYS);
+          const publishResult = await publishToRelays(signedEvent, NOSTR_RELAYS);
 
           if (publishResult.success.length === 0) {
             throw new Error('Failed to publish to any relay');
           }
 
-          signedEvents.push(signedPost);
-          publishedPostIds.push(task.post.id);
+          signedEvents.push(signedEvent);
+          publishedIds.push(task.type === 'article' ? task.article.id : task.post.id);
 
           tasks[i] = { ...tasks[i], status: 'complete' };
           tasks = [...tasks];
 
         } catch (err) {
-          console.error(`Error publishing post ${i}:`, err);
+          console.error(`Error publishing item ${i}:`, err);
           tasks[i] = {
             ...tasks[i],
             status: 'error',
@@ -240,7 +322,7 @@
           tasks = [...tasks];
         }
 
-        // Small delay between posts
+        // Small delay between items
         await new Promise(resolve => setTimeout(resolve, 100));
       }
 
@@ -249,14 +331,17 @@
         importToPrimalCache(signedEvents).catch(() => {});
       }
 
-      // Mark posts as published
-      if (publishedPostIds.length > 0) {
+      // Mark items as published
+      if (publishedIds.length > 0) {
+        const action = gift.gift_type === 'articles' ? 'markArticlesPublished' : 'markPostsPublished';
+        const idKey = gift.gift_type === 'articles' ? 'articleIds' : 'postIds';
+
         await fetch(`/api/gifts/${token}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            action: 'markPostsPublished',
-            postIds: publishedPostIds
+            action,
+            [idKey]: publishedIds
           })
         });
       }
@@ -336,9 +421,13 @@
           </svg>
         </div>
         <h2>Claim Your Nostr Account</h2>
-        <p class="subtitle">Your @{gift.handle} content is ready to publish on Nostr!</p>
+        {#if isArticleGift}
+          <p class="subtitle">Your articles from {gift.feed?.title || 'RSS Feed'} are ready to publish on Nostr!</p>
+        {:else}
+          <p class="subtitle">Your @{gift.handle} content is ready to publish on Nostr!</p>
+        {/if}
 
-        {#if gift.profile}
+        {#if gift.profile && !isArticleGift}
           <div class="profile-preview">
             {#if gift.profile.profile_picture_url}
               <img src={gift.profile.profile_picture_url} alt={gift.profile.username} class="profile-pic" />
@@ -358,39 +447,55 @@
         {/if}
 
         <div class="posts-preview">
-          <span class="count">{gift.posts.length}</span>
-          <span class="label">posts ready to publish</span>
+          <span class="count">{itemCount}</span>
+          <span class="label">{isArticleGift ? 'articles' : 'posts'} ready to publish</span>
         </div>
 
-        <div class="posts-grid">
-          {#each gift.posts.slice(0, 6) as post}
-            <div class="post-thumb">
-              {#if post.thumbnail_url}
-                <img src={post.thumbnail_url} alt="" />
-              {:else if post.blossom_urls && post.blossom_urls.length > 0 && post.post_type !== 'reel'}
-                <img src={post.blossom_urls[0]} alt="" />
-              {:else}
-                <div class="placeholder">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-                  </svg>
-                </div>
-              {/if}
-              {#if post.post_type === 'reel'}
-                <div class="video-badge">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-                    <polygon points="5,3 19,12 5,21"/>
-                  </svg>
-                </div>
-              {/if}
-            </div>
-          {/each}
-          {#if gift.posts.length > 6}
-            <div class="post-thumb more">
-              <span>+{gift.posts.length - 6}</span>
-            </div>
-          {/if}
-        </div>
+        {#if isArticleGift}
+          <div class="articles-list-preview">
+            {#each gift.articles.slice(0, 4) as article}
+              <div class="article-preview-item">
+                {#if article.blossom_image_url || article.image_url}
+                  <img src={article.blossom_image_url || article.image_url} alt="" class="article-thumb" />
+                {/if}
+                <span class="article-title-preview">{article.title}</span>
+              </div>
+            {/each}
+            {#if gift.articles.length > 4}
+              <div class="more-articles">+{gift.articles.length - 4} more</div>
+            {/if}
+          </div>
+        {:else}
+          <div class="posts-grid">
+            {#each gift.posts.slice(0, 6) as post}
+              <div class="post-thumb">
+                {#if post.thumbnail_url}
+                  <img src={post.thumbnail_url} alt="" />
+                {:else if post.blossom_urls && post.blossom_urls.length > 0 && post.post_type !== 'reel'}
+                  <img src={post.blossom_urls[0]} alt="" />
+                {:else}
+                  <div class="placeholder">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                      <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                    </svg>
+                  </div>
+                {/if}
+                {#if post.post_type === 'reel'}
+                  <div class="video-badge">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                      <polygon points="5,3 19,12 5,21"/>
+                    </svg>
+                  </div>
+                {/if}
+              </div>
+            {/each}
+            {#if gift.posts.length > 6}
+              <div class="post-thumb more">
+                <span>+{gift.posts.length - 6}</span>
+              </div>
+            {/if}
+          </div>
+        {/if}
 
         <button class="primary-btn" on:click={claimAccount}>
           Claim My Account
@@ -402,30 +507,49 @@
 
     {:else if step === 'publishing'}
       <div class="publishing-step">
-        <h2>Publishing Your Content</h2>
+        <h2>Publishing Your {isArticleGift ? 'Articles' : 'Content'}</h2>
         <p class="subtitle">Signing and publishing to Nostr...</p>
 
         <div class="progress-bar">
           <div class="progress-fill" style="width: {progressPercent}%"></div>
         </div>
-        <p class="progress-text">{completedCount} of {totalCount} posts</p>
+        <p class="progress-text">{completedCount} of {totalCount} {isArticleGift ? 'articles' : 'posts'}</p>
 
         <div class="tasks-list">
           {#each tasks as task, index}
             <div class="task-item" class:active={task.status === 'signing' || task.status === 'publishing'} class:complete={task.status === 'complete'} class:error={task.status === 'error'}>
               <div class="task-preview">
-                {#if getMediaPreviewUrl(task.post)}
-                  <img src={getMediaPreviewUrl(task.post)} alt="" />
+                {#if task.type === 'article'}
+                  {#if task.article.blossom_image_url || task.article.image_url}
+                    <img src={task.article.blossom_image_url || task.article.image_url} alt="" />
+                  {:else}
+                    <div class="placeholder article-placeholder">
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                        <polyline points="14 2 14 8 20 8"/>
+                        <line x1="16" y1="13" x2="8" y2="13"/>
+                        <line x1="16" y1="17" x2="8" y2="17"/>
+                      </svg>
+                    </div>
+                  {/if}
                 {:else}
-                  <div class="placeholder">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                      <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-                    </svg>
-                  </div>
+                  {#if getMediaPreviewUrl(task.post)}
+                    <img src={getMediaPreviewUrl(task.post)} alt="" />
+                  {:else}
+                    <div class="placeholder">
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                      </svg>
+                    </div>
+                  {/if}
                 {/if}
               </div>
               <div class="task-info">
-                <span class="task-caption">{task.post.caption?.slice(0, 30) || 'No caption'}{(task.post.caption?.length || 0) > 30 ? '...' : ''}</span>
+                {#if task.type === 'article'}
+                  <span class="task-caption">{task.article.title.slice(0, 30)}{task.article.title.length > 30 ? '...' : ''}</span>
+                {:else}
+                  <span class="task-caption">{task.post.caption?.slice(0, 30) || 'No caption'}{(task.post.caption?.length || 0) > 30 ? '...' : ''}</span>
+                {/if}
                 <span class="task-status">{getStatusLabel(task.status)}</span>
               </div>
               <div class="task-indicator">
@@ -458,7 +582,7 @@
           </svg>
         </div>
         <h2>Welcome to Nostr!</h2>
-        <p class="subtitle">Your account has been created and {completedCount} posts published.</p>
+        <p class="subtitle">Your account has been created and {completedCount} {isArticleGift ? 'articles' : 'posts'} published.</p>
 
         <a href="https://primal.net/p/{keypair.npub}" target="_blank" rel="noopener" class="view-profile-btn">
           View Your Profile on Primal
@@ -1143,5 +1267,52 @@
     font-size: 0.875rem;
     font-weight: 600;
     line-height: 1.2;
+  }
+
+  /* Article preview styles */
+  .articles-list-preview {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+    text-align: left;
+  }
+
+  .article-preview-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    background: var(--bg-tertiary);
+    border-radius: 0.5rem;
+  }
+
+  .article-thumb {
+    width: 3rem;
+    height: 2.25rem;
+    object-fit: cover;
+    border-radius: 0.375rem;
+    flex-shrink: 0;
+  }
+
+  .article-title-preview {
+    font-size: 0.875rem;
+    color: var(--text-primary);
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .more-articles {
+    text-align: center;
+    padding: 0.5rem;
+    color: var(--text-muted);
+    font-size: 0.8125rem;
+  }
+
+  .article-placeholder {
+    background: rgba(168, 85, 247, 0.1);
+    color: #a855f7;
   }
 </style>

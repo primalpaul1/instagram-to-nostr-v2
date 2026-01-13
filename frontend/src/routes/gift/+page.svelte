@@ -21,6 +21,19 @@
     selected: boolean;
   }
 
+  interface Article {
+    id: string;
+    title: string;
+    summary?: string;
+    content_markdown: string;
+    published_at?: string;
+    link?: string;
+    image_url?: string;
+    blossom_image_url?: string;
+    hashtags?: string[];
+    selected: boolean;
+  }
+
   interface Profile {
     username: string;
     display_name?: string;
@@ -28,12 +41,23 @@
     profile_picture_url?: string;
   }
 
+  interface FeedInfo {
+    url: string;
+    title?: string;
+    description?: string;
+    image_url?: string;
+  }
+
   let step: Step = 'input';
   let handle = '';
-  let platform: 'instagram' | 'tiktok' = 'instagram';
+  let feedUrl = '';
+  let platform: 'instagram' | 'tiktok' | 'rss' = 'instagram';
   let posts: Post[] = [];
+  let articles: Article[] = [];
   let fetchedPosts: any[] = [];
+  let fetchedArticles: any[] = [];
   let profile: Profile | null = null;
+  let feedInfo: FeedInfo | null = null;
   let fetchCount = 0;
   let error = '';
   let claimUrl = '';
@@ -52,27 +76,40 @@
   $: reelPosts = posts.filter(p => p.post_type === 'reel');
   $: imagePosts = posts.filter(p => p.post_type === 'image' || p.post_type === 'carousel');
   $: selectedPosts = posts.filter(p => p.selected);
-  $: selectedCount = selectedPosts.length;
+  $: selectedArticles = articles.filter(a => a.selected);
+  $: selectedCount = platform === 'rss' ? selectedArticles.length : selectedPosts.length;
 
   let activeTab: 'reels' | 'posts' = 'reels';
   $: currentPosts = activeTab === 'reels' ? reelPosts : imagePosts;
   $: currentSelectedCount = currentPosts.filter(p => p.selected).length;
 
   async function fetchContent() {
-    if (!handle.trim()) return;
+    if (platform === 'rss') {
+      if (!feedUrl.trim()) return;
+    } else {
+      if (!handle.trim()) return;
+    }
 
     step = 'fetching';
     error = '';
     posts = [];
+    articles = [];
     fetchedPosts = [];
+    fetchedArticles = [];
     fetchCount = 0;
     abortController = new AbortController();
 
     try {
-      const cleanHandle = handle.replace('@', '').trim();
-      const endpoint = platform === 'tiktok'
-        ? `/api/tiktok-stream/${encodeURIComponent(cleanHandle)}`
-        : `/api/videos-stream/${encodeURIComponent(cleanHandle)}`;
+      let endpoint: string;
+      if (platform === 'rss') {
+        endpoint = `/api/rss-stream?url=${encodeURIComponent(feedUrl.trim())}`;
+      } else {
+        const cleanHandle = handle.replace('@', '').trim();
+        endpoint = platform === 'tiktok'
+          ? `/api/tiktok-stream/${encodeURIComponent(cleanHandle)}`
+          : `/api/videos-stream/${encodeURIComponent(cleanHandle)}`;
+      }
+
       const response = await fetch(endpoint, {
         signal: abortController.signal
       });
@@ -109,21 +146,41 @@
 
               if (data.progress) {
                 fetchCount = data.count;
-                if (data.posts) {
-                  fetchedPosts = data.posts;
-                }
-                if (data.profile) {
-                  profile = data.profile;
+                if (platform === 'rss') {
+                  if (data.articles) {
+                    fetchedArticles = data.articles;
+                  }
+                  if (data.feed) {
+                    feedInfo = data.feed;
+                  }
+                } else {
+                  if (data.posts) {
+                    fetchedPosts = data.posts;
+                  }
+                  if (data.profile) {
+                    profile = data.profile;
+                  }
                 }
               }
 
               if (data.done) {
-                if (!data.posts || data.posts.length === 0) {
-                  throw new Error('No content found for this account');
+                if (platform === 'rss') {
+                  if (!data.articles || data.articles.length === 0) {
+                    throw new Error('No articles found in this feed');
+                  }
+                  articles = (data.articles || []).map((a: any, idx: number) => ({
+                    ...a,
+                    id: a.id || `article-${idx}`,
+                    selected: true
+                  }));
+                  feedInfo = data.feed || { url: feedUrl.trim() };
+                } else {
+                  if (!data.posts || data.posts.length === 0) {
+                    throw new Error('No content found for this account');
+                  }
+                  posts = (data.posts || []).map((p: any) => ({ ...p, selected: true }));
+                  profile = data.profile || null;
                 }
-
-                posts = (data.posts || []).map((p: any) => ({ ...p, selected: true }));
-                profile = data.profile || null;
                 step = 'select';
                 return;
               }
@@ -149,10 +206,33 @@
   }
 
   function pauseFetch() {
-    if (!abortController || fetchedPosts.length === 0) return;
-    abortController.abort();
-    posts = fetchedPosts.map((p: any) => ({ ...p, selected: true }));
+    if (!abortController) return;
+    if (platform === 'rss') {
+      if (fetchedArticles.length === 0) return;
+      abortController.abort();
+      articles = fetchedArticles.map((a: any, idx: number) => ({
+        ...a,
+        id: a.id || `article-${idx}`,
+        selected: true
+      }));
+    } else {
+      if (fetchedPosts.length === 0) return;
+      abortController.abort();
+      posts = fetchedPosts.map((p: any) => ({ ...p, selected: true }));
+    }
     step = 'select';
+  }
+
+  function toggleArticle(id: string) {
+    articles = articles.map(a => a.id === id ? { ...a, selected: !a.selected } : a);
+  }
+
+  function selectAllArticles() {
+    articles = articles.map(a => ({ ...a, selected: true }));
+  }
+
+  function deselectAllArticles() {
+    articles = articles.map(a => ({ ...a, selected: false }));
   }
 
   function togglePost(id: string) {
@@ -182,11 +262,27 @@
     error = '';
 
     try {
-      const cleanHandle = handle.replace('@', '').trim();
-      const response = await fetch('/api/gifts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      let body: any;
+
+      if (platform === 'rss') {
+        body = {
+          gift_type: 'articles',
+          articles: selectedArticles.map(a => ({
+            title: a.title,
+            summary: a.summary,
+            content_markdown: a.content_markdown,
+            published_at: a.published_at,
+            link: a.link,
+            image_url: a.image_url,
+            blossom_image_url: a.blossom_image_url,
+            hashtags: a.hashtags
+          })),
+          feed: feedInfo
+        };
+      } else {
+        const cleanHandle = handle.replace('@', '').trim();
+        body = {
+          gift_type: 'posts',
           handle: cleanHandle,
           posts: selectedPosts.map(p => ({
             id: p.id,
@@ -197,7 +293,13 @@
             media_items: p.media_items
           })),
           profile
-        })
+        };
+      }
+
+      const response = await fetch('/api/gifts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
       });
 
       if (!response.ok) {
@@ -217,8 +319,11 @@
   function reset() {
     step = 'input';
     handle = '';
+    feedUrl = '';
     posts = [];
+    articles = [];
     profile = null;
+    feedInfo = null;
     fetchCount = 0;
     error = '';
     claimUrl = '';
@@ -366,22 +471,47 @@
               </svg>
               TikTok
             </button>
+            <button
+              type="button"
+              class="platform-btn"
+              class:active={platform === 'rss'}
+              on:click={() => platform = 'rss'}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M6.18 15.64a2.18 2.18 0 0 1 2.18 2.18C8.36 19 7.38 20 6.18 20C5 20 4 19 4 17.82a2.18 2.18 0 0 1 2.18-2.18M4 4.44A15.56 15.56 0 0 1 19.56 20h-2.83A12.73 12.73 0 0 0 4 7.27V4.44m0 5.66a9.9 9.9 0 0 1 9.9 9.9h-2.83A7.07 7.07 0 0 0 4 12.93V10.1Z"/>
+              </svg>
+              RSS
+            </button>
           </div>
 
-          <div class="input-group">
-            <label for="handle">{platform === 'tiktok' ? 'TikTok' : 'Instagram'} Handle</label>
-            <div class="input-wrapper">
-              <span class="at-symbol">@</span>
+          {#if platform === 'rss'}
+            <div class="input-group">
+              <label for="feed-url">RSS Feed URL</label>
               <input
-                id="handle"
-                type="text"
-                bind:value={handle}
-                placeholder="username"
+                id="feed-url"
+                type="url"
+                bind:value={feedUrl}
+                placeholder="https://example.com/feed.xml"
                 autocomplete="off"
-                autocapitalize="off"
+                class="full-input"
               />
             </div>
-          </div>
+          {:else}
+            <div class="input-group">
+              <label for="handle">{platform === 'tiktok' ? 'TikTok' : 'Instagram'} Handle</label>
+              <div class="input-wrapper">
+                <span class="at-symbol">@</span>
+                <input
+                  id="handle"
+                  type="text"
+                  bind:value={handle}
+                  placeholder="username"
+                  autocomplete="off"
+                  autocapitalize="off"
+                />
+              </div>
+            </div>
+          {/if}
 
           <div class="info-box">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -391,8 +521,8 @@
             <p>The recipient will choose a password to create their Nostr account. You won't have access to their private key.</p>
           </div>
 
-          <button type="submit" class="primary-btn" disabled={!handle.trim()}>
-            Fetch Content
+          <button type="submit" class="primary-btn" disabled={platform === 'rss' ? !feedUrl.trim() : !handle.trim()}>
+            Fetch {platform === 'rss' ? 'Articles' : 'Content'}
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M5 12h14M12 5l7 7-7 7"/>
             </svg>
@@ -403,11 +533,11 @@
     {:else if step === 'fetching'}
       <div class="fetching-step">
         <div class="spinner-large"></div>
-        <h2>Fetching content...</h2>
-        <p class="count">{fetchCount} posts found</p>
-        {#if fetchedPosts.length > 0}
+        <h2>Fetching {platform === 'rss' ? 'articles' : 'content'}...</h2>
+        <p class="count">{fetchCount} {platform === 'rss' ? 'articles' : 'posts'} found</p>
+        {#if platform === 'rss' ? fetchedArticles.length > 0 : fetchedPosts.length > 0}
           <button class="secondary-btn" on:click={pauseFetch}>
-            Continue with {fetchedPosts.length} posts
+            Continue with {platform === 'rss' ? fetchedArticles.length : fetchedPosts.length} {platform === 'rss' ? 'articles' : 'posts'}
           </button>
         {/if}
       </div>
@@ -416,7 +546,11 @@
       <div class="select-step">
         <div class="select-header">
           <div>
-            <h2>Select content for @{handle}</h2>
+            {#if platform === 'rss'}
+              <h2>Select articles from {feedInfo?.title || 'RSS Feed'}</h2>
+            {:else}
+              <h2>Select content for @{handle}</h2>
+            {/if}
             <p class="subtitle">Recipient will claim with their own password</p>
           </div>
           <button class="back-btn" on:click={reset}>Start Over</button>
@@ -426,77 +560,127 @@
           <div class="error-banner">{error}</div>
         {/if}
 
-        <div class="tabs">
-          <button class="tab" class:active={activeTab === 'reels'} on:click={() => activeTab = 'reels'}>
-            Reels <span class="tab-count">{reelPosts.length}</span>
-          </button>
-          <button class="tab" class:active={activeTab === 'posts'} on:click={() => activeTab = 'posts'}>
-            Posts <span class="tab-count">{imagePosts.length}</span>
-          </button>
-        </div>
-
-        <div class="toolbar">
-          <div class="selection-badge" class:has-selection={currentSelectedCount > 0}>
-            <span class="count">{currentSelectedCount}</span>
-            <span class="label">of {currentPosts.length} selected</span>
+        {#if platform === 'rss'}
+          <!-- RSS Articles View -->
+          <div class="toolbar">
+            <div class="selection-badge" class:has-selection={selectedArticles.length > 0}>
+              <span class="count">{selectedArticles.length}</span>
+              <span class="label">of {articles.length} selected</span>
+            </div>
+            <div class="toolbar-actions">
+              <button class="text-btn" on:click={selectAllArticles}>Select All</button>
+              <button class="text-btn" on:click={deselectAllArticles}>Clear</button>
+            </div>
           </div>
-          <div class="toolbar-actions">
-            <button class="add-btn" on:click={openAddModal}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M12 5v14M5 12h14"/>
-              </svg>
-              Add Post
-            </button>
-            <button class="text-btn" on:click={selectAllCurrentTab}>Select All</button>
-            <button class="text-btn" on:click={deselectAllCurrentTab}>Clear</button>
-          </div>
-        </div>
 
-        <div class="posts-grid">
-          {#each currentPosts as post (post.id)}
-            <button class="post-card" class:selected={post.selected} on:click={() => togglePost(post.id)}>
-              <div class="thumbnail-wrapper">
-                {#if post.thumbnail_url}
-                  <img src={post.thumbnail_url} alt="" loading="lazy" />
-                {:else}
-                  <div class="placeholder">
-                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                      <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-                    </svg>
-                  </div>
-                {/if}
-
-                {#if post.post_type === 'reel' && getFirstMediaDuration(post)}
-                  <span class="duration">{formatDuration(getFirstMediaDuration(post))}</span>
-                {/if}
-
-                {#if post.post_type === 'carousel'}
-                  <span class="carousel-badge">{post.media_items.length}</span>
-                {/if}
-
-                <div class="select-indicator" class:checked={post.selected}>
-                  {#if post.selected}
+          <div class="articles-list">
+            {#each articles as article (article.id)}
+              <button class="article-card" class:selected={article.selected} on:click={() => toggleArticle(article.id)}>
+                <div class="article-checkbox" class:checked={article.selected}>
+                  {#if article.selected}
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
                       <path d="M20 6L9 17l-5-5"/>
                     </svg>
                   {/if}
                 </div>
-              </div>
-              <div class="post-meta">
-                <p class="caption">{post.caption?.slice(0, 40) || 'No caption'}{(post.caption?.length || 0) > 40 ? '...' : ''}</p>
-                {#if post.original_date}
-                  <span class="date">{formatDate(post.original_date)}</span>
-                {/if}
-              </div>
+                <div class="article-content">
+                  {#if article.image_url || article.blossom_image_url}
+                    <img src={article.blossom_image_url || article.image_url} alt="" class="article-image" loading="lazy" />
+                  {/if}
+                  <div class="article-info">
+                    <h4 class="article-title">{article.title}</h4>
+                    {#if article.summary}
+                      <p class="article-summary">{article.summary.slice(0, 120)}{article.summary.length > 120 ? '...' : ''}</p>
+                    {/if}
+                    <div class="article-meta">
+                      {#if article.published_at}
+                        <span class="date">{formatDate(article.published_at)}</span>
+                      {/if}
+                      {#if article.hashtags && article.hashtags.length > 0}
+                        <span class="tags">{article.hashtags.slice(0, 3).map(t => `#${t}`).join(' ')}</span>
+                      {/if}
+                    </div>
+                  </div>
+                </div>
+              </button>
+            {:else}
+              <div class="empty-state">No articles found</div>
+            {/each}
+          </div>
+        {:else}
+          <!-- Posts View (Instagram/TikTok) -->
+          <div class="tabs">
+            <button class="tab" class:active={activeTab === 'reels'} on:click={() => activeTab = 'reels'}>
+              Reels <span class="tab-count">{reelPosts.length}</span>
             </button>
-          {:else}
-            <div class="empty-state">No {activeTab === 'reels' ? 'reels' : 'posts'} found</div>
-          {/each}
-        </div>
+            <button class="tab" class:active={activeTab === 'posts'} on:click={() => activeTab = 'posts'}>
+              Posts <span class="tab-count">{imagePosts.length}</span>
+            </button>
+          </div>
+
+          <div class="toolbar">
+            <div class="selection-badge" class:has-selection={currentSelectedCount > 0}>
+              <span class="count">{currentSelectedCount}</span>
+              <span class="label">of {currentPosts.length} selected</span>
+            </div>
+            <div class="toolbar-actions">
+              <button class="add-btn" on:click={openAddModal}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M12 5v14M5 12h14"/>
+                </svg>
+                Add Post
+              </button>
+              <button class="text-btn" on:click={selectAllCurrentTab}>Select All</button>
+              <button class="text-btn" on:click={deselectAllCurrentTab}>Clear</button>
+            </div>
+          </div>
+
+          <div class="posts-grid">
+            {#each currentPosts as post (post.id)}
+              <button class="post-card" class:selected={post.selected} on:click={() => togglePost(post.id)}>
+                <div class="thumbnail-wrapper">
+                  {#if post.thumbnail_url}
+                    <img src={post.thumbnail_url} alt="" loading="lazy" />
+                  {:else}
+                    <div class="placeholder">
+                      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                      </svg>
+                    </div>
+                  {/if}
+
+                  {#if post.post_type === 'reel' && getFirstMediaDuration(post)}
+                    <span class="duration">{formatDuration(getFirstMediaDuration(post))}</span>
+                  {/if}
+
+                  {#if post.post_type === 'carousel'}
+                    <span class="carousel-badge">{post.media_items.length}</span>
+                  {/if}
+
+                  <div class="select-indicator" class:checked={post.selected}>
+                    {#if post.selected}
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                        <path d="M20 6L9 17l-5-5"/>
+                      </svg>
+                    {/if}
+                  </div>
+                </div>
+                <div class="post-meta">
+                  <p class="caption">{post.caption?.slice(0, 40) || 'No caption'}{(post.caption?.length || 0) > 40 ? '...' : ''}</p>
+                  {#if post.original_date}
+                    <span class="date">{formatDate(post.original_date)}</span>
+                  {/if}
+                </div>
+              </button>
+            {:else}
+              <div class="empty-state">No {activeTab === 'reels' ? 'reels' : 'posts'} found</div>
+            {/each}
+          </div>
+        {/if}
 
         <div class="actions">
           <div class="total-selected">
-            Total: <strong>{selectedCount}</strong> items selected
+            Total: <strong>{selectedCount}</strong> {platform === 'rss' ? 'articles' : 'items'} selected
           </div>
           <button class="primary-btn" disabled={selectedCount === 0} on:click={createGift}>
             Create Gift
@@ -523,7 +707,11 @@
           </svg>
         </div>
         <h2>Gift Created!</h2>
-        <p class="subtitle">Share this link with @{handle}. They'll choose a password to claim their Nostr account.</p>
+        {#if platform === 'rss'}
+          <p class="subtitle">Share this link with the recipient. They'll choose a password to claim their Nostr account.</p>
+        {:else}
+          <p class="subtitle">Share this link with @{handle}. They'll choose a password to claim their Nostr account.</p>
+        {/if}
 
         <div class="claim-link-box">
           <code>{claimUrl}</code>
@@ -537,14 +725,25 @@
         </div>
 
         <div class="summary-card">
-          <div class="summary-row">
-            <span class="label">Instagram</span>
-            <span class="value">@{handle}</span>
-          </div>
-          <div class="summary-row">
-            <span class="label">Posts</span>
-            <span class="value">{selectedCount} items</span>
-          </div>
+          {#if platform === 'rss'}
+            <div class="summary-row">
+              <span class="label">Feed</span>
+              <span class="value">{feedInfo?.title || 'RSS Feed'}</span>
+            </div>
+            <div class="summary-row">
+              <span class="label">Articles</span>
+              <span class="value">{selectedCount} items</span>
+            </div>
+          {:else}
+            <div class="summary-row">
+              <span class="label">{platform === 'tiktok' ? 'TikTok' : 'Instagram'}</span>
+              <span class="value">@{handle}</span>
+            </div>
+            <div class="summary-row">
+              <span class="label">Posts</span>
+              <span class="value">{selectedCount} items</span>
+            </div>
+          {/if}
           <div class="summary-row">
             <span class="label">Expires</span>
             <span class="value">30 days</span>
@@ -1548,5 +1747,124 @@
 
   .input-hint.error {
     color: var(--error, #ef4444);
+  }
+
+  /* RSS Input */
+  .full-input {
+    width: 100%;
+    padding: 0.875rem 1rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-light);
+    border-radius: 0.75rem;
+    color: var(--text-primary);
+    font-size: 1rem;
+  }
+
+  .full-input:focus {
+    border-color: var(--accent);
+    outline: none;
+  }
+
+  /* Articles List */
+  .articles-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    max-height: 400px;
+    overflow-y: auto;
+    padding: 0.25rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .article-card {
+    display: flex;
+    gap: 1rem;
+    padding: 1rem;
+    background: var(--bg-tertiary);
+    border: 2px solid transparent;
+    border-radius: 0.75rem;
+    cursor: pointer;
+    text-align: left;
+    transition: all 0.2s ease;
+  }
+
+  .article-card:hover {
+    border-color: var(--border-light);
+  }
+
+  .article-card.selected {
+    border-color: #a855f7;
+    background: rgba(168, 85, 247, 0.08);
+  }
+
+  .article-checkbox {
+    width: 1.5rem;
+    height: 1.5rem;
+    background: var(--bg-primary);
+    border: 2px solid var(--border-light);
+    border-radius: 0.375rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-top: 0.125rem;
+  }
+
+  .article-checkbox.checked {
+    background: #a855f7;
+    border-color: #a855f7;
+    color: white;
+  }
+
+  .article-content {
+    flex: 1;
+    display: flex;
+    gap: 1rem;
+    min-width: 0;
+  }
+
+  .article-image {
+    width: 80px;
+    height: 60px;
+    object-fit: cover;
+    border-radius: 0.5rem;
+    flex-shrink: 0;
+  }
+
+  .article-info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .article-title {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0 0 0.375rem 0;
+    line-height: 1.3;
+  }
+
+  .article-summary {
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    margin: 0 0 0.5rem 0;
+    line-height: 1.4;
+  }
+
+  .article-meta {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .article-meta .date {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+
+  .article-meta .tags {
+    font-size: 0.75rem;
+    color: #a855f7;
   }
 </style>
