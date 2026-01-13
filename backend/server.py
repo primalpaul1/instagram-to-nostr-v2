@@ -876,6 +876,10 @@ async def fetch_rss_stream(feed_url: str):
             elif hasattr(feed.feed, 'author_detail') and feed.feed.author_detail:
                 feed_meta['author_name'] = feed.feed.author_detail.get('name')
 
+            # Get base URL for relative links
+            parsed_url = urlparse(feed_url)
+            base_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
+
             # For Substack, scrape the publication page to get author photo and bio
             if 'substack.com' in parsed_url.netloc:
                 try:
@@ -915,10 +919,6 @@ async def fetch_rss_stream(feed_url: str):
                 except Exception as e:
                     # If scraping fails, continue with RSS-only data
                     print(f"Failed to scrape Substack author info: {e}")
-
-            # Get base URL for relative links
-            parsed_url = urlparse(feed_url)
-            base_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
 
             yield f"data: {json.dumps({'progress': f'Found {len(feed.entries)} articles, processing...'})}\n\n"
 
