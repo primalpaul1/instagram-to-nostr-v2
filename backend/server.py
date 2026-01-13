@@ -988,8 +988,8 @@ async def fetch_rss_stream(feed_url: str):
                 # Send progress updates for every article so frontend always has latest
                 yield f"data: {json.dumps({'progress': True, 'count': len(articles), 'articles': articles, 'feed': feed_meta})}\n\n"
 
-            # Send final result (articles already sent in progress updates)
-            yield f"data: {json.dumps({'done': True, 'count': len(articles), 'feed': feed_meta, 'source': 'rss'})}\n\n"
+            # Send final result
+            yield f"data: {json.dumps({'done': True, 'articles': articles, 'feed': feed_meta, 'source': 'rss'})}\n\n"
 
         except Exception as e:
             yield f"data: {json.dumps({'error': str(e)})}\n\n"

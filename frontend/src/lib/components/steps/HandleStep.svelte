@@ -222,17 +222,15 @@
 
               if (data.done) {
                 if (platform === 'rss') {
-                  // Use fetchedArticles from progress updates (articles not included in done message to reduce size)
-                  const articlesToUse = fetchedArticles.length > 0 ? fetchedArticles : [];
-                  if (articlesToUse.length === 0) {
+                  if (!data.articles || data.articles.length === 0) {
                     throw new Error('No articles found in this feed');
                   }
 
                   wizard.setContentType('articles');
                   wizard.setHandle(feedUrl.trim());
-                  wizard.setArticles(articlesToUse.map((a: any) => ({ ...a, selected: true })));
-                  if (data.feed || fetchedFeedInfo) {
-                    wizard.setFeedInfo(data.feed || fetchedFeedInfo);
+                  wizard.setArticles((data.articles || []).map((a: any) => ({ ...a, selected: true })));
+                  if (data.feed) {
+                    wizard.setFeedInfo(data.feed);
                   }
                 } else {
                   if ((!data.videos || data.videos.length === 0) && (!data.posts || data.posts.length === 0)) {
