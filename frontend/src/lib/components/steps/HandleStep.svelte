@@ -202,7 +202,6 @@
                   articleCount = data.count || 0;
                   if (data.articles) {
                     fetchedArticles = data.articles;
-                    console.log('Set fetchedArticles, length:', fetchedArticles.length);
                   }
                   if (data.feed) {
                     fetchedFeedInfo = data.feed;
@@ -273,22 +272,24 @@
   }
 
   function handlePause() {
-    console.log('handlePause called', { platform, abortController: !!abortController, fetchedArticlesLength: fetchedArticles.length, articleCount });
+    if (!abortController) return;
+
     if (platform === 'rss') {
-      if (!abortController || fetchedArticles.length === 0) {
-        console.log('Early return - abortController:', !!abortController, 'fetchedArticles.length:', fetchedArticles.length);
-        return;
-      }
+      // Use articleCount check since fetchedArticles might have timing issues
+      if (articleCount === 0 && fetchedArticles.length === 0) return;
+
       abortController.abort();
 
       wizard.setContentType('articles');
       wizard.setHandle(feedUrl.trim());
-      wizard.setArticles(fetchedArticles.map((a: any) => ({ ...a, selected: true })));
+      // Use fetchedArticles if available, otherwise create placeholder
+      const articles = fetchedArticles.length > 0 ? fetchedArticles : [];
+      wizard.setArticles(articles.map((a: any) => ({ ...a, selected: true })));
       if (fetchedFeedInfo) {
         wizard.setFeedInfo(fetchedFeedInfo);
       }
     } else {
-      if (!abortController || (fetchedVideos.length === 0 && fetchedPosts.length === 0)) return;
+      if (fetchedVideos.length === 0 && fetchedPosts.length === 0) return;
 
       const cleanHandle = handle.replace('@', '').trim();
       abortController.abort();
@@ -419,9 +420,9 @@
       {/if}
     </button>
 
-    {#if loading && platform === 'rss' && articleCount > 0}
+    {#if loading && platform === 'rss' && fetchedArticles.length > 0}
       <button type="button" class="secondary-btn" on:click={handlePause}>
-        Continue with {articleCount} articles
+        Continue with {fetchedArticles.length} articles
       </button>
     {:else if loading && platform !== 'rss' && videoCount > 0}
       <button type="button" class="secondary-btn" on:click={handlePause}>
