@@ -678,3 +678,202 @@ export async function cleanupExpiredGifts(): Promise<number> {
 
   return count;
 }
+
+// ============================================
+// RSS Gift functions for gifting articles
+// ============================================
+
+export interface RssGift {
+  id: string;
+  claim_token: string;
+  feed_url: string;
+  feed_title: string | null;
+  feed_description: string | null;
+  feed_image_url: string | null;
+  status: 'pending' | 'processing' | 'ready' | 'claimed' | 'expired';
+  claimed_at: string | null;
+  created_at: string;
+  expires_at: string;
+}
+
+export interface RssGiftArticle {
+  id: number;
+  rss_gift_id: string;
+  title: string;
+  summary: string | null;
+  content_markdown: string;
+  published_at: string | null;
+  link: string | null;
+  image_url: string | null;
+  blossom_image_url: string | null;
+  hashtags: string | null;  // JSON string
+  status: 'pending' | 'ready' | 'published';
+  created_at: string;
+}
+
+export async function ensureRssGiftTables(): Promise<void> {
+  const database = await getDb();
+
+  // Check if rss_gifts table exists
+  const result = database.exec(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='rss_gifts'"
+  );
+
+  if (result.length === 0 || result[0].values.length === 0) {
+    // Create rss_gifts tables
+    database.run(`
+      CREATE TABLE IF NOT EXISTS rss_gifts (
+        id TEXT PRIMARY KEY,
+        claim_token TEXT UNIQUE NOT NULL,
+        feed_url TEXT NOT NULL,
+        feed_title TEXT,
+        feed_description TEXT,
+        feed_image_url TEXT,
+        status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'ready', 'claimed', 'expired')),
+        claimed_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        expires_at DATETIME NOT NULL
+      )
+    `);
+
+    database.run(`
+      CREATE TABLE IF NOT EXISTS rss_gift_articles (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        rss_gift_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        summary TEXT,
+        content_markdown TEXT NOT NULL,
+        published_at TEXT,
+        link TEXT,
+        image_url TEXT,
+        blossom_image_url TEXT,
+        hashtags TEXT,
+        status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'ready', 'published')),
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (rss_gift_id) REFERENCES rss_gifts(id) ON DELETE CASCADE
+      )
+    `);
+
+    database.run('CREATE INDEX IF NOT EXISTS idx_rss_gifts_claim_token ON rss_gifts(claim_token)');
+    database.run('CREATE INDEX IF NOT EXISTS idx_rss_gifts_status ON rss_gifts(status)');
+    database.run('CREATE INDEX IF NOT EXISTS idx_rss_gift_articles_rss_gift_id ON rss_gift_articles(rss_gift_id)');
+
+    saveDb(database);
+  }
+}
+
+export async function createRssGift(
+  id: string,
+  claimToken: string,
+  feedUrl: string,
+  feedTitle?: string,
+  feedDescription?: string,
+  feedImageUrl?: string,
+  expiresAt?: string
+): Promise<RssGift> {
+  await ensureRssGiftTables();
+  const database = await getDb();
+
+  // Default expiration: 30 days from now
+  const expiration = expiresAt || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
+  database.run(
+    `INSERT INTO rss_gifts (id, claim_token, feed_url, feed_title, feed_description, feed_image_url, status, expires_at)
+     VALUES (?, ?, ?, ?, ?, ?, 'ready', ?)`,
+    [id, claimToken, feedUrl, feedTitle || null, feedDescription || null, feedImageUrl || null, expiration]
+  );
+  saveDb(database);
+  return (await getRssGift(id))!;
+}
+
+export async function getRssGift(id: string): Promise<RssGift | undefined> {
+  await ensureRssGiftTables();
+  const database = await getDb();
+  const result = database.exec('SELECT * FROM rss_gifts WHERE id = ?', [id]);
+  if (result.length === 0 || result[0].values.length === 0) return undefined;
+  return rowToObject<RssGift>(result[0].columns, result[0].values[0]);
+}
+
+export async function getRssGiftByToken(claimToken: string): Promise<RssGift | undefined> {
+  await ensureRssGiftTables();
+  const database = await getDb();
+  const result = database.exec('SELECT * FROM rss_gifts WHERE claim_token = ?', [claimToken]);
+  if (result.length === 0 || result[0].values.length === 0) return undefined;
+  return rowToObject<RssGift>(result[0].columns, result[0].values[0]);
+}
+
+export async function markRssGiftClaimed(id: string): Promise<void> {
+  const database = await getDb();
+  database.run(
+    `UPDATE rss_gifts SET status = 'claimed', claimed_at = datetime('now') WHERE id = ?`,
+    [id]
+  );
+  saveDb(database);
+}
+
+export async function createRssGiftArticle(
+  rssGiftId: string,
+  title: string,
+  contentMarkdown: string,
+  summary?: string,
+  publishedAt?: string,
+  link?: string,
+  imageUrl?: string,
+  blossomImageUrl?: string,
+  hashtags?: string[]
+): Promise<RssGiftArticle> {
+  await ensureRssGiftTables();
+  const database = await getDb();
+
+  database.run(
+    `INSERT INTO rss_gift_articles (rss_gift_id, title, summary, content_markdown, published_at, link, image_url, blossom_image_url, hashtags, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready')`,
+    [
+      rssGiftId,
+      title,
+      summary || null,
+      contentMarkdown,
+      publishedAt || null,
+      link || null,
+      imageUrl || null,
+      blossomImageUrl || null,
+      hashtags ? JSON.stringify(hashtags) : null
+    ]
+  );
+  saveDb(database);
+
+  // Get the last inserted article
+  const result = database.exec(
+    'SELECT * FROM rss_gift_articles WHERE rss_gift_id = ? ORDER BY id DESC LIMIT 1',
+    [rssGiftId]
+  );
+  return rowToObject<RssGiftArticle>(result[0].columns, result[0].values[0]);
+}
+
+export async function getRssGiftArticles(rssGiftId: string): Promise<RssGiftArticle[]> {
+  await ensureRssGiftTables();
+  const database = await getDb();
+  const result = database.exec(
+    'SELECT * FROM rss_gift_articles WHERE rss_gift_id = ? ORDER BY id',
+    [rssGiftId]
+  );
+  if (result.length === 0) return [];
+  return result[0].values.map(row => rowToObject<RssGiftArticle>(result[0].columns, row));
+}
+
+export async function updateRssGiftArticleStatus(
+  articleId: number,
+  status: RssGiftArticle['status']
+): Promise<void> {
+  const database = await getDb();
+  database.run('UPDATE rss_gift_articles SET status = ? WHERE id = ?', [status, articleId]);
+  saveDb(database);
+}
+
+export async function getRssGiftByTokenWithArticles(claimToken: string): Promise<{ gift: RssGift; articles: RssGiftArticle[] } | null> {
+  const gift = await getRssGiftByToken(claimToken);
+  if (!gift) return null;
+
+  const articles = await getRssGiftArticles(gift.id);
+  return { gift, articles };
+}
