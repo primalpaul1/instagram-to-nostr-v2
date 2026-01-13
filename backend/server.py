@@ -985,9 +985,8 @@ async def fetch_rss_stream(feed_url: str):
                     'inline_images': inline_images
                 })
 
-                # Send progress updates
-                if len(articles) % 5 == 0:
-                    yield f"data: {json.dumps({'progress': True, 'count': len(articles), 'articles': articles, 'feed': feed_meta})}\n\n"
+                # Send progress updates for every article so frontend always has latest
+                yield f"data: {json.dumps({'progress': True, 'count': len(articles), 'articles': articles, 'feed': feed_meta})}\n\n"
 
             # Send final result
             yield f"data: {json.dumps({'done': True, 'articles': articles, 'feed': feed_meta, 'source': 'rss'})}\n\n"
