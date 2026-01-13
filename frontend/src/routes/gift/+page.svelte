@@ -218,7 +218,12 @@
     abortController = new AbortController();
 
     try {
-      const endpoint = `/api/rss-stream?feed_url=${encodeURIComponent(feedUrl.trim())}`;
+      // Auto-prepend https:// if not present
+      let url = feedUrl.trim();
+      if (!url.startsWith('http://') && !url.startsWith('https://')) {
+        url = 'https://' + url;
+      }
+      const endpoint = `/api/rss-stream?feed_url=${encodeURIComponent(url)}`;
 
       const response = await fetch(endpoint, {
         signal: abortController.signal
@@ -831,13 +836,22 @@
           {#if platform === 'rss'}
             <div class="input-group">
               <label for="feedUrl">Blog or RSS Feed URL</label>
-              <input
-                id="feedUrl"
-                type="url"
-                bind:value={feedUrl}
-                placeholder="https://example.com/feed or blog URL"
-                autocomplete="off"
-              />
+              <div class="input-wrapper">
+                <span class="url-prefix">https://</span>
+                <input
+                  id="feedUrl"
+                  type="text"
+                  bind:value={feedUrl}
+                  placeholder="yourname.substack.com"
+                  autocomplete="off"
+                />
+              </div>
+              <div class="feed-examples">
+                <span class="examples-label">Examples:</span>
+                <span class="example">yourname.substack.com</span>
+                <span class="example">medium.com/@yourname</span>
+                <span class="example">yourblog.com/feed</span>
+              </div>
             </div>
           {:else}
             <div class="input-group">
@@ -1607,6 +1621,32 @@
   .at-symbol {
     color: var(--text-muted);
     font-size: 1.125rem;
+  }
+
+  .url-prefix {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    white-space: nowrap;
+  }
+
+  .feed-examples {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin-top: 0.5rem;
+  }
+
+  .examples-label {
+    color: var(--text-secondary);
+  }
+
+  .example {
+    background: rgba(255, 255, 255, 0.05);
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.25rem;
+    font-family: monospace;
   }
 
   .input-wrapper input {
