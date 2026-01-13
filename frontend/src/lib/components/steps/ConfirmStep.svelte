@@ -1,16 +1,18 @@
 <script lang="ts">
-  import { wizard, selectedPosts, selectedReels, selectedImagePosts } from '$lib/stores/wizard';
+  import { wizard, selectedPosts, selectedReels, selectedImagePosts, selectedArticles } from '$lib/stores/wizard';
   import { hexToNpub } from '$lib/nip46';
 
   let loading = false;
 
   $: isNip46Mode = $wizard.authMode === 'nip46';
+  $: isArticlesMode = $wizard.contentType === 'articles';
   $: displayNpub = isNip46Mode
     ? ($wizard.nip46Pubkey ? hexToNpub($wizard.nip46Pubkey) : '')
     : $wizard.keyPair?.npub || '';
 
   $: reelCount = $selectedReels.length;
   $: imagePostCount = $selectedImagePosts.length;
+  $: articleCount = $selectedArticles.length;
 
   function handleBack() {
     wizard.setStep('videos');
@@ -26,6 +28,9 @@
     try {
       if (isNip46Mode) {
         wizard.setStep('progress-nip46');
+      } else if (isArticlesMode) {
+        // Articles are published directly from ProgressStep, no job needed
+        wizard.setStep('progress');
       } else {
         const posts = $selectedPosts.map(p => ({
           id: p.id,
@@ -68,14 +73,14 @@
 
 <div class="confirm-step">
   <div class="header">
-    <h2>Ready to own your posts</h2>
+    <h2>Ready to own your {isArticlesMode ? 'articles' : 'posts'}</h2>
     <p class="subtitle">Review what you're bringing to Primal</p>
   </div>
 
   <div class="summary-card">
     <div class="summary-item">
-      <span class="summary-label">Instagram</span>
-      <span class="summary-value">@{$wizard.handle}</span>
+      <span class="summary-label">{isArticlesMode ? 'Source' : 'Instagram'}</span>
+      <span class="summary-value">{isArticlesMode ? $wizard.handle : `@${$wizard.handle}`}</span>
     </div>
     {#if isNip46Mode}
       <div class="divider"></div>
@@ -98,11 +103,15 @@
     <div class="summary-item highlight">
       <span class="summary-label">Content</span>
       <span class="content-counts">
-        {#if reelCount > 0}
-          <span class="count-badge reels">{reelCount} reel{reelCount !== 1 ? 's' : ''}</span>
-        {/if}
-        {#if imagePostCount > 0}
-          <span class="count-badge posts">{imagePostCount} post{imagePostCount !== 1 ? 's' : ''}</span>
+        {#if isArticlesMode}
+          <span class="count-badge articles">{articleCount} article{articleCount !== 1 ? 's' : ''}</span>
+        {:else}
+          {#if reelCount > 0}
+            <span class="count-badge reels">{reelCount} reel{reelCount !== 1 ? 's' : ''}</span>
+          {/if}
+          {#if imagePostCount > 0}
+            <span class="count-badge posts">{imagePostCount} post{imagePostCount !== 1 ? 's' : ''}</span>
+          {/if}
         {/if}
       </span>
     </div>
@@ -111,35 +120,57 @@
   <div class="preview-section">
     <div class="preview-header">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-        <circle cx="8.5" cy="8.5" r="1.5"/>
-        <polyline points="21 15 16 10 5 21"/>
+        {#if isArticlesMode}
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+          <line x1="16" y1="13" x2="8" y2="13"/>
+          <line x1="16" y1="17" x2="8" y2="17"/>
+        {:else}
+          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+          <circle cx="8.5" cy="8.5" r="1.5"/>
+          <polyline points="21 15 16 10 5 21"/>
+        {/if}
       </svg>
-      <span>Selected content</span>
+      <span>Selected {isArticlesMode ? 'articles' : 'content'}</span>
     </div>
     <div class="preview-list">
-      {#each $selectedPosts as post, i}
-        <div class="preview-item">
-          <span class="item-number">{i + 1}</span>
-          <span class="item-type" class:reel={post.post_type === 'reel'} class:carousel={post.post_type === 'carousel'}>
-            {#if post.post_type === 'reel'}
+      {#if isArticlesMode}
+        {#each $selectedArticles as article, i}
+          <div class="preview-item">
+            <span class="item-number">{i + 1}</span>
+            <span class="item-type article">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                <polygon points="5 3 19 12 5 21 5 3"/>
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
               </svg>
-            {:else if post.post_type === 'carousel'}
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                <rect x="2" y="2" width="13" height="13" rx="2"/>
-                <rect x="9" y="9" width="13" height="13" rx="2"/>
-              </svg>
-            {:else}
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                <rect x="3" y="3" width="18" height="18" rx="2"/>
-              </svg>
-            {/if}
-          </span>
-          <span class="item-title">{post.caption?.slice(0, 40) || 'Untitled'}{(post.caption?.length ?? 0) > 40 ? '...' : ''}</span>
-        </div>
-      {/each}
+            </span>
+            <span class="item-title">{article.title?.slice(0, 40) || 'Untitled'}{(article.title?.length ?? 0) > 40 ? '...' : ''}</span>
+          </div>
+        {/each}
+      {:else}
+        {#each $selectedPosts as post, i}
+          <div class="preview-item">
+            <span class="item-number">{i + 1}</span>
+            <span class="item-type" class:reel={post.post_type === 'reel'} class:carousel={post.post_type === 'carousel'}>
+              {#if post.post_type === 'reel'}
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <polygon points="5 3 19 12 5 21 5 3"/>
+                </svg>
+              {:else if post.post_type === 'carousel'}
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <rect x="2" y="2" width="13" height="13" rx="2"/>
+                  <rect x="9" y="9" width="13" height="13" rx="2"/>
+                </svg>
+              {:else}
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <rect x="3" y="3" width="18" height="18" rx="2"/>
+                </svg>
+              {/if}
+            </span>
+            <span class="item-title">{post.caption?.slice(0, 40) || 'Untitled'}{(post.caption?.length ?? 0) > 40 ? '...' : ''}</span>
+          </div>
+        {/each}
+      {/if}
     </div>
   </div>
 
@@ -152,9 +183,15 @@
       <span>What happens next</span>
     </div>
     <ul class="info-list">
-      <li>Content downloads from Instagram</li>
-      <li>Upload to Blossom media server</li>
-      <li>Publish to Nostr relays</li>
+      {#if isArticlesMode}
+        <li>Upload images to Blossom media server</li>
+        <li>Create long-form content events</li>
+        <li>Publish to Nostr relays</li>
+      {:else}
+        <li>Content downloads from Instagram</li>
+        <li>Upload to Blossom media server</li>
+        <li>Publish to Nostr relays</li>
+      {/if}
     </ul>
     {#if isNip46Mode}
       <div class="warning-note">
@@ -180,7 +217,7 @@
         <span class="spinner"></span>
         Starting...
       {:else}
-        Claim My Posts
+        Claim My {isArticlesMode ? 'Articles' : 'Posts'}
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M5 12h14M12 5l7 7-7 7"/>
         </svg>
@@ -291,6 +328,15 @@
   .count-badge.posts {
     background: rgba(var(--success-rgb), 0.2);
     color: var(--success);
+  }
+
+  .count-badge.articles {
+    background: rgba(var(--accent-rgb), 0.2);
+    color: var(--accent);
+  }
+
+  .item-type.article {
+    color: var(--accent);
   }
 
   .preview-section {
