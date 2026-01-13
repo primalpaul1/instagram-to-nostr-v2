@@ -343,11 +343,10 @@
       on:click={() => platform = 'rss'}
       disabled={loading}
     >
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M4 11a9 9 0 0 1 9 9M4 4a16 16 0 0 1 16 16"/>
-        <circle cx="5" cy="19" r="1" fill="currentColor"/>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M6.18 15.64a2.18 2.18 0 0 1 2.18 2.18C8.36 19 7.38 20 6.18 20C5 20 4 19 4 17.82a2.18 2.18 0 0 1 2.18-2.18M4 4.44A15.56 15.56 0 0 1 19.56 20h-2.83A12.73 12.73 0 0 0 4 7.27V4.44m0 5.66a9.9 9.9 0 0 1 9.9 9.9h-2.83A7.07 7.07 0 0 0 4 12.93V10.1Z"/>
       </svg>
-      Substack (RSS)
+      RSS
     </button>
   </div>
 
@@ -553,35 +552,33 @@
   .platform-selector {
     display: flex;
     gap: 0.5rem;
+    justify-content: center;
     margin-bottom: 1rem;
   }
 
   .platform-btn {
-    flex: 1;
     display: flex;
     align-items: center;
-    justify-content: center;
     gap: 0.5rem;
-    padding: 0.75rem 1rem;
-    background: var(--bg-tertiary);
+    padding: 0.625rem 1rem;
     border: 1px solid var(--border-light);
-    border-radius: 0.75rem;
+    border-radius: 0.5rem;
+    background: transparent;
     color: var(--text-secondary);
-    font-size: 0.9375rem;
+    font-size: 0.875rem;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all 0.15s ease;
   }
 
   .platform-btn:hover:not(:disabled) {
-    border-color: var(--accent);
-    color: var(--text-primary);
+    border-color: var(--text-secondary);
   }
 
   .platform-btn.active {
-    background: var(--accent);
     border-color: var(--accent);
-    color: white;
+    background: rgba(147, 51, 234, 0.1);
+    color: var(--accent);
   }
 
   .platform-btn:disabled {
@@ -590,30 +587,14 @@
   }
 
   /* Mobile responsive styles for platform selector */
-  @media (max-width: 480px) {
+  @media (max-width: 400px) {
     .platform-selector {
       flex-wrap: wrap;
     }
 
     .platform-btn {
-      padding: 0.625rem 0.75rem;
+      padding: 0.5rem 0.75rem;
       font-size: 0.8125rem;
-      gap: 0.375rem;
-    }
-
-    .platform-btn svg {
-      width: 16px;
-      height: 16px;
-    }
-  }
-
-  @media (max-width: 360px) {
-    .platform-selector {
-      flex-direction: column;
-    }
-
-    .platform-btn {
-      width: 100%;
     }
   }
 
