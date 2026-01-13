@@ -181,7 +181,10 @@
 
       while (true) {
         const { done, value } = await reader.read();
-        if (done) break;
+        if (done) {
+          console.log('Stream ended, remaining buffer:', buffer.length, 'chars');
+          break;
+        }
 
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split('\n\n');
@@ -192,6 +195,7 @@
             const jsonStr = line.slice(6);
             try {
               const data = JSON.parse(jsonStr);
+              console.log('Parsed SSE:', Object.keys(data));
 
               if (data.error) {
                 throw new Error(data.error);
@@ -221,6 +225,7 @@
               }
 
               if (data.done) {
+                console.log('DONE received, articles:', data.articles?.length);
                 if (platform === 'rss') {
                   if (!data.articles || data.articles.length === 0) {
                     throw new Error('No articles found in this feed');
@@ -250,6 +255,7 @@
                 return;
               }
             } catch (parseErr) {
+              console.log('Parse error:', parseErr instanceof Error ? parseErr.message : parseErr);
               if (parseErr instanceof Error && parseErr.message !== 'Unexpected end of JSON input') {
                 throw parseErr;
               }
