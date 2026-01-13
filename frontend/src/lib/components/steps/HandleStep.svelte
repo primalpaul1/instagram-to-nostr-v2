@@ -589,6 +589,34 @@
     cursor: not-allowed;
   }
 
+  /* Mobile responsive styles for platform selector */
+  @media (max-width: 480px) {
+    .platform-selector {
+      flex-wrap: wrap;
+    }
+
+    .platform-btn {
+      padding: 0.625rem 0.75rem;
+      font-size: 0.8125rem;
+      gap: 0.375rem;
+    }
+
+    .platform-btn svg {
+      width: 16px;
+      height: 16px;
+    }
+  }
+
+  @media (max-width: 360px) {
+    .platform-selector {
+      flex-direction: column;
+    }
+
+    .platform-btn {
+      width: 100%;
+    }
+  }
+
   form {
     display: flex;
     flex-direction: column;
