@@ -102,7 +102,7 @@
     try {
       let endpoint: string;
       if (platform === 'rss') {
-        endpoint = `/api/rss-stream?url=${encodeURIComponent(feedUrl.trim())}`;
+        endpoint = `/api/rss-stream?feed_url=${encodeURIComponent(feedUrl.trim())}`;
       } else {
         const cleanHandle = handle.replace('@', '').trim();
         endpoint = platform === 'tiktok'
