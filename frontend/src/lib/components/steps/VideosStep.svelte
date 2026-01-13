@@ -75,7 +75,9 @@
   }
 
   function handleContinue() {
-    if (totalSelectedCount === 0) return;
+    // Check appropriate count based on content type
+    const count = $wizard.contentType === 'articles' ? $selectedArticlesCount : totalSelectedCount;
+    if (count === 0) return;
     wizard.setStep('confirm');
   }
 
