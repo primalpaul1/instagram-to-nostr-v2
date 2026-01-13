@@ -451,7 +451,7 @@ export interface Gift {
   ig_handle: string;
   profile_data: string | null;  // JSON string
   salt: string | null;  // No longer used - kept for backward compatibility
-  gift_type: 'posts' | 'articles';
+  gift_type: 'posts' | 'articles' | 'combined';
   status: 'pending' | 'processing' | 'ready' | 'claimed' | 'expired';
   claimed_at: string | null;
   created_at: string;
@@ -503,7 +503,7 @@ export async function ensureGiftTables(): Promise<void> {
         ig_handle TEXT NOT NULL,
         profile_data TEXT,
         salt TEXT NOT NULL,
-        gift_type TEXT DEFAULT 'posts' CHECK (gift_type IN ('posts', 'articles')),
+        gift_type TEXT DEFAULT 'posts' CHECK (gift_type IN ('posts', 'articles', 'combined')),
         status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'ready', 'claimed', 'expired')),
         claimed_at DATETIME,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -558,7 +558,7 @@ export async function ensureGiftTables(): Promise<void> {
     const columns = colCheck.length > 0 ? colCheck[0].values.map(row => row[1]) : [];
 
     if (!columns.includes('gift_type')) {
-      database.run("ALTER TABLE gifts ADD COLUMN gift_type TEXT DEFAULT 'posts' CHECK (gift_type IN ('posts', 'articles'))");
+      database.run("ALTER TABLE gifts ADD COLUMN gift_type TEXT DEFAULT 'posts' CHECK (gift_type IN ('posts', 'articles', 'combined'))");
       saveDb(database);
     }
 
@@ -597,7 +597,7 @@ export async function createGift(
   igHandle: string,
   profileData?: string,
   expiresAt?: string,
-  giftType: 'posts' | 'articles' = 'posts'
+  giftType: 'posts' | 'articles' | 'combined' = 'posts'
 ): Promise<Gift> {
   await ensureGiftTables();
   const database = await getDb();
@@ -782,6 +782,15 @@ export async function getGiftByTokenWithArticles(claimToken: string): Promise<{ 
 
   const articles = await getGiftArticles(gift.id);
   return { gift, articles };
+}
+
+export async function getGiftByTokenWithBoth(claimToken: string): Promise<{ gift: Gift; posts: GiftPost[]; articles: GiftArticle[] } | null> {
+  const gift = await getGiftByToken(claimToken);
+  if (!gift) return null;
+
+  const posts = await getGiftPosts(gift.id);
+  const articles = await getGiftArticles(gift.id);
+  return { gift, posts, articles };
 }
 
 export async function getPendingGifts(): Promise<Gift[]> {

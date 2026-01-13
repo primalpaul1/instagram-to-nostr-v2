@@ -54,7 +54,7 @@
   let step: Step = 'input';
   let handle = '';
   let feedUrl = '';
-  let platform: 'instagram' | 'tiktok' | 'rss' = 'instagram';
+  let platform: 'instagram' | 'tiktok' = 'instagram';
   let posts: Post[] = [];
   let articles: Article[] = [];
   let fetchedPosts: any[] = [];
@@ -65,6 +65,14 @@
   let error = '';
   let claimUrl = '';
   let abortController: AbortController | null = null;
+
+  // Optional articles section (for combined gifts)
+  let showArticleSection = false;
+  let articleFeedUrl = '';
+  let articlesFetching = false;
+  let articlesError = '';
+  let articlesFetchCount = 0;
+  let articleAbortController: AbortController | null = null;
 
   // Manual post adding
   let showAddModal = false;
@@ -80,38 +88,29 @@
   $: imagePosts = posts.filter(p => p.post_type === 'image' || p.post_type === 'carousel');
   $: selectedPosts = posts.filter(p => p.selected);
   $: selectedArticles = articles.filter(a => a.selected);
-  $: selectedCount = platform === 'rss' ? selectedArticles.length : selectedPosts.length;
+  $: selectedPostCount = selectedPosts.length;
+  $: selectedArticleCount = selectedArticles.length;
+  $: totalSelectedCount = selectedPostCount + selectedArticleCount;
 
   let activeTab: 'reels' | 'posts' = 'reels';
   $: currentPosts = activeTab === 'reels' ? reelPosts : imagePosts;
   $: currentSelectedCount = currentPosts.filter(p => p.selected).length;
 
   async function fetchContent() {
-    if (platform === 'rss') {
-      if (!feedUrl.trim()) return;
-    } else {
-      if (!handle.trim()) return;
-    }
+    if (!handle.trim()) return;
 
     step = 'fetching';
     error = '';
     posts = [];
-    articles = [];
     fetchedPosts = [];
-    fetchedArticles = [];
     fetchCount = 0;
     abortController = new AbortController();
 
     try {
-      let endpoint: string;
-      if (platform === 'rss') {
-        endpoint = `/api/rss-stream?feed_url=${encodeURIComponent(feedUrl.trim())}`;
-      } else {
-        const cleanHandle = handle.replace('@', '').trim();
-        endpoint = platform === 'tiktok'
-          ? `/api/tiktok-stream/${encodeURIComponent(cleanHandle)}`
-          : `/api/videos-stream/${encodeURIComponent(cleanHandle)}`;
-      }
+      const cleanHandle = handle.replace('@', '').trim();
+      const endpoint = platform === 'tiktok'
+        ? `/api/tiktok-stream/${encodeURIComponent(cleanHandle)}`
+        : `/api/videos-stream/${encodeURIComponent(cleanHandle)}`;
 
       const response = await fetch(endpoint, {
         signal: abortController.signal
@@ -149,50 +148,20 @@
 
               if (data.progress) {
                 fetchCount = data.count;
-                if (platform === 'rss') {
-                  if (data.articles) {
-                    fetchedArticles = data.articles;
-                  }
-                  if (data.feed) {
-                    feedInfo = data.feed;
-                  }
-                } else {
-                  if (data.posts) {
-                    fetchedPosts = data.posts;
-                  }
-                  if (data.profile) {
-                    profile = data.profile;
-                  }
+                if (data.posts) {
+                  fetchedPosts = data.posts;
+                }
+                if (data.profile) {
+                  profile = data.profile;
                 }
               }
 
               if (data.done) {
-                if (platform === 'rss') {
-                  if (!data.articles || data.articles.length === 0) {
-                    throw new Error('No articles found in this feed');
-                  }
-                  articles = (data.articles || []).map((a: any, idx: number) => ({
-                    ...a,
-                    id: a.id || `article-${idx}`,
-                    selected: true
-                  }));
-                  feedInfo = data.feed || { url: feedUrl.trim() };
-                  // Set profile from feed author info (for Substack)
-                  if (data.feed && (data.feed.author_name || data.feed.title)) {
-                    profile = {
-                      username: data.feed.author_name || data.feed.title,
-                      display_name: data.feed.author_name || data.feed.title,
-                      bio: data.feed.author_bio || data.feed.description,
-                      profile_picture_url: data.feed.author_image || data.feed.image_url
-                    };
-                  }
-                } else {
-                  if (!data.posts || data.posts.length === 0) {
-                    throw new Error('No content found for this account');
-                  }
-                  posts = (data.posts || []).map((p: any) => ({ ...p, selected: true }));
-                  profile = data.profile || null;
+                if (!data.posts || data.posts.length === 0) {
+                  throw new Error('No content found for this account');
                 }
+                posts = (data.posts || []).map((p: any) => ({ ...p, selected: true }));
+                profile = data.profile || null;
                 step = 'select';
                 return;
               }
@@ -217,21 +186,121 @@
     }
   }
 
-  function pauseFetch() {
-    if (!abortController) return;
-    if (platform === 'rss') {
-      if (fetchedArticles.length === 0) return;
-      abortController.abort();
-      articles = fetchedArticles.map((a: any, idx: number) => ({
-        ...a,
-        id: a.id || `article-${idx}`,
-        selected: true
-      }));
-    } else {
-      if (fetchedPosts.length === 0) return;
-      abortController.abort();
-      posts = fetchedPosts.map((p: any) => ({ ...p, selected: true }));
+  // Fetch articles for combined gift
+  async function fetchArticles() {
+    if (!articleFeedUrl.trim()) return;
+
+    articlesFetching = true;
+    articlesError = '';
+    articles = [];
+    fetchedArticles = [];
+    articlesFetchCount = 0;
+    articleAbortController = new AbortController();
+
+    try {
+      const endpoint = `/api/rss-stream?feed_url=${encodeURIComponent(articleFeedUrl.trim())}`;
+
+      const response = await fetch(endpoint, {
+        signal: articleAbortController.signal
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch articles');
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error('Streaming not supported');
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const jsonStr = line.slice(6);
+            try {
+              const data = JSON.parse(jsonStr);
+
+              if (data.error) {
+                throw new Error(data.error);
+              }
+
+              if (data.progress) {
+                articlesFetchCount = data.count;
+                if (data.articles) {
+                  fetchedArticles = data.articles;
+                }
+                if (data.feed) {
+                  feedInfo = data.feed;
+                }
+              }
+
+              if (data.done) {
+                if (!data.articles || data.articles.length === 0) {
+                  throw new Error('No articles found in this feed');
+                }
+                articles = (data.articles || []).map((a: any, idx: number) => ({
+                  ...a,
+                  id: a.id || `article-${idx}`,
+                  selected: true
+                }));
+                feedInfo = data.feed || { url: articleFeedUrl.trim() };
+                articlesFetching = false;
+                return;
+              }
+            } catch (parseErr) {
+              if (parseErr instanceof Error && parseErr.message !== 'Unexpected end of JSON input') {
+                throw parseErr;
+              }
+            }
+          }
+        }
+      }
+
+      throw new Error('Stream ended unexpectedly');
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') {
+        articlesFetching = false;
+        return;
+      }
+      articlesError = err instanceof Error ? err.message : 'An error occurred';
+    } finally {
+      articlesFetching = false;
+      articleAbortController = null;
     }
+  }
+
+  function pauseArticlesFetch() {
+    if (!articleAbortController || fetchedArticles.length === 0) return;
+    articleAbortController.abort();
+    articles = fetchedArticles.map((a: any, idx: number) => ({
+      ...a,
+      id: a.id || `article-${idx}`,
+      selected: true
+    }));
+    articlesFetching = false;
+  }
+
+  function removeArticles() {
+    articles = [];
+    feedInfo = null;
+    articleFeedUrl = '';
+    showArticleSection = false;
+  }
+
+  function pauseFetch() {
+    if (!abortController || fetchedPosts.length === 0) return;
+    abortController.abort();
+    posts = fetchedPosts.map((p: any) => ({ ...p, selected: true }));
     step = 'select';
   }
 
@@ -268,45 +337,43 @@
   }
 
   async function createGift() {
-    if (selectedCount === 0) return;
+    if (selectedPostCount === 0) return;
 
     step = 'creating';
     error = '';
 
     try {
-      let body: any;
+      const cleanHandle = handle.replace('@', '').trim();
+      const hasArticles = selectedArticleCount > 0;
+      const giftType = hasArticles ? 'combined' : 'posts';
 
-      if (platform === 'rss') {
-        body = {
-          gift_type: 'articles',
-          articles: selectedArticles.map(a => ({
-            title: a.title,
-            summary: a.summary,
-            content_markdown: a.content_markdown,
-            published_at: a.published_at,
-            link: a.link,
-            image_url: a.image_url,
-            blossom_image_url: a.blossom_image_url,
-            hashtags: a.hashtags
-          })),
-          feed: feedInfo,
-          profile
-        };
-      } else {
-        const cleanHandle = handle.replace('@', '').trim();
-        body = {
-          gift_type: 'posts',
-          handle: cleanHandle,
-          posts: selectedPosts.map(p => ({
-            id: p.id,
-            post_type: p.post_type,
-            caption: p.caption,
-            original_date: p.original_date,
-            thumbnail_url: p.thumbnail_url,
-            media_items: p.media_items
-          })),
-          profile
-        };
+      const body: any = {
+        gift_type: giftType,
+        handle: cleanHandle,
+        posts: selectedPosts.map(p => ({
+          id: p.id,
+          post_type: p.post_type,
+          caption: p.caption,
+          original_date: p.original_date,
+          thumbnail_url: p.thumbnail_url,
+          media_items: p.media_items
+        })),
+        profile
+      };
+
+      // Add articles if this is a combined gift
+      if (hasArticles) {
+        body.articles = selectedArticles.map(a => ({
+          title: a.title,
+          summary: a.summary,
+          content_markdown: a.content_markdown,
+          published_at: a.published_at,
+          link: a.link,
+          image_url: a.image_url,
+          blossom_image_url: a.blossom_image_url,
+          hashtags: a.hashtags
+        }));
+        body.feed = feedInfo;
       }
 
       const response = await fetch('/api/gifts', {
@@ -340,6 +407,12 @@
     fetchCount = 0;
     error = '';
     claimUrl = '';
+    // Reset article section state
+    showArticleSection = false;
+    articleFeedUrl = '';
+    articlesFetching = false;
+    articlesError = '';
+    articlesFetchCount = 0;
   }
 
   function copyClaimUrl() {
@@ -484,47 +557,22 @@
               </svg>
               TikTok
             </button>
-            <button
-              type="button"
-              class="platform-btn"
-              class:active={platform === 'rss'}
-              on:click={() => platform = 'rss'}
-            >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M6.18 15.64a2.18 2.18 0 0 1 2.18 2.18C8.36 19 7.38 20 6.18 20C5 20 4 19 4 17.82a2.18 2.18 0 0 1 2.18-2.18M4 4.44A15.56 15.56 0 0 1 19.56 20h-2.83A12.73 12.73 0 0 0 4 7.27V4.44m0 5.66a9.9 9.9 0 0 1 9.9 9.9h-2.83A7.07 7.07 0 0 0 4 12.93V10.1Z"/>
-              </svg>
-              RSS
-            </button>
           </div>
 
-          {#if platform === 'rss'}
-            <div class="input-group">
-              <label for="feed-url">RSS Feed URL</label>
+          <div class="input-group">
+            <label for="handle">{platform === 'tiktok' ? 'TikTok' : 'Instagram'} Handle</label>
+            <div class="input-wrapper">
+              <span class="at-symbol">@</span>
               <input
-                id="feed-url"
-                type="url"
-                bind:value={feedUrl}
-                placeholder="https://example.com/feed.xml"
+                id="handle"
+                type="text"
+                bind:value={handle}
+                placeholder="username"
                 autocomplete="off"
-                class="full-input"
+                autocapitalize="off"
               />
             </div>
-          {:else}
-            <div class="input-group">
-              <label for="handle">{platform === 'tiktok' ? 'TikTok' : 'Instagram'} Handle</label>
-              <div class="input-wrapper">
-                <span class="at-symbol">@</span>
-                <input
-                  id="handle"
-                  type="text"
-                  bind:value={handle}
-                  placeholder="username"
-                  autocomplete="off"
-                  autocapitalize="off"
-                />
-              </div>
-            </div>
-          {/if}
+          </div>
 
           <div class="info-box">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -534,8 +582,8 @@
             <p>The recipient will choose a password to create their Nostr account. You won't have access to their private key.</p>
           </div>
 
-          <button type="submit" class="primary-btn" disabled={platform === 'rss' ? !feedUrl.trim() : !handle.trim()}>
-            Fetch {platform === 'rss' ? 'Articles' : 'Content'}
+          <button type="submit" class="primary-btn" disabled={!handle.trim()}>
+            Fetch Content
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M5 12h14M12 5l7 7-7 7"/>
             </svg>
@@ -546,11 +594,11 @@
     {:else if step === 'fetching'}
       <div class="fetching-step">
         <div class="spinner-large"></div>
-        <h2>Fetching {platform === 'rss' ? 'articles' : 'content'}...</h2>
-        <p class="count">{fetchCount} {platform === 'rss' ? 'articles' : 'posts'} found</p>
-        {#if platform === 'rss' ? fetchedArticles.length > 0 : fetchedPosts.length > 0}
+        <h2>Fetching content...</h2>
+        <p class="count">{fetchCount} posts found</p>
+        {#if fetchedPosts.length > 0}
           <button class="secondary-btn" on:click={pauseFetch}>
-            Continue with {platform === 'rss' ? fetchedArticles.length : fetchedPosts.length} {platform === 'rss' ? 'articles' : 'posts'}
+            Continue with {fetchedPosts.length} posts
           </button>
         {/if}
       </div>
@@ -559,11 +607,7 @@
       <div class="select-step">
         <div class="select-header">
           <div>
-            {#if platform === 'rss'}
-              <h2>Select articles from {feedInfo?.title || 'RSS Feed'}</h2>
-            {:else}
-              <h2>Select content for @{handle}</h2>
-            {/if}
+            <h2>Select content for @{handle}</h2>
             <p class="subtitle">Recipient will claim with their own password</p>
           </div>
           <button class="back-btn" on:click={reset}>Start Over</button>
@@ -573,7 +617,7 @@
           <div class="error-banner">{error}</div>
         {/if}
 
-        {#if platform === 'rss'}
+        {#if false}
           <!-- RSS Articles View -->
           <div class="toolbar">
             <div class="selection-badge" class:has-selection={selectedArticles.length > 0}>
@@ -691,11 +735,108 @@
           </div>
         {/if}
 
+        <!-- Optional Articles Section -->
+        <div class="articles-section">
+          {#if !showArticleSection && articles.length === 0}
+            <button class="add-articles-btn" on:click={() => showArticleSection = true}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 5v14M5 12h14"/>
+              </svg>
+              Add Blog Articles (Optional)
+            </button>
+          {:else if showArticleSection && articles.length === 0}
+            <div class="articles-input-section">
+              <div class="articles-header">
+                <h3>Add Blog Articles</h3>
+                <button class="text-btn" on:click={() => showArticleSection = false}>Cancel</button>
+              </div>
+
+              {#if articlesError}
+                <div class="error-banner">{articlesError}</div>
+              {/if}
+
+              {#if articlesFetching}
+                <div class="articles-fetching">
+                  <div class="spinner-small"></div>
+                  <span>Fetching articles... ({articlesFetchCount} found)</span>
+                  {#if fetchedArticles.length > 0}
+                    <button class="text-btn" on:click={pauseArticlesFetch}>
+                      Use {fetchedArticles.length} articles
+                    </button>
+                  {/if}
+                </div>
+              {:else}
+                <div class="input-group">
+                  <label for="article-feed-url">RSS Feed URL</label>
+                  <input
+                    id="article-feed-url"
+                    type="url"
+                    bind:value={articleFeedUrl}
+                    placeholder="https://example.substack.com/feed"
+                    class="full-input"
+                  />
+                </div>
+                <button class="secondary-btn" disabled={!articleFeedUrl.trim()} on:click={fetchArticles}>
+                  Fetch Articles
+                </button>
+              {/if}
+            </div>
+          {:else if articles.length > 0}
+            <!-- Articles List -->
+            <div class="articles-added-section">
+              <div class="articles-header">
+                <h3>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M6.18 15.64a2.18 2.18 0 0 1 2.18 2.18C8.36 19 7.38 20 6.18 20C5 20 4 19 4 17.82a2.18 2.18 0 0 1 2.18-2.18M4 4.44A15.56 15.56 0 0 1 19.56 20h-2.83A12.73 12.73 0 0 0 4 7.27V4.44m0 5.66a9.9 9.9 0 0 1 9.9 9.9h-2.83A7.07 7.07 0 0 0 4 12.93V10.1Z"/>
+                  </svg>
+                  Blog Articles from {feedInfo?.title || 'RSS Feed'}
+                </h3>
+                <button class="text-btn danger" on:click={removeArticles}>Remove</button>
+              </div>
+
+              <div class="articles-toolbar">
+                <div class="selection-badge" class:has-selection={selectedArticleCount > 0}>
+                  <span class="count">{selectedArticleCount}</span>
+                  <span class="label">of {articles.length} selected</span>
+                </div>
+                <div class="toolbar-actions">
+                  <button class="text-btn" on:click={selectAllArticles}>Select All</button>
+                  <button class="text-btn" on:click={deselectAllArticles}>Clear</button>
+                </div>
+              </div>
+
+              <div class="articles-list compact">
+                {#each articles as article (article.id)}
+                  <button class="article-card compact" class:selected={article.selected} on:click={() => toggleArticle(article.id)}>
+                    <div class="article-checkbox" class:checked={article.selected}>
+                      {#if article.selected}
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                          <path d="M20 6L9 17l-5-5"/>
+                        </svg>
+                      {/if}
+                    </div>
+                    <div class="article-info compact">
+                      <h4 class="article-title">{article.title}</h4>
+                      {#if article.published_at}
+                        <span class="date">{formatDate(article.published_at)}</span>
+                      {/if}
+                    </div>
+                  </button>
+                {/each}
+              </div>
+            </div>
+          {/if}
+        </div>
+
         <div class="actions">
           <div class="total-selected">
-            Total: <strong>{selectedCount}</strong> {platform === 'rss' ? 'articles' : 'items'} selected
+            {#if selectedArticleCount > 0}
+              Total: <strong>{selectedPostCount}</strong> posts + <strong>{selectedArticleCount}</strong> articles
+            {:else}
+              Total: <strong>{selectedPostCount}</strong> items selected
+            {/if}
           </div>
-          <button class="primary-btn" disabled={selectedCount === 0} on:click={createGift}>
+          <button class="primary-btn" disabled={selectedPostCount === 0} on:click={createGift}>
             Create Gift
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M5 12h14M12 5l7 7-7 7"/>
@@ -720,11 +861,7 @@
           </svg>
         </div>
         <h2>Gift Created!</h2>
-        {#if platform === 'rss'}
-          <p class="subtitle">Share this link with the recipient. They'll choose a password to claim their Nostr account.</p>
-        {:else}
-          <p class="subtitle">Share this link with @{handle}. They'll choose a password to claim their Nostr account.</p>
-        {/if}
+        <p class="subtitle">Share this link with @{handle}. They'll choose a password to claim their Nostr account.</p>
 
         <div class="claim-link-box">
           <code>{claimUrl}</code>
@@ -738,23 +875,18 @@
         </div>
 
         <div class="summary-card">
-          {#if platform === 'rss'}
-            <div class="summary-row">
-              <span class="label">Feed</span>
-              <span class="value">{feedInfo?.title || 'RSS Feed'}</span>
-            </div>
+          <div class="summary-row">
+            <span class="label">{platform === 'tiktok' ? 'TikTok' : 'Instagram'}</span>
+            <span class="value">@{handle}</span>
+          </div>
+          <div class="summary-row">
+            <span class="label">Posts</span>
+            <span class="value">{selectedPostCount} items</span>
+          </div>
+          {#if selectedArticleCount > 0}
             <div class="summary-row">
               <span class="label">Articles</span>
-              <span class="value">{selectedCount} items</span>
-            </div>
-          {:else}
-            <div class="summary-row">
-              <span class="label">{platform === 'tiktok' ? 'TikTok' : 'Instagram'}</span>
-              <span class="value">@{handle}</span>
-            </div>
-            <div class="summary-row">
-              <span class="label">Posts</span>
-              <span class="value">{selectedCount} items</span>
+              <span class="value">{selectedArticleCount} items</span>
             </div>
           {/if}
           <div class="summary-row">
@@ -1879,5 +2011,148 @@
   .article-meta .tags {
     font-size: 0.75rem;
     color: #a855f7;
+  }
+
+  /* Optional Articles Section */
+  .articles-section {
+    margin-top: 1.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border);
+  }
+
+  .add-articles-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 1rem;
+    background: transparent;
+    border: 2px dashed var(--border-light);
+    border-radius: 0.75rem;
+    color: var(--text-secondary);
+    font-size: 0.9375rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .add-articles-btn:hover {
+    border-color: #a855f7;
+    color: #a855f7;
+    background: rgba(168, 85, 247, 0.05);
+  }
+
+  .articles-input-section {
+    padding: 1rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 0.75rem;
+  }
+
+  .articles-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+  }
+
+  .articles-header h3 {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 1rem;
+    font-weight: 600;
+    margin: 0;
+    color: var(--text-primary);
+  }
+
+  .articles-header h3 svg {
+    color: #f97316;
+  }
+
+  .articles-fetching {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 1rem;
+    background: var(--bg-primary);
+    border-radius: 0.5rem;
+  }
+
+  .spinner-small {
+    width: 1.25rem;
+    height: 1.25rem;
+    border: 2px solid var(--border);
+    border-top-color: #a855f7;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    flex-shrink: 0;
+  }
+
+  .articles-fetching span {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+  }
+
+  .articles-added-section {
+    padding: 1rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 0.75rem;
+  }
+
+  .articles-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem;
+    background: var(--bg-primary);
+    border-radius: 0.5rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .articles-list.compact {
+    max-height: 240px;
+    margin-bottom: 0;
+    gap: 0.5rem;
+  }
+
+  .article-card.compact {
+    padding: 0.75rem;
+    gap: 0.75rem;
+  }
+
+  .article-info.compact {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .article-info.compact .article-title {
+    font-size: 0.875rem;
+    margin: 0;
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .article-info.compact .date {
+    flex-shrink: 0;
+  }
+
+  .text-btn.danger {
+    color: #ef4444;
+  }
+
+  .text-btn.danger:hover {
+    background: rgba(239, 68, 68, 0.1);
+    color: #ef4444;
+  }
+
+  .secondary-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 </style>

@@ -2,6 +2,7 @@ import { json } from '@sveltejs/kit';
 import {
   getGiftByTokenWithPosts,
   getGiftByTokenWithArticles,
+  getGiftByTokenWithBoth,
   getGiftByToken,
   markGiftClaimed,
   updateGiftPostStatus,
@@ -35,6 +36,10 @@ export const GET: RequestHandler = async ({ params }) => {
           // Articles store { feed, profile } combined
           feed = parsed.feed || parsed;  // Fallback for old data that only had feed
           profile = parsed.profile || null;
+        } else if (gift.gift_type === 'combined') {
+          // Combined gifts store { profile, feed }
+          profile = parsed.profile || null;
+          feed = parsed.feed || null;
         } else {
           profile = parsed;
         }
@@ -44,7 +49,82 @@ export const GET: RequestHandler = async ({ params }) => {
     }
 
     // Handle based on gift type
-    if (gift.gift_type === 'articles') {
+    if (gift.gift_type === 'combined') {
+      const result = await getGiftByTokenWithBoth(token);
+      if (!result) {
+        return json({ error: 'Gift not found' }, { status: 404 });
+      }
+
+      const { posts, articles } = result;
+
+      // Format posts for response
+      const formattedPosts = posts.map(post => {
+        let mediaItems = [];
+        let blossomUrls = [];
+
+        try {
+          mediaItems = JSON.parse(post.media_items);
+        } catch {
+          // Ignore parse errors
+        }
+
+        if (post.blossom_urls) {
+          try {
+            blossomUrls = JSON.parse(post.blossom_urls);
+          } catch {
+            // Ignore parse errors
+          }
+        }
+
+        return {
+          id: post.id,
+          post_type: post.post_type,
+          caption: post.caption,
+          original_date: post.original_date,
+          thumbnail_url: post.thumbnail_url,
+          media_items: mediaItems,
+          blossom_urls: blossomUrls,
+          status: post.status
+        };
+      });
+
+      // Format articles for response
+      const formattedArticles = articles.map(article => {
+        let hashtags: string[] = [];
+        if (article.hashtags) {
+          try {
+            hashtags = JSON.parse(article.hashtags);
+          } catch {
+            // Ignore parse errors
+          }
+        }
+
+        return {
+          id: article.id,
+          title: article.title,
+          summary: article.summary,
+          content_markdown: article.content_markdown,
+          published_at: article.published_at,
+          link: article.link,
+          image_url: article.image_url,
+          blossom_image_url: article.blossom_image_url,
+          hashtags,
+          status: article.status
+        };
+      });
+
+      return json({
+        status: gift.status,
+        gift_type: 'combined',
+        handle: gift.ig_handle,
+        feed,
+        profile,
+        posts: formattedPosts,
+        articles: formattedArticles,
+        createdAt: gift.created_at,
+        expiresAt: gift.expires_at
+      });
+    } else if (gift.gift_type === 'articles') {
       const result = await getGiftByTokenWithArticles(token);
       if (!result) {
         return json({ error: 'Gift not found' }, { status: 404 });

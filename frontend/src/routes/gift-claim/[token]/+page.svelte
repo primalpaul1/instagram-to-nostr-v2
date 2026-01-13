@@ -56,7 +56,7 @@
 
   interface Gift {
     status: string;
-    gift_type: 'posts' | 'articles';
+    gift_type: 'posts' | 'articles' | 'combined';
     handle: string;
     profile: Profile | null;
     feed: Feed | null;
@@ -101,7 +101,13 @@
   $: totalCount = tasks.length;
   $: progressPercent = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
   $: isArticleGift = gift?.gift_type === 'articles';
-  $: itemCount = isArticleGift ? gift?.articles?.length || 0 : gift?.posts?.length || 0;
+  $: isCombinedGift = gift?.gift_type === 'combined';
+  $: postCount = gift?.posts?.length || 0;
+  $: articleCount = gift?.articles?.length || 0;
+  $: itemCount = isCombinedGift ? postCount + articleCount : (isArticleGift ? articleCount : postCount);
+
+  // Tab state for combined gifts
+  let activePreviewTab: 'posts' | 'articles' = 'posts';
 
   const token = $page.params.token;
 
@@ -206,13 +212,19 @@
     // Set up tasks based on gift type
     if (gift.gift_type === 'articles') {
       tasks = gift.articles.map(article => ({ type: 'article' as const, article, status: 'pending' as const }));
+    } else if (gift.gift_type === 'combined') {
+      // Combined gifts: posts first, then articles
+      const postTasks = gift.posts.map(post => ({ type: 'post' as const, post, status: 'pending' as const }));
+      const articleTasks = gift.articles.map(article => ({ type: 'article' as const, article, status: 'pending' as const }));
+      tasks = [...postTasks, ...articleTasks];
     } else {
       tasks = gift.posts.map(post => ({ type: 'post' as const, post, status: 'pending' as const }));
     }
     step = 'publishing';
 
     const signedEvents: any[] = [];
-    const publishedIds: number[] = [];
+    const publishedPostIds: number[] = [];
+    const publishedArticleIds: number[] = [];
 
     try {
       // First, publish profile if available (for post or article gifts)
@@ -312,7 +324,13 @@
           }
 
           signedEvents.push(signedEvent);
-          publishedIds.push(task.type === 'article' ? task.article.id : task.post.id);
+
+          // Track IDs separately for posts and articles
+          if (task.type === 'article') {
+            publishedArticleIds.push(task.article.id);
+          } else {
+            publishedPostIds.push(task.post.id);
+          }
 
           tasks[i] = { ...tasks[i], status: 'complete' };
           tasks = [...tasks];
@@ -332,9 +350,9 @@
       }
 
       // Batch import to Primal cache
-      // For articles, await to ensure they appear in Primal Reads
+      // For articles and combined gifts, await to ensure articles appear in Primal Reads
       if (signedEvents.length > 0) {
-        if (gift.gift_type === 'articles') {
+        if (gift.gift_type === 'articles' || gift.gift_type === 'combined') {
           await importToPrimalCache(signedEvents);
         } else {
           importToPrimalCache(signedEvents).catch(() => {});
@@ -342,16 +360,24 @@
       }
 
       // Mark items as published
-      if (publishedIds.length > 0) {
-        const action = gift.gift_type === 'articles' ? 'markArticlesPublished' : 'markPostsPublished';
-        const idKey = gift.gift_type === 'articles' ? 'articleIds' : 'postIds';
-
+      if (publishedPostIds.length > 0) {
         await fetch(`/api/gifts/${token}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            action,
-            [idKey]: publishedIds
+            action: 'markPostsPublished',
+            postIds: publishedPostIds
+          })
+        });
+      }
+
+      if (publishedArticleIds.length > 0) {
+        await fetch(`/api/gifts/${token}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'markArticlesPublished',
+            articleIds: publishedArticleIds
           })
         });
       }
@@ -431,7 +457,9 @@
           </svg>
         </div>
         <h2>Claim Your Nostr Account</h2>
-        {#if isArticleGift}
+        {#if isCombinedGift}
+          <p class="subtitle">Your @{gift.handle} content and blog articles are ready to publish on Nostr!</p>
+        {:else if isArticleGift}
           <p class="subtitle">Your articles from {gift.feed?.title || 'RSS Feed'} are ready to publish on Nostr!</p>
         {:else}
           <p class="subtitle">Your @{gift.handle} content is ready to publish on Nostr!</p>
@@ -456,55 +484,134 @@
           </div>
         {/if}
 
-        <div class="posts-preview">
-          <span class="count">{itemCount}</span>
-          <span class="label">{isArticleGift ? 'articles' : 'posts'} ready to publish</span>
-        </div>
+        {#if isCombinedGift}
+          <!-- Combined gift: show counts for both -->
+          <div class="combined-counts">
+            <div class="count-item">
+              <span class="count">{postCount}</span>
+              <span class="label">posts</span>
+            </div>
+            <span class="count-separator">+</span>
+            <div class="count-item">
+              <span class="count">{articleCount}</span>
+              <span class="label">articles</span>
+            </div>
+          </div>
 
-        {#if isArticleGift}
-          <div class="articles-list-preview">
-            {#each gift.articles.slice(0, 4) as article}
-              <div class="article-preview-item">
-                {#if article.blossom_image_url || article.image_url}
-                  <img src={article.blossom_image_url || article.image_url} alt="" class="article-thumb" />
-                {/if}
-                <span class="article-title-preview">{article.title}</span>
-              </div>
-            {/each}
-            {#if gift.articles.length > 4}
-              <div class="more-articles">+{gift.articles.length - 4} more</div>
-            {/if}
+          <!-- Tabbed preview for combined gifts -->
+          <div class="preview-tabs">
+            <button
+              class="preview-tab"
+              class:active={activePreviewTab === 'posts'}
+              on:click={() => activePreviewTab = 'posts'}
+            >
+              Posts ({postCount})
+            </button>
+            <button
+              class="preview-tab"
+              class:active={activePreviewTab === 'articles'}
+              on:click={() => activePreviewTab = 'articles'}
+            >
+              Articles ({articleCount})
+            </button>
           </div>
+
+          {#if activePreviewTab === 'posts'}
+            <div class="posts-grid">
+              {#each gift.posts.slice(0, 6) as post}
+                <div class="post-thumb">
+                  {#if post.thumbnail_url}
+                    <img src={post.thumbnail_url} alt="" />
+                  {:else if post.blossom_urls && post.blossom_urls.length > 0 && post.post_type !== 'reel'}
+                    <img src={post.blossom_urls[0]} alt="" />
+                  {:else}
+                    <div class="placeholder">
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                      </svg>
+                    </div>
+                  {/if}
+                  {#if post.post_type === 'reel'}
+                    <div class="video-badge">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                        <polygon points="5,3 19,12 5,21"/>
+                      </svg>
+                    </div>
+                  {/if}
+                </div>
+              {/each}
+              {#if gift.posts.length > 6}
+                <div class="post-thumb more">
+                  <span>+{gift.posts.length - 6}</span>
+                </div>
+              {/if}
+            </div>
+          {:else}
+            <div class="articles-list-preview">
+              {#each gift.articles.slice(0, 4) as article}
+                <div class="article-preview-item">
+                  {#if article.blossom_image_url || article.image_url}
+                    <img src={article.blossom_image_url || article.image_url} alt="" class="article-thumb" />
+                  {/if}
+                  <span class="article-title-preview">{article.title}</span>
+                </div>
+              {/each}
+              {#if gift.articles.length > 4}
+                <div class="more-articles">+{gift.articles.length - 4} more</div>
+              {/if}
+            </div>
+          {/if}
         {:else}
-          <div class="posts-grid">
-            {#each gift.posts.slice(0, 6) as post}
-              <div class="post-thumb">
-                {#if post.thumbnail_url}
-                  <img src={post.thumbnail_url} alt="" />
-                {:else if post.blossom_urls && post.blossom_urls.length > 0 && post.post_type !== 'reel'}
-                  <img src={post.blossom_urls[0]} alt="" />
-                {:else}
-                  <div class="placeholder">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                      <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-                    </svg>
-                  </div>
-                {/if}
-                {#if post.post_type === 'reel'}
-                  <div class="video-badge">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-                      <polygon points="5,3 19,12 5,21"/>
-                    </svg>
-                  </div>
-                {/if}
-              </div>
-            {/each}
-            {#if gift.posts.length > 6}
-              <div class="post-thumb more">
-                <span>+{gift.posts.length - 6}</span>
-              </div>
-            {/if}
+          <div class="posts-preview">
+            <span class="count">{itemCount}</span>
+            <span class="label">{isArticleGift ? 'articles' : 'posts'} ready to publish</span>
           </div>
+
+          {#if isArticleGift}
+            <div class="articles-list-preview">
+              {#each gift.articles.slice(0, 4) as article}
+                <div class="article-preview-item">
+                  {#if article.blossom_image_url || article.image_url}
+                    <img src={article.blossom_image_url || article.image_url} alt="" class="article-thumb" />
+                  {/if}
+                  <span class="article-title-preview">{article.title}</span>
+                </div>
+              {/each}
+              {#if gift.articles.length > 4}
+                <div class="more-articles">+{gift.articles.length - 4} more</div>
+              {/if}
+            </div>
+          {:else}
+            <div class="posts-grid">
+              {#each gift.posts.slice(0, 6) as post}
+                <div class="post-thumb">
+                  {#if post.thumbnail_url}
+                    <img src={post.thumbnail_url} alt="" />
+                  {:else if post.blossom_urls && post.blossom_urls.length > 0 && post.post_type !== 'reel'}
+                    <img src={post.blossom_urls[0]} alt="" />
+                  {:else}
+                    <div class="placeholder">
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                      </svg>
+                    </div>
+                  {/if}
+                  {#if post.post_type === 'reel'}
+                    <div class="video-badge">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                        <polygon points="5,3 19,12 5,21"/>
+                      </svg>
+                    </div>
+                  {/if}
+                </div>
+              {/each}
+              {#if gift.posts.length > 6}
+                <div class="post-thumb more">
+                  <span>+{gift.posts.length - 6}</span>
+                </div>
+              {/if}
+            </div>
+          {/if}
         {/if}
 
         <button class="primary-btn" on:click={claimAccount}>
@@ -517,13 +624,13 @@
 
     {:else if step === 'publishing'}
       <div class="publishing-step">
-        <h2>Publishing Your {isArticleGift ? 'Articles' : 'Content'}</h2>
+        <h2>Publishing Your {isCombinedGift ? 'Content' : (isArticleGift ? 'Articles' : 'Content')}</h2>
         <p class="subtitle">Signing and publishing to Nostr...</p>
 
         <div class="progress-bar">
           <div class="progress-fill" style="width: {progressPercent}%"></div>
         </div>
-        <p class="progress-text">{completedCount} of {totalCount} {isArticleGift ? 'articles' : 'posts'}</p>
+        <p class="progress-text">{completedCount} of {totalCount} {isCombinedGift ? 'items' : (isArticleGift ? 'articles' : 'posts')}</p>
 
         <div class="tasks-list">
           {#each tasks as task, index}
@@ -592,7 +699,7 @@
           </svg>
         </div>
         <h2>Welcome to Nostr!</h2>
-        <p class="subtitle">Your account has been created and {completedCount} {isArticleGift ? 'articles' : 'posts'} published.</p>
+        <p class="subtitle">Your account has been created and {completedCount} {isCombinedGift ? 'items' : (isArticleGift ? 'articles' : 'posts')} published.</p>
 
         <a href="https://primal.net/p/{keypair.npub}" target="_blank" rel="noopener" class="view-profile-btn">
           View Your Profile on Primal
@@ -1324,5 +1431,73 @@
   .article-placeholder {
     background: rgba(168, 85, 247, 0.1);
     color: #a855f7;
+  }
+
+  /* Combined gift styles */
+  .combined-counts {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    padding: 1rem;
+    background: var(--bg-tertiary);
+    border-radius: 0.75rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .count-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+  .count-item .count {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: #a855f7;
+  }
+
+  .count-item .label {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+  }
+
+  .count-separator {
+    font-size: 1.5rem;
+    font-weight: 300;
+    color: var(--text-muted);
+  }
+
+  .preview-tabs {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+    padding: 0.25rem;
+    background: var(--bg-tertiary);
+    border-radius: 0.75rem;
+  }
+
+  .preview-tab {
+    flex: 1;
+    padding: 0.625rem 1rem;
+    background: transparent;
+    border: none;
+    border-radius: 0.5rem;
+    color: var(--text-secondary);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .preview-tab:hover {
+    color: var(--text-primary);
+  }
+
+  .preview-tab.active {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
   }
 </style>

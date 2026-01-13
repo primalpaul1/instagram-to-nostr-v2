@@ -83,8 +83,9 @@ CREATE TABLE IF NOT EXISTS gifts (
   id TEXT PRIMARY KEY,
   claim_token TEXT UNIQUE NOT NULL,
   ig_handle TEXT NOT NULL,
-  profile_data TEXT,  -- JSON: {username, display_name, bio, profile_picture_url}
-  salt TEXT NOT NULL,  -- Random salt for key derivation
+  profile_data TEXT,  -- JSON: {username, display_name, bio, profile_picture_url} or {profile, feed}
+  salt TEXT NOT NULL,  -- Random salt for key derivation (legacy, no longer used)
+  gift_type TEXT DEFAULT 'posts' CHECK (gift_type IN ('posts', 'articles', 'combined')),
   status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'ready', 'claimed', 'expired')),
   claimed_at DATETIME,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -106,8 +107,26 @@ CREATE TABLE IF NOT EXISTS gift_posts (
   FOREIGN KEY (gift_id) REFERENCES gifts(id) ON DELETE CASCADE
 );
 
+-- Articles within a gift (for RSS/blog gifts)
+CREATE TABLE IF NOT EXISTS gift_articles (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  gift_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  summary TEXT,
+  content_markdown TEXT NOT NULL,
+  published_at TEXT,
+  link TEXT,
+  image_url TEXT,
+  blossom_image_url TEXT,
+  hashtags TEXT,  -- JSON array
+  status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'ready', 'published')),
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (gift_id) REFERENCES gifts(id) ON DELETE CASCADE
+);
+
 -- Indexes for gifts
 CREATE INDEX IF NOT EXISTS idx_gifts_claim_token ON gifts(claim_token);
 CREATE INDEX IF NOT EXISTS idx_gifts_status ON gifts(status);
 CREATE INDEX IF NOT EXISTS idx_gifts_expires_at ON gifts(expires_at);
 CREATE INDEX IF NOT EXISTS idx_gift_posts_gift_id ON gift_posts(gift_id);
+CREATE INDEX IF NOT EXISTS idx_gift_articles_gift_id ON gift_articles(gift_id);

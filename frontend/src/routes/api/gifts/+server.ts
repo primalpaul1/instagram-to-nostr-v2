@@ -66,7 +66,7 @@ export const POST: RequestHandler = async ({ request, url }) => {
       handle: string;
       posts?: PostInput[];
       profile?: ProfileInput;
-      gift_type?: 'posts' | 'articles';
+      gift_type?: 'posts' | 'articles' | 'combined';
       articles?: ArticleInput[];
       feed?: FeedInput;
     };
@@ -88,21 +88,37 @@ export const POST: RequestHandler = async ({ request, url }) => {
           { status: 400 }
         );
       }
+    } else if (giftType === 'combined') {
+      if (!handle || !posts?.length) {
+        return json(
+          { message: 'Combined gift requires handle and posts' },
+          { status: 400 }
+        );
+      }
+      if (!articles?.length) {
+        return json(
+          { message: 'Combined gift requires articles' },
+          { status: 400 }
+        );
+      }
     }
 
     // Create the gift
     const giftId = generateId();
     const claimToken = generateClaimToken();
 
-    // For articles, store feed info AND profile in profile_data; for posts, store profile
+    // Store profile and/or feed info in profile_data based on gift type
     let profileData: string | undefined;
     if (giftType === 'articles') {
       profileData = JSON.stringify({ feed, profile });
+    } else if (giftType === 'combined') {
+      // Combined gifts store both profile (from social) and feed info
+      profileData = JSON.stringify({ profile, feed });
     } else if (profile) {
       profileData = JSON.stringify(profile);
     }
 
-    // Use feed URL as handle for articles, otherwise use the provided handle
+    // Use feed URL as handle for articles-only, otherwise use the social handle
     const giftHandle = giftType === 'articles' ? (feed?.url || 'RSS Feed') : handle;
 
     const gift = await createGift(
@@ -114,14 +130,15 @@ export const POST: RequestHandler = async ({ request, url }) => {
       giftType
     );
 
-    // For article gifts, mark as ready immediately (no media processing needed)
+    // For article-only gifts, mark as ready immediately (no media processing needed)
+    // Combined gifts need worker processing for posts, so keep as 'pending'
     if (giftType === 'articles') {
       const { updateGiftStatus } = await import('$lib/server/db');
       await updateGiftStatus(giftId, 'ready');
     }
 
-    // Create gift posts or articles based on type
-    if (giftType === 'posts' && posts) {
+    // Create gift posts and/or articles based on type
+    if ((giftType === 'posts' || giftType === 'combined') && posts) {
       for (const post of posts) {
         await createGiftPost(
           giftId,
@@ -132,7 +149,9 @@ export const POST: RequestHandler = async ({ request, url }) => {
           post.thumbnail_url
         );
       }
-    } else if (giftType === 'articles' && articles) {
+    }
+
+    if ((giftType === 'articles' || giftType === 'combined') && articles) {
       for (const article of articles) {
         await createGiftArticle(
           giftId,
