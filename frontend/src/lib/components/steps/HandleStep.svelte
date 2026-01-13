@@ -232,6 +232,7 @@
                   }
 
                   console.log('Setting wizard state for RSS...');
+                  wizard.clearNIP46();  // Reset authMode to 'generate' for password-based flow
                   wizard.setContentType('articles');
                   wizard.setHandle(feedUrl.trim());
                   const mappedArticles = (data.articles || []).map((a: any) => ({ ...a, selected: true }));
@@ -305,6 +306,7 @@
       console.log('handlePause: Aborting and setting wizard state for RSS');
       abortController.abort();
 
+      wizard.clearNIP46();  // Reset authMode to 'generate' for password-based flow
       wizard.setContentType('articles');
       wizard.setHandle(feedUrl.trim());
       // Use fetchedArticles if available, otherwise create placeholder
