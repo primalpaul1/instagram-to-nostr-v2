@@ -635,83 +635,53 @@
 
     {:else if step === 'publishing'}
       <div class="publishing-step">
-        <h2>{allTasksComplete ? 'Welcome to Nostr!' : 'Publishing Your ' + (isCombinedGift ? 'Content' : (isArticleGift ? 'Articles' : 'Content'))}</h2>
-        <p class="subtitle">{allTasksComplete ? 'Your content has been published successfully.' : 'Signing and publishing to Nostr...'}</p>
-
-        <div class="progress-bar">
-          <div class="progress-fill" style="width: {progressPercent}%"></div>
-        </div>
-        <p class="progress-text">{completedCount} of {totalCount} {isCombinedGift ? 'items' : (isArticleGift ? 'articles' : 'posts')}</p>
-
-        <div class="publishing-content">
-          <div class="tasks-column">
-            <div class="tasks-list">
-              {#each tasks as task, index}
-                <div class="task-item" class:active={task.status === 'signing' || task.status === 'publishing'} class:complete={task.status === 'complete'} class:error={task.status === 'error'}>
-                  <div class="task-preview">
-                    {#if task.type === 'article'}
-                      {#if task.article.blossom_image_url || task.article.image_url}
-                        <img src={task.article.blossom_image_url || task.article.image_url} alt="" />
-                      {:else}
-                        <div class="placeholder article-placeholder">
-                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                            <polyline points="14 2 14 8 20 8"/>
-                            <line x1="16" y1="13" x2="8" y2="13"/>
-                            <line x1="16" y1="17" x2="8" y2="17"/>
-                          </svg>
-                        </div>
-                      {/if}
-                    {:else}
-                      {#if getMediaPreviewUrl(task.post)}
-                        <img src={getMediaPreviewUrl(task.post)} alt="" />
-                      {:else}
-                        <div class="placeholder">
-                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-                          </svg>
-                        </div>
-                      {/if}
-                    {/if}
-                  </div>
-                  <div class="task-info">
-                    {#if task.type === 'article'}
-                      <span class="task-caption">{task.article.title.slice(0, 30)}{task.article.title.length > 30 ? '...' : ''}</span>
-                    {:else}
-                      <span class="task-caption">{task.post.caption?.slice(0, 30) || 'No caption'}{(task.post.caption?.length || 0) > 30 ? '...' : ''}</span>
-                    {/if}
-                    <span class="task-status">{getStatusLabel(task.status)}</span>
-                  </div>
-                  <div class="task-indicator">
-                    {#if task.status === 'signing' || task.status === 'publishing'}
-                      <div class="spinner-small"></div>
-                    {:else if task.status === 'complete'}
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M20 6L9 17l-5-5"/>
-                      </svg>
-                    {:else if task.status === 'error'}
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <circle cx="12" cy="12" r="10"/>
-                        <line x1="15" y1="9" x2="9" y2="15"/>
-                        <line x1="9" y1="9" x2="15" y2="15"/>
-                      </svg>
-                    {:else}
-                      <div class="pending-dot"></div>
-                    {/if}
-                  </div>
-                </div>
-              {/each}
+        <div class="progress-circle-container">
+          <div class="progress-circle" class:complete={allTasksComplete}>
+            <svg viewBox="0 0 36 36">
+              <path
+                class="progress-bg"
+                d="M18 2.0845
+                  a 15.9155 15.9155 0 0 1 0 31.831
+                  a 15.9155 15.9155 0 0 1 0 -31.831"
+              />
+              <path
+                class="progress-fill-circle"
+                stroke-dasharray="{progressPercent}, 100"
+                d="M18 2.0845
+                  a 15.9155 15.9155 0 0 1 0 31.831
+                  a 15.9155 15.9155 0 0 1 0 -31.831"
+              />
+            </svg>
+            <div class="progress-percent">
+              {#if allTasksComplete}
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <path d="M20 6L9 17l-5-5"/>
+                </svg>
+              {:else}
+                {Math.round(progressPercent)}%
+              {/if}
             </div>
           </div>
+          <div class="progress-label">
+            {#if allTasksComplete}
+              <span class="progress-title complete">All done!</span>
+            {:else}
+              <span class="progress-title">Publishing...</span>
+            {/if}
+            <span class="progress-detail">{completedCount} of {totalCount} {isCombinedGift ? 'items' : (isArticleGift ? 'articles' : 'posts')}</span>
+          </div>
+        </div>
 
-          <div class="whats-next-column">
+        <h2 class="welcome-title" class:visible={allTasksComplete}>Welcome to Primal!</h2>
+
+        <div class="whats-next-section">
             <h3>What's Next?</h3>
 
             <div class="step-card">
               <div class="step-number">1</div>
               <div class="step-content">
                 <h4>Save Your Key</h4>
-                <p>This is your Nostr identity - keep it safe!</p>
+                <p>This is your Primal identity - keep it safe!</p>
                 <div class="key-actions">
                   <button class="action-btn" on:click={copyNsec}>
                     {#if nsecCopied}
@@ -779,7 +749,6 @@
                 <p>Open Primal, tap "Login", then "Use login key" and paste your key</p>
               </div>
             </div>
-          </div>
         </div>
       </div>
     {/if}
@@ -1049,23 +1018,111 @@
     text-align: center;
   }
 
-  .publishing-content {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 2rem;
-    margin-top: 1rem;
+  .progress-circle-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+    padding: 1rem;
+    background: var(--bg-tertiary);
+    border-radius: 1rem;
+    border: 1px solid var(--border);
+  }
+
+  .progress-circle {
+    position: relative;
+    width: 60px;
+    height: 60px;
+    flex-shrink: 0;
+  }
+
+  .progress-circle svg {
+    transform: rotate(-90deg);
+    width: 100%;
+    height: 100%;
+  }
+
+  .progress-bg {
+    fill: none;
+    stroke: var(--bg-primary);
+    stroke-width: 3;
+  }
+
+  .progress-fill-circle {
+    fill: none;
+    stroke: url(#progressGradient);
+    stroke: #a855f7;
+    stroke-width: 3;
+    stroke-linecap: round;
+    transition: stroke-dasharray 0.5s ease;
+  }
+
+  .progress-circle.complete .progress-fill-circle {
+    stroke: #22c55e;
+  }
+
+  .progress-percent {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .progress-circle.complete .progress-percent {
+    color: #22c55e;
+  }
+
+  .progress-label {
+    display: flex;
+    flex-direction: column;
     text-align: left;
   }
 
-  .tasks-column {
-    min-width: 0;
+  .progress-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
   }
 
-  .whats-next-column {
-    min-width: 0;
+  .progress-title.complete {
+    color: #22c55e;
   }
 
-  .whats-next-column h3 {
+  .progress-detail {
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+  }
+
+  .welcome-title {
+    font-size: 1.75rem;
+    font-weight: 700;
+    margin-bottom: 1.5rem;
+    opacity: 0;
+    transform: translateY(10px);
+    transition: all 0.5s ease;
+    height: 0;
+    overflow: hidden;
+  }
+
+  .welcome-title.visible {
+    opacity: 1;
+    transform: translateY(0);
+    height: auto;
+    margin-bottom: 1.5rem;
+  }
+
+  .whats-next-section {
+    text-align: left;
+  }
+
+  .whats-next-section h3 {
     font-size: 1.125rem;
     font-weight: 600;
     margin-bottom: 1rem;
@@ -1105,41 +1162,7 @@
     margin-bottom: 0;
   }
 
-  @media (max-width: 768px) {
-    .publishing-content {
-      grid-template-columns: 1fr;
-      gap: 1.5rem;
-    }
-  }
-
-  .progress-bar {
-    height: 8px;
-    background: var(--bg-tertiary);
-    border-radius: 4px;
-    overflow: hidden;
-    margin-bottom: 0.5rem;
-  }
-
-  .progress-fill {
-    height: 100%;
-    background: linear-gradient(90deg, #a855f7 0%, #8b5cf6 100%);
-    transition: width 0.3s ease;
-  }
-
-  .progress-text {
-    font-size: 0.875rem;
-    color: var(--text-secondary);
-    margin-bottom: 1.5rem;
-  }
-
-  .tasks-list {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    max-height: 400px;
-    overflow-y: auto;
-  }
-
+  /* Legacy styles kept for other pages */
   .task-item {
     display: flex;
     align-items: center;
