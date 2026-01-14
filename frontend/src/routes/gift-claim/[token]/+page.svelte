@@ -275,25 +275,12 @@
               .replace(/^-|-$/g, '')
               .slice(0, 50) + '-' + Date.now().toString(36);
 
-            // Parse published_at to Unix timestamp
-            let publishedAtTimestamp: string | undefined;
-            if (article.published_at) {
-              try {
-                const date = new Date(article.published_at);
-                if (!isNaN(date.getTime())) {
-                  publishedAtTimestamp = Math.floor(date.getTime() / 1000).toString();
-                }
-              } catch {
-                // Ignore parse errors
-              }
-            }
-
             const articleMetadata: ArticleMetadata = {
               identifier,
               title: article.title,
               summary: article.summary || undefined,
               imageUrl: article.blossom_image_url || article.image_url || undefined,
-              publishedAt: publishedAtTimestamp,
+              publishedAt: article.published_at || undefined,  // Already a Unix timestamp string
               hashtags: article.hashtags || undefined,
               content: article.content_markdown
             };
