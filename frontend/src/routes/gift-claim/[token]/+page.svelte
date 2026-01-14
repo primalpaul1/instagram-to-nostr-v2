@@ -15,7 +15,7 @@
     type ArticleMetadata
   } from '$lib/signing';
 
-  type PageStep = 'loading' | 'preview' | 'publishing' | 'complete' | 'error';
+  type PageStep = 'loading' | 'preview' | 'publishing' | 'error';
 
   interface GiftPost {
     id: number;
@@ -105,6 +105,19 @@
   $: postCount = gift?.posts?.length || 0;
   $: articleCount = gift?.articles?.length || 0;
   $: itemCount = isCombinedGift ? postCount + articleCount : (isArticleGift ? articleCount : postCount);
+  $: keySaved = nsecCopied || keyDownloaded;
+  $: allTasksComplete = totalCount > 0 && completedCount === totalCount;
+
+  function getPrimalDownloadUrl(): string {
+    if (typeof navigator === 'undefined') return 'https://primal.net/downloads';
+    const ua = navigator.userAgent;
+    if (/iPhone|iPad|iPod/.test(ua)) {
+      return 'https://apps.apple.com/us/app/primal/id1673134518';
+    } else if (/Android/.test(ua)) {
+      return 'https://play.google.com/store/apps/details?id=net.primal.android';
+    }
+    return 'https://primal.net/downloads';
+  }
 
   // Tab state for combined gifts
   let activePreviewTab: 'posts' | 'articles' = 'posts';
@@ -388,8 +401,6 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'complete' })
       });
-
-      step = 'complete';
     } catch (err) {
       console.error('Publishing error:', err);
       error = err instanceof Error ? err.message : 'Failed to publish';
@@ -624,177 +635,149 @@
 
     {:else if step === 'publishing'}
       <div class="publishing-step">
-        <h2>Publishing Your {isCombinedGift ? 'Content' : (isArticleGift ? 'Articles' : 'Content')}</h2>
-        <p class="subtitle">Signing and publishing to Nostr...</p>
+        <h2>{allTasksComplete ? 'Welcome to Nostr!' : 'Publishing Your ' + (isCombinedGift ? 'Content' : (isArticleGift ? 'Articles' : 'Content'))}</h2>
+        <p class="subtitle">{allTasksComplete ? 'Your content has been published successfully.' : 'Signing and publishing to Nostr...'}</p>
 
         <div class="progress-bar">
           <div class="progress-fill" style="width: {progressPercent}%"></div>
         </div>
         <p class="progress-text">{completedCount} of {totalCount} {isCombinedGift ? 'items' : (isArticleGift ? 'articles' : 'posts')}</p>
 
-        <div class="tasks-list">
-          {#each tasks as task, index}
-            <div class="task-item" class:active={task.status === 'signing' || task.status === 'publishing'} class:complete={task.status === 'complete'} class:error={task.status === 'error'}>
-              <div class="task-preview">
-                {#if task.type === 'article'}
-                  {#if task.article.blossom_image_url || task.article.image_url}
-                    <img src={task.article.blossom_image_url || task.article.image_url} alt="" />
-                  {:else}
-                    <div class="placeholder article-placeholder">
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                        <polyline points="14 2 14 8 20 8"/>
-                        <line x1="16" y1="13" x2="8" y2="13"/>
-                        <line x1="16" y1="17" x2="8" y2="17"/>
+        <div class="publishing-content">
+          <div class="tasks-column">
+            <div class="tasks-list">
+              {#each tasks as task, index}
+                <div class="task-item" class:active={task.status === 'signing' || task.status === 'publishing'} class:complete={task.status === 'complete'} class:error={task.status === 'error'}>
+                  <div class="task-preview">
+                    {#if task.type === 'article'}
+                      {#if task.article.blossom_image_url || task.article.image_url}
+                        <img src={task.article.blossom_image_url || task.article.image_url} alt="" />
+                      {:else}
+                        <div class="placeholder article-placeholder">
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                            <polyline points="14 2 14 8 20 8"/>
+                            <line x1="16" y1="13" x2="8" y2="13"/>
+                            <line x1="16" y1="17" x2="8" y2="17"/>
+                          </svg>
+                        </div>
+                      {/if}
+                    {:else}
+                      {#if getMediaPreviewUrl(task.post)}
+                        <img src={getMediaPreviewUrl(task.post)} alt="" />
+                      {:else}
+                        <div class="placeholder">
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                          </svg>
+                        </div>
+                      {/if}
+                    {/if}
+                  </div>
+                  <div class="task-info">
+                    {#if task.type === 'article'}
+                      <span class="task-caption">{task.article.title.slice(0, 30)}{task.article.title.length > 30 ? '...' : ''}</span>
+                    {:else}
+                      <span class="task-caption">{task.post.caption?.slice(0, 30) || 'No caption'}{(task.post.caption?.length || 0) > 30 ? '...' : ''}</span>
+                    {/if}
+                    <span class="task-status">{getStatusLabel(task.status)}</span>
+                  </div>
+                  <div class="task-indicator">
+                    {#if task.status === 'signing' || task.status === 'publishing'}
+                      <div class="spinner-small"></div>
+                    {:else if task.status === 'complete'}
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M20 6L9 17l-5-5"/>
                       </svg>
-                    </div>
-                  {/if}
-                {:else}
-                  {#if getMediaPreviewUrl(task.post)}
-                    <img src={getMediaPreviewUrl(task.post)} alt="" />
-                  {:else}
-                    <div class="placeholder">
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                    {:else if task.status === 'error'}
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/>
+                        <line x1="15" y1="9" x2="9" y2="15"/>
+                        <line x1="9" y1="9" x2="15" y2="15"/>
                       </svg>
-                    </div>
-                  {/if}
-                {/if}
-              </div>
-              <div class="task-info">
-                {#if task.type === 'article'}
-                  <span class="task-caption">{task.article.title.slice(0, 30)}{task.article.title.length > 30 ? '...' : ''}</span>
-                {:else}
-                  <span class="task-caption">{task.post.caption?.slice(0, 30) || 'No caption'}{(task.post.caption?.length || 0) > 30 ? '...' : ''}</span>
-                {/if}
-                <span class="task-status">{getStatusLabel(task.status)}</span>
-              </div>
-              <div class="task-indicator">
-                {#if task.status === 'signing' || task.status === 'publishing'}
-                  <div class="spinner-small"></div>
-                {:else if task.status === 'complete'}
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M20 6L9 17l-5-5"/>
-                  </svg>
-                {:else if task.status === 'error'}
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <circle cx="12" cy="12" r="10"/>
-                    <line x1="15" y1="9" x2="9" y2="15"/>
-                    <line x1="9" y1="9" x2="15" y2="15"/>
-                  </svg>
-                {:else}
-                  <div class="pending-dot"></div>
-                {/if}
-              </div>
-            </div>
-          {/each}
-        </div>
-      </div>
-
-    {:else if step === 'complete' && keypair}
-      <div class="complete-step">
-        <div class="success-icon">
-          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M20 6L9 17l-5-5"/>
-          </svg>
-        </div>
-        <h2>Welcome to Nostr!</h2>
-        <p class="subtitle">Your account has been created and {completedCount} {isCombinedGift ? 'items' : (isArticleGift ? 'articles' : 'posts')} published.</p>
-
-        <a href="https://primal.net/p/{keypair.npub}" target="_blank" rel="noopener" class="view-profile-btn">
-          View Your Profile on Primal
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/>
-            <polyline points="15 3 21 3 21 9"/>
-            <line x1="10" y1="14" x2="21" y2="3"/>
-          </svg>
-        </a>
-
-        <div class="whats-next">
-          <h3>What's Next?</h3>
-
-          <div class="step-card">
-            <div class="step-number">1</div>
-            <div class="step-content">
-              <h4>Save Your Key</h4>
-              <p>This is your Nostr identity - keep it safe!</p>
-              <div class="key-actions">
-                <button class="action-btn" on:click={copyNsec}>
-                  {#if nsecCopied}
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <path d="M20 6L9 17l-5-5"/>
-                    </svg>
-                    Copied!
-                  {:else}
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-                      <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
-                    </svg>
-                    Copy Key
-                  {/if}
-                </button>
-                <button class="action-btn" on:click={downloadKey}>
-                  {#if keyDownloaded}
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <path d="M20 6L9 17l-5-5"/>
-                    </svg>
-                    Downloaded!
-                  {:else}
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
-                      <polyline points="7 10 12 15 17 10"/>
-                      <line x1="12" y1="15" x2="12" y2="3"/>
-                    </svg>
-                    Download Key
-                  {/if}
-                </button>
-              </div>
+                    {:else}
+                      <div class="pending-dot"></div>
+                    {/if}
+                  </div>
+                </div>
+              {/each}
             </div>
           </div>
 
-          <div class="step-card">
-            <div class="step-number">2</div>
-            <div class="step-content">
-              <h4>Download Primal on your phone</h4>
-              <p>Get the app to access your content anywhere</p>
-              <div class="download-row">
-                <div class="qr-wrapper">
-                  <img
-                    src="https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=https://primal.net/downloads&bgcolor=ffffff&color=000000"
-                    alt="QR Code to download Primal"
-                    width="120"
-                    height="120"
-                  />
-                </div>
-                <div class="store-buttons">
-                  <a href="https://apps.apple.com/us/app/primal/id1673134518" target="_blank" rel="noopener noreferrer" class="store-btn">
-                    <svg width="20" height="24" viewBox="0 0 20 24" fill="currentColor">
-                      <path d="M16.52 12.46c-.03-2.59 2.11-3.84 2.21-3.9-1.21-1.76-3.08-2-3.75-2.03-1.58-.17-3.11.94-3.91.94-.82 0-2.06-.92-3.39-.9-1.72.03-3.33 1.02-4.22 2.57-1.82 3.14-.46 7.76 1.28 10.3.87 1.24 1.89 2.62 3.23 2.57 1.3-.05 1.79-.83 3.36-.83 1.56 0 2.01.83 3.37.8 1.4-.02 2.28-1.25 3.12-2.5 1-1.43 1.41-2.83 1.43-2.9-.03-.01-2.73-1.05-2.76-4.12h.03zM13.89 4.43c.7-.87 1.18-2.05 1.05-3.25-1.01.04-2.27.69-3 1.54-.64.76-1.22 2-1.07 3.17 1.14.08 2.31-.57 3.02-1.46z"/>
-                    </svg>
-                    <div class="store-text">
-                      <span class="store-label">Download on the</span>
-                      <span class="store-name">App Store</span>
-                    </div>
-                  </a>
-                  <a href="https://play.google.com/store/apps/details?id=net.primal.android" target="_blank" rel="noopener noreferrer" class="store-btn">
-                    <svg width="20" height="22" viewBox="0 0 20 22" fill="currentColor">
-                      <path d="M1 1.16v19.68c0 .67.74 1.07 1.32.71l16.36-9.84c.58-.35.58-1.17 0-1.51L2.32.36C1.74 0 1 .4 1 1.07v.09z"/>
-                    </svg>
-                    <div class="store-text">
-                      <span class="store-label">Get it on</span>
-                      <span class="store-name">Google Play</span>
-                    </div>
-                  </a>
+          <div class="whats-next-column">
+            <h3>What's Next?</h3>
+
+            <div class="step-card">
+              <div class="step-number">1</div>
+              <div class="step-content">
+                <h4>Save Your Key</h4>
+                <p>This is your Nostr identity - keep it safe!</p>
+                <div class="key-actions">
+                  <button class="action-btn" on:click={copyNsec}>
+                    {#if nsecCopied}
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M20 6L9 17l-5-5"/>
+                      </svg>
+                      Copied!
+                    {:else}
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                        <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+                      </svg>
+                      Copy Key
+                    {/if}
+                  </button>
+                  <button class="action-btn" on:click={downloadKey}>
+                    {#if keyDownloaded}
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M20 6L9 17l-5-5"/>
+                      </svg>
+                      Downloaded!
+                    {:else}
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                        <polyline points="7 10 12 15 17 10"/>
+                        <line x1="12" y1="15" x2="12" y2="3"/>
+                      </svg>
+                      Download Key
+                    {/if}
+                  </button>
                 </div>
               </div>
             </div>
-          </div>
 
-          <div class="step-card">
-            <div class="step-number">3</div>
-            <div class="step-content">
-              <h4>Log in with your key</h4>
-              <p>Open Primal, tap "Login", then "Use login key" and paste your Primal Key</p>
+            <div class="step-card">
+              <div class="step-number">2</div>
+              <div class="step-content">
+                <h4>Get Primal App</h4>
+                <p>Access your content anywhere</p>
+                <a
+                  href={getPrimalDownloadUrl()}
+                  target="_blank"
+                  rel="noopener"
+                  class="get-primal-btn"
+                  class:disabled={!keySaved}
+                  aria-disabled={!keySaved}
+                >
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                    <polyline points="7 10 12 15 17 10"/>
+                    <line x1="12" y1="15" x2="12" y2="3"/>
+                  </svg>
+                  Get Primal
+                </a>
+                {#if !keySaved}
+                  <p class="save-key-hint">Save your key first to continue</p>
+                {/if}
+              </div>
+            </div>
+
+            <div class="step-card">
+              <div class="step-number">3</div>
+              <div class="step-content">
+                <h4>Log in with your key</h4>
+                <p>Open Primal, tap "Login", then "Use login key" and paste your key</p>
+              </div>
             </div>
           </div>
         </div>
@@ -1066,6 +1049,69 @@
     text-align: center;
   }
 
+  .publishing-content {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2rem;
+    margin-top: 1rem;
+    text-align: left;
+  }
+
+  .tasks-column {
+    min-width: 0;
+  }
+
+  .whats-next-column {
+    min-width: 0;
+  }
+
+  .whats-next-column h3 {
+    font-size: 1.125rem;
+    font-weight: 600;
+    margin-bottom: 1rem;
+    color: var(--text-primary);
+  }
+
+  .get-primal-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1.25rem;
+    background: linear-gradient(135deg, #a855f7 0%, #8b5cf6 100%);
+    border: none;
+    border-radius: 0.5rem;
+    color: white;
+    font-size: 0.9rem;
+    font-weight: 600;
+    text-decoration: none;
+    transition: all 0.2s ease;
+  }
+
+  .get-primal-btn:hover:not(.disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 15px rgba(168, 85, 247, 0.4);
+  }
+
+  .get-primal-btn.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    pointer-events: none;
+  }
+
+  .save-key-hint {
+    font-size: 0.75rem;
+    color: #f59e0b;
+    margin-top: 0.5rem;
+    margin-bottom: 0;
+  }
+
+  @media (max-width: 768px) {
+    .publishing-content {
+      grid-template-columns: 1fr;
+      gap: 1.5rem;
+    }
+  }
+
   .progress-bar {
     height: 8px;
     background: var(--bg-tertiary);
@@ -1196,58 +1242,7 @@
     color: #ef4444;
   }
 
-  /* Complete step */
-  .complete-step {
-    text-align: center;
-  }
-
-  .success-icon {
-    width: 5rem;
-    height: 5rem;
-    background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: white;
-    margin: 0 auto 1.5rem;
-  }
-
-  /* Enhanced complete step */
-  .view-profile-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    padding: 0.875rem 1.5rem;
-    background: linear-gradient(135deg, #a855f7 0%, #8b5cf6 100%);
-    border: none;
-    border-radius: 0.75rem;
-    color: white;
-    font-size: 1rem;
-    font-weight: 600;
-    text-decoration: none;
-    transition: all 0.2s ease;
-    margin-bottom: 2rem;
-  }
-
-  .view-profile-btn:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 4px 20px rgba(168, 85, 247, 0.4);
-  }
-
-  .whats-next {
-    text-align: left;
-    margin-top: 1rem;
-  }
-
-  .whats-next h3 {
-    font-size: 1.125rem;
-    font-weight: 600;
-    margin-bottom: 1rem;
-    color: var(--text-primary);
-  }
-
+  /* Step cards (used in publishing step) */
   .step-card {
     display: flex;
     gap: 1rem;
@@ -1318,72 +1313,6 @@
 
   .action-btn svg {
     flex-shrink: 0;
-  }
-
-  .download-row {
-    display: flex;
-    gap: 1rem;
-    align-items: flex-start;
-    flex-wrap: wrap;
-  }
-
-  .qr-wrapper {
-    background: white;
-    padding: 0.5rem;
-    border-radius: 0.5rem;
-    flex-shrink: 0;
-  }
-
-  .qr-wrapper img {
-    display: block;
-  }
-
-  .store-buttons {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    flex: 1;
-    min-width: 160px;
-  }
-
-  .store-btn {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.625rem 1rem;
-    background: #000;
-    border: 1px solid #333;
-    border-radius: 0.5rem;
-    color: white;
-    text-decoration: none;
-    transition: all 0.2s;
-  }
-
-  .store-btn:hover {
-    background: #1a1a1a;
-    border-color: #555;
-  }
-
-  .store-btn svg {
-    flex-shrink: 0;
-  }
-
-  .store-text {
-    display: flex;
-    flex-direction: column;
-    text-align: left;
-  }
-
-  .store-label {
-    font-size: 0.625rem;
-    color: #aaa;
-    line-height: 1.2;
-  }
-
-  .store-name {
-    font-size: 0.875rem;
-    font-weight: 600;
-    line-height: 1.2;
   }
 
   /* Article preview styles */
