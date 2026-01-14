@@ -254,11 +254,6 @@ export function createLongFormContentEvent(
     tags.push(['image', article.imageUrl]);
   }
 
-  // Original publication date
-  if (article.publishedAt) {
-    tags.push(['published_at', article.publishedAt]);
-  }
-
   // Hashtags as t-tags for discoverability
   if (article.hashtags) {
     for (const tag of article.hashtags) {
@@ -277,6 +272,9 @@ export function createLongFormContentEvent(
       createdAt = timestamp;
     }
   }
+
+  // Always add published_at tag (required by Primal for indexing)
+  tags.push(['published_at', createdAt.toString()]);
 
   return {
     kind: 30023,
