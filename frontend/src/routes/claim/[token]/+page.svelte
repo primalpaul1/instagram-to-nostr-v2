@@ -486,26 +486,14 @@
         ? task.article.link.replace(/^https?:\/\//, '').replace(/[^a-zA-Z0-9-]/g, '-').slice(0, 100)
         : title.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 100);
 
-      // Parse published_at to Unix timestamp
-      let publishedAt: string | undefined;
-      if (task.article.published_at) {
-        try {
-          const date = new Date(task.article.published_at);
-          if (!isNaN(date.getTime())) {
-            publishedAt = Math.floor(date.getTime() / 1000).toString();
-          }
-        } catch {
-          // Ignore parse errors
-        }
-      }
-
       // Create article event
+      // published_at is already a Unix timestamp string from the backend
       const articleEvent = createLongFormContentEvent(connectedPubkey, {
         identifier,
         title,
         summary: task.article.summary || undefined,
         imageUrl: task.article.blossom_image_url || task.article.image_url || undefined,
-        publishedAt,
+        publishedAt: task.article.published_at || undefined,
         hashtags: task.article.hashtags,
         content: task.article.content_markdown
       });
@@ -1220,7 +1208,7 @@
 
           {#if selectedArticle.published_at}
             <div class="post-date">
-              Originally published: {new Date(selectedArticle.published_at).toLocaleDateString()}
+              Originally published: {new Date(parseInt(selectedArticle.published_at) * 1000).toLocaleDateString()}
             </div>
           {/if}
         </div>
