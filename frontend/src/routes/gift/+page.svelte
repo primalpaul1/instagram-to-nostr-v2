@@ -630,6 +630,16 @@
           hashtags: a.hashtags
         }));
         body.feed = feedInfo;
+
+        // For article-only gifts, construct profile from feed info
+        if (!hasPosts && feedInfo) {
+          body.profile = {
+            username: feedInfo.author_name || feedInfo.title,
+            display_name: feedInfo.author_name || feedInfo.title,
+            bio: feedInfo.author_bio || feedInfo.description,
+            profile_picture_url: feedInfo.author_image || feedInfo.image_url
+          };
+        }
       }
 
       const response = await fetch('/api/gifts', {
