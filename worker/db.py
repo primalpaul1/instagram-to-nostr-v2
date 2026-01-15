@@ -467,3 +467,51 @@ def reset_stale_processing_gifts() -> int:
             )
 
         return count
+
+
+# ============================================
+# Gift article functions for RSS/blog gifts
+# ============================================
+
+
+def get_gift_articles(gift_id: str) -> list[dict]:
+    """Get all articles for a gift with their image data."""
+    with get_connection() as conn:
+        cursor = conn.execute(
+            """
+            SELECT * FROM gift_articles
+            WHERE gift_id = ?
+            ORDER BY id ASC
+            """,
+            (gift_id,),
+        )
+        return [dict(row) for row in cursor.fetchall()]
+
+
+def update_gift_article_images(
+    article_id: int,
+    blossom_image_url: Optional[str],
+    content_markdown: str,
+    inline_image_urls: Optional[str] = None,
+):
+    """Update article after image processing - sets blossom URL, updated content, and URL mappings."""
+    with get_connection() as conn:
+        conn.execute(
+            """
+            UPDATE gift_articles
+            SET blossom_image_url = ?,
+                content_markdown = ?,
+                inline_image_urls = ?
+            WHERE id = ?
+            """,
+            (blossom_image_url, content_markdown, inline_image_urls, article_id),
+        )
+
+
+def update_gift_article_status(article_id: int, status: str):
+    """Update a gift article's status (pending → ready → published)."""
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE gift_articles SET status = ? WHERE id = ?",
+            (status, article_id),
+        )

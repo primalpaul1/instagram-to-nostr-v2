@@ -482,6 +482,7 @@ export interface GiftArticle {
   image_url: string | null;
   blossom_image_url: string | null;
   hashtags: string | null;  // JSON string
+  inline_image_urls: string | null;  // JSON mapping: {"original_url": "blossom_url"}
   status: 'pending' | 'ready' | 'published';
   created_at: string;
 }
@@ -733,7 +734,7 @@ export async function createGiftArticle(
 
   database.run(
     `INSERT INTO gift_articles (gift_id, title, summary, content_markdown, published_at, link, image_url, blossom_image_url, hashtags, status)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready')`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
     [
       giftId,
       title,

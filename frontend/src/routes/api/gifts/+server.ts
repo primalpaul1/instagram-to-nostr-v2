@@ -130,12 +130,8 @@ export const POST: RequestHandler = async ({ request, url }) => {
       giftType
     );
 
-    // For article-only gifts, mark as ready immediately (no media processing needed)
-    // Combined gifts need worker processing for posts, so keep as 'pending'
-    if (giftType === 'articles') {
-      const { updateGiftStatus } = await import('$lib/server/db');
-      await updateGiftStatus(giftId, 'ready');
-    }
+    // All gifts go through worker for image processing (including article-only gifts)
+    // Worker will mark them as 'ready' after uploading images to Blossom
 
     // Create gift posts and/or articles based on type
     if ((giftType === 'posts' || giftType === 'combined') && posts) {

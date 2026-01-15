@@ -119,6 +119,7 @@ CREATE TABLE IF NOT EXISTS gift_articles (
   image_url TEXT,
   blossom_image_url TEXT,
   hashtags TEXT,  -- JSON array
+  inline_image_urls TEXT,  -- JSON mapping: {"original_url": "blossom_url"}
   status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'ready', 'published')),
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (gift_id) REFERENCES gifts(id) ON DELETE CASCADE

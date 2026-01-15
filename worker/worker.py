@@ -18,6 +18,8 @@ from ecdsa import SECP256k1, SigningKey
 from ecdsa.util import number_to_string, string_to_number
 import websockets
 
+import re
+
 from db import (
     get_pending_tasks,
     get_task_retry_count,
@@ -36,9 +38,12 @@ from db import (
     # Gift functions
     get_pending_gifts,
     get_gift_posts,
+    get_gift_articles,
     update_gift_status,
     update_gift_profile_data,
     update_gift_post_status,
+    update_gift_article_images,
+    update_gift_article_status,
     cleanup_expired_gifts,
     reset_stale_processing_gifts,
 )
@@ -737,6 +742,123 @@ async def process_proposal(proposal: dict) -> None:
         update_proposal_status(proposal_id, "pending")
 
 
+# ============================================
+# Markdown image processing helpers
+# ============================================
+
+
+def extract_markdown_images(markdown: str) -> list[str]:
+    """Extract image URLs from markdown ![alt](url) syntax."""
+    pattern = r'!\[.*?\]\((.*?)\)'
+    return re.findall(pattern, markdown)
+
+
+def replace_markdown_images(markdown: str, url_mapping: dict) -> str:
+    """Replace image URLs in markdown with Blossom URLs."""
+    def replacer(match):
+        full_match = match.group(0)
+        original_url = match.group(1)
+        if original_url in url_mapping:
+            return full_match.replace(original_url, url_mapping[original_url])
+        return full_match
+
+    pattern = r'!\[.*?\]\((.*?)\)'
+    return re.sub(pattern, replacer, markdown)
+
+
+async def process_gift_articles(
+    gift_id: str,
+    client: httpx.AsyncClient,
+    temp_public_key: str,
+    temp_secret_key: str,
+) -> None:
+    """Process all articles for a gift - upload header and inline images to Blossom."""
+    articles = get_gift_articles(gift_id)
+
+    if not articles:
+        return
+
+    print(f"Processing {len(articles)} articles for gift {gift_id}")
+
+    for article in articles:
+        article_id = article["id"]
+        url_mapping = {}
+        blossom_header = None
+
+        try:
+            # 1. Upload header image if exists and not already on Blossom
+            image_url = article.get("image_url")
+            existing_blossom = article.get("blossom_image_url")
+
+            if image_url and not existing_blossom:
+                try:
+                    print(f"Uploading header image for article {article_id}")
+                    result = await upload_media_to_blossom(
+                        client=client,
+                        media_url=image_url,
+                        media_type="image",
+                        public_key_hex=temp_public_key,
+                        secret_key_hex=temp_secret_key,
+                    )
+                    blossom_header = result["url"]
+                    print(f"Header image uploaded: {blossom_header}")
+                except Exception as e:
+                    print(f"Failed to upload header image for article {article_id}: {e}")
+                    # Keep original URL on failure
+            else:
+                blossom_header = existing_blossom
+
+            # 2. Extract inline images from markdown
+            content = article.get("content_markdown", "")
+            inline_urls = extract_markdown_images(content)
+
+            if inline_urls:
+                print(f"Found {len(inline_urls)} inline images in article {article_id}")
+
+            # 3. Upload each inline image
+            for url in inline_urls:
+                # Skip data URIs and already-uploaded Blossom URLs
+                if url.startswith("data:") or "blossom" in url.lower():
+                    continue
+
+                try:
+                    print(f"Uploading inline image: {url[:60]}...")
+                    result = await upload_media_to_blossom(
+                        client=client,
+                        media_url=url,
+                        media_type="image",
+                        public_key_hex=temp_public_key,
+                        secret_key_hex=temp_secret_key,
+                    )
+                    url_mapping[url] = result["url"]
+                    print(f"Inline image uploaded: {result['url']}")
+                except Exception as e:
+                    print(f"Failed to upload inline image {url[:60]}: {e}")
+                    # Keep original URL on failure
+
+            # 4. Replace URLs in markdown
+            updated_content = content
+            if url_mapping:
+                updated_content = replace_markdown_images(content, url_mapping)
+                print(f"Replaced {len(url_mapping)} image URLs in article {article_id}")
+
+            # 5. Update database with processed content
+            update_gift_article_images(
+                article_id=article_id,
+                blossom_image_url=blossom_header,
+                content_markdown=updated_content,
+                inline_image_urls=json.dumps(url_mapping) if url_mapping else None,
+            )
+
+            # 6. Mark article as ready
+            update_gift_article_status(article_id, "ready")
+            print(f"Article {article_id} processed successfully")
+
+        except Exception as e:
+            print(f"Failed to process article {article_id}: {e}")
+            # Continue with other articles
+
+
 async def process_gift(gift: dict) -> None:
     """
     Process a gift - download media and upload to Blossom.
@@ -847,6 +969,9 @@ async def process_gift(gift: dict) -> None:
                     print(f"Failed to process gift post {post_id}: {e}")
                     # Continue with other posts
                     continue
+
+            # Process articles (upload header and inline images to Blossom)
+            await process_gift_articles(gift_id, client, temp_public_key, temp_secret_key)
 
         # Mark gift as ready
         update_gift_status(gift_id, "ready")
