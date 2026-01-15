@@ -34,9 +34,14 @@ export function createConnectionURI(
   callbackUrl?: string
 ): string {
   const relayParams = NIP46_RELAYS.map(r => `relay=${encodeURIComponent(r)}`).join('&');
-  const perms = 'sign_event:0,sign_event:1,sign_event:24242';
+  const perms = 'sign_event:0,sign_event:1,sign_event:24242,sign_event:30023';
 
-  let uri = `nostrconnect://${localPubkey}?${relayParams}&secret=${secret}&name=${encodeURIComponent('Insta to Primal')}&perms=${encodeURIComponent(perms)}`;
+  // App metadata for Primal login screen
+  const appName = 'Own Your Posts';
+  const appUrl = 'https://ownyourposts.com';
+  const appIcon = 'https://ownyourposts.com/logo.png';
+
+  let uri = `nostrconnect://${localPubkey}?${relayParams}&secret=${secret}&name=${encodeURIComponent(appName)}&url=${encodeURIComponent(appUrl)}&image=${encodeURIComponent(appIcon)}&perms=${encodeURIComponent(perms)}`;
 
   // Only include callback for mobile deep link button, not QR codes
   if (includeCallback && callbackUrl) {
