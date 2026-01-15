@@ -879,8 +879,10 @@ async def process_proposal_articles(
 
 
 def extract_markdown_images(markdown: str) -> list[str]:
-    """Extract image URLs from markdown ![alt](url) syntax."""
-    pattern = r'!\[.*?\]\((.*?)\)'
+    """Extract image URLs from markdown ![alt](url) or ![alt](url "title") syntax."""
+    # Match URL up to optional space+title or closing paren
+    # Handles: ![alt](url) and ![alt](url "title")
+    pattern = r'!\[.*?\]\(([^\s\)]+)'
     return re.findall(pattern, markdown)
 
 
@@ -893,7 +895,8 @@ def replace_markdown_images(markdown: str, url_mapping: dict) -> str:
             return full_match.replace(original_url, url_mapping[original_url])
         return full_match
 
-    pattern = r'!\[.*?\]\((.*?)\)'
+    # Match URL up to optional space+title or closing paren
+    pattern = r'!\[.*?\]\(([^\s\)]+)'
     return re.sub(pattern, replacer, markdown)
 
 
