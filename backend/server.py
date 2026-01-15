@@ -755,34 +755,71 @@ def html_to_markdown(html: str, base_url: str = '') -> tuple[str, list[str]]:
 
     soup = BeautifulSoup(html, 'html.parser')
 
+    import urllib.parse
+
     # Helper to extract clean S3 URL from Substack CDN wrapper
     def clean_substack_cdn_url(url: str) -> str:
         if not url:
             return url
         # Substack CDN URLs contain the real S3 URL at the end, URL-encoded
         # e.g. https://substackcdn.com/image/fetch/.../https%3A%2F%2Fsubstack-post-media...
-        if 'substackcdn.com' in url and 'substack-post-media' in url:
-            import urllib.parse
-            # Find the encoded S3 URL
-            if 'https%3A%2F%2Fsubstack-post-media' in url:
-                idx = url.find('https%3A%2F%2Fsubstack-post-media')
-                return urllib.parse.unquote(url[idx:])
+        if 'substackcdn.com' in url:
+            # Look for encoded S3 URL patterns
+            s3_patterns = ['https%3A%2F%2Fsubstack-post-media', 'https%3A%2F%2Fbucketeer-']
+            for pattern in s3_patterns:
+                if pattern in url:
+                    idx = url.find(pattern)
+                    return urllib.parse.unquote(url[idx:])
+            # If URL has $s_! placeholder, it's broken - skip it
+            if '$s_!' in url:
+                return ''
         return url
 
-    # Extract image URLs for later upload
+    def get_best_image_url(img) -> str:
+        """Extract the best available image URL from img tag attributes."""
+        # Priority: srcset (highest res) > data-src > src
+        # Substack lazy-loads with placeholders in src, real URLs in srcset
+
+        # Try srcset first - contains multiple resolutions
+        srcset = img.get('srcset', '') or img.get('data-srcset', '')
+        if srcset:
+            # srcset format: "url1 100w, url2 200w, ..."
+            # Take the last (usually highest resolution) URL
+            parts = srcset.split(',')
+            for part in reversed(parts):
+                url = part.strip().split()[0] if part.strip() else ''
+                if url and not url.startswith('data:') and '$s_!' not in url:
+                    return clean_substack_cdn_url(url)
+
+        # Try data-src (lazy loading)
+        data_src = img.get('data-src', '')
+        if data_src and not data_src.startswith('data:') and '$s_!' not in data_src:
+            return clean_substack_cdn_url(data_src)
+
+        # Fall back to src
+        src = img.get('src', '')
+        if src and not src.startswith('data:'):
+            cleaned = clean_substack_cdn_url(src)
+            if cleaned:  # May be empty if $s_! placeholder was detected
+                return cleaned
+
+        return ''
+
+    # Extract image URLs for later upload AND update img src for markdown conversion
     images = []
     for img in soup.find_all('img'):
-        src = img.get('src', '')
+        src = get_best_image_url(img)
 
         if src:
             # Handle relative URLs
             if src.startswith('/') and base_url:
                 src = base_url.rstrip('/') + src
-            # Skip data URIs
-            if not src.startswith('data:'):
-                # Clean Substack CDN URLs to get direct S3 URLs
-                clean_src = clean_substack_cdn_url(src)
-                images.append(clean_src)
+            images.append(src)
+            # Update img src so markdown conversion uses clean URL
+            img['src'] = src
+        else:
+            # Remove images with no valid URL (broken placeholders)
+            img.decompose()
 
     # Remove unwanted elements
     for elem in soup.find_all(['script', 'style', 'iframe', 'noscript']):

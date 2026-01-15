@@ -33,7 +33,11 @@ export const POST: RequestHandler = async ({ request }) => {
       'muscdn.com',
       'byteoversea.com',
       'ibytedtos.com',
-      'ipstatp.com'
+      'ipstatp.com',
+      // Substack CDN (for RSS article images)
+      'substackcdn.com',
+      'substack-post-media.s3.amazonaws.com',
+      'bucketeer-',
     ];
 
     const isAllowed = allowedHosts.some(
