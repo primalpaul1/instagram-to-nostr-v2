@@ -36,6 +36,7 @@ from db import (
     update_proposal_post_status,
     update_proposal_article_images,
     update_proposal_article_status,
+    increment_proposal_article_attempts,
     cleanup_expired_proposals,
     reset_stale_processing_proposals,
     # Gift functions
@@ -47,6 +48,7 @@ from db import (
     update_gift_post_status,
     update_gift_article_images,
     update_gift_article_status,
+    increment_gift_article_attempts,
     cleanup_expired_gifts,
     reset_stale_processing_gifts,
 )
@@ -769,11 +771,17 @@ async def process_proposal_articles(
     print(f"Processing {len(articles)} articles for proposal {proposal_id}")
     all_succeeded = True
 
+    MAX_UPLOAD_ATTEMPTS = 5
+
     for article in articles:
         article_id = article["id"]
         url_mapping = {}
         blossom_header = None
         upload_failed = False
+
+        # Increment attempt counter at start
+        attempts = increment_proposal_article_attempts(article_id)
+        print(f"Processing proposal article {article_id} (attempt {attempts})")
 
         try:
             # 1. Upload header image if exists
@@ -801,7 +809,7 @@ async def process_proposal_articles(
             content = article.get("content_markdown", "")
             inline_urls = extract_markdown_images(content)
 
-            # 3. Upload each inline image - ALL must succeed
+            # 3. Upload each inline image
             for url in inline_urls:
                 if url.startswith("data:") or "blossom" in url.lower():
                     continue
@@ -819,16 +827,27 @@ async def process_proposal_articles(
                     print(f"Failed to upload inline image {url[:60]}: {e}")
                     upload_failed = True
 
-            # If any upload failed, don't mark as ready - will retry on next run
-            if upload_failed:
-                print(f"Proposal article {article_id} has failed uploads, will retry")
-                all_succeeded = False
-                continue
-
-            # 4. Replace URLs in markdown
+            # 4. Replace URLs in markdown (use Blossom URLs where available)
             updated_content = content
             if url_mapping:
                 updated_content = replace_markdown_images(content, url_mapping)
+
+            # If any upload failed, check if we've hit max attempts
+            if upload_failed:
+                if attempts >= MAX_UPLOAD_ATTEMPTS:
+                    # Max retries reached - mark as ready with CDN fallback for failed images
+                    print(f"Proposal article {article_id} hit max retries ({MAX_UPLOAD_ATTEMPTS}), marking ready with CDN fallback")
+                    update_proposal_article_images(
+                        article_id=article_id,
+                        blossom_image_url=blossom_header,  # May be None if header failed
+                        content_markdown=updated_content,  # Has Blossom URLs for successful uploads
+                        inline_image_urls=json.dumps(url_mapping) if url_mapping else None,
+                    )
+                    update_proposal_article_status(article_id, "ready")
+                else:
+                    print(f"Proposal article {article_id} has failed uploads, will retry (attempt {attempts}/{MAX_UPLOAD_ATTEMPTS})")
+                    all_succeeded = False
+                continue
 
             # 5. Update database
             update_proposal_article_images(
@@ -891,11 +910,17 @@ async def process_gift_articles(
     print(f"Processing {len(articles)} articles for gift {gift_id}")
     all_succeeded = True
 
+    MAX_UPLOAD_ATTEMPTS = 5
+
     for article in articles:
         article_id = article["id"]
         url_mapping = {}
         blossom_header = None
         upload_failed = False
+
+        # Increment attempt counter at start
+        attempts = increment_gift_article_attempts(article_id)
+        print(f"Processing gift article {article_id} (attempt {attempts})")
 
         try:
             # 1. Upload header image if exists and not already on Blossom
@@ -927,7 +952,7 @@ async def process_gift_articles(
             if inline_urls:
                 print(f"Found {len(inline_urls)} inline images in article {article_id}")
 
-            # 3. Upload each inline image - ALL must succeed
+            # 3. Upload each inline image
             for url in inline_urls:
                 # Skip data URIs and already-uploaded Blossom URLs
                 if url.startswith("data:") or "blossom" in url.lower():
@@ -948,17 +973,28 @@ async def process_gift_articles(
                     print(f"Failed to upload inline image {url[:60]}: {e}")
                     upload_failed = True
 
-            # If any upload failed, don't mark as ready - will retry on next run
-            if upload_failed:
-                print(f"Gift article {article_id} has failed uploads, will retry")
-                all_succeeded = False
-                continue
-
-            # 4. Replace URLs in markdown
+            # 4. Replace URLs in markdown (use Blossom URLs where available)
             updated_content = content
             if url_mapping:
                 updated_content = replace_markdown_images(content, url_mapping)
                 print(f"Replaced {len(url_mapping)} image URLs in article {article_id}")
+
+            # If any upload failed, check if we've hit max attempts
+            if upload_failed:
+                if attempts >= MAX_UPLOAD_ATTEMPTS:
+                    # Max retries reached - mark as ready with CDN fallback for failed images
+                    print(f"Gift article {article_id} hit max retries ({MAX_UPLOAD_ATTEMPTS}), marking ready with CDN fallback")
+                    update_gift_article_images(
+                        article_id=article_id,
+                        blossom_image_url=blossom_header,  # May be None if header failed
+                        content_markdown=updated_content,  # Has Blossom URLs for successful uploads
+                        inline_image_urls=json.dumps(url_mapping) if url_mapping else None,
+                    )
+                    update_gift_article_status(article_id, "ready")
+                else:
+                    print(f"Gift article {article_id} has failed uploads, will retry (attempt {attempts}/{MAX_UPLOAD_ATTEMPTS})")
+                    all_succeeded = False
+                continue
 
             # 5. Update database with processed content
             update_gift_article_images(
@@ -970,10 +1006,10 @@ async def process_gift_articles(
 
             # 6. Mark article as ready
             update_gift_article_status(article_id, "ready")
-            print(f"Article {article_id} processed successfully")
+            print(f"Gift article {article_id} processed successfully")
 
         except Exception as e:
-            print(f"Failed to process article {article_id}: {e}")
+            print(f"Failed to process gift article {article_id}: {e}")
             all_succeeded = False
 
     return all_succeeded

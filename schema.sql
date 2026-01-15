@@ -86,6 +86,7 @@ CREATE TABLE IF NOT EXISTS proposal_articles (
   blossom_image_url TEXT,
   hashtags TEXT,  -- JSON array
   inline_image_urls TEXT,  -- JSON mapping: {"original_url": "blossom_url"}
+  upload_attempts INTEGER DEFAULT 0,  -- Track retry count for image uploads
   status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'ready', 'published')),
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE
@@ -140,6 +141,7 @@ CREATE TABLE IF NOT EXISTS gift_articles (
   blossom_image_url TEXT,
   hashtags TEXT,  -- JSON array
   inline_image_urls TEXT,  -- JSON mapping: {"original_url": "blossom_url"}
+  upload_attempts INTEGER DEFAULT 0,  -- Track retry count for image uploads
   status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'ready', 'published')),
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (gift_id) REFERENCES gifts(id) ON DELETE CASCADE

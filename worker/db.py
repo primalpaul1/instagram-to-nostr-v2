@@ -293,6 +293,21 @@ def update_proposal_article_status(article_id: int, status: str):
         )
 
 
+def increment_proposal_article_attempts(article_id: int) -> int:
+    """Increment upload_attempts for a proposal article and return the new value."""
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE proposal_articles SET upload_attempts = COALESCE(upload_attempts, 0) + 1 WHERE id = ?",
+            (article_id,),
+        )
+        cursor = conn.execute(
+            "SELECT upload_attempts FROM proposal_articles WHERE id = ?",
+            (article_id,),
+        )
+        row = cursor.fetchone()
+        return row[0] if row else 0
+
+
 def cleanup_expired_proposals() -> int:
     """
     Delete proposals that:
@@ -558,3 +573,18 @@ def update_gift_article_status(article_id: int, status: str):
             "UPDATE gift_articles SET status = ? WHERE id = ?",
             (status, article_id),
         )
+
+
+def increment_gift_article_attempts(article_id: int) -> int:
+    """Increment upload_attempts for a gift article and return the new value."""
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE gift_articles SET upload_attempts = COALESCE(upload_attempts, 0) + 1 WHERE id = ?",
+            (article_id,),
+        )
+        cursor = conn.execute(
+            "SELECT upload_attempts FROM gift_articles WHERE id = ?",
+            (article_id,),
+        )
+        row = cursor.fetchone()
+        return row[0] if row else 0
