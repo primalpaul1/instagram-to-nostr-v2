@@ -581,6 +581,7 @@ export async function ensureGiftTables(): Promise<void> {
           image_url TEXT,
           blossom_image_url TEXT,
           hashtags TEXT,
+          inline_image_urls TEXT,
           status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'ready', 'published')),
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (gift_id) REFERENCES gifts(id) ON DELETE CASCADE
@@ -588,6 +589,15 @@ export async function ensureGiftTables(): Promise<void> {
       `);
       database.run('CREATE INDEX IF NOT EXISTS idx_gift_articles_gift_id ON gift_articles(gift_id)');
       saveDb(database);
+    } else {
+      // Check if inline_image_urls column exists in gift_articles
+      const articleColCheck = database.exec("PRAGMA table_info(gift_articles)");
+      const articleColumns = articleColCheck.length > 0 ? articleColCheck[0].values.map(row => row[1]) : [];
+
+      if (!articleColumns.includes('inline_image_urls')) {
+        database.run("ALTER TABLE gift_articles ADD COLUMN inline_image_urls TEXT");
+        saveDb(database);
+      }
     }
   }
 }
