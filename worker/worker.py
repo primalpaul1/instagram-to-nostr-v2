@@ -736,7 +736,11 @@ async def process_proposal(proposal: dict) -> None:
                     continue
 
             # Process articles (upload header and inline images to Blossom)
-            await process_proposal_articles(proposal_id, client, temp_public_key, temp_secret_key)
+            articles_ok = await process_proposal_articles(proposal_id, client, temp_public_key, temp_secret_key)
+            if not articles_ok:
+                print(f"Proposal {proposal_id} has failed article uploads, will retry")
+                update_proposal_status(proposal_id, "pending")
+                return
 
         # Mark proposal as ready
         update_proposal_status(proposal_id, "ready")
@@ -753,13 +757,17 @@ async def process_proposal_articles(
     client: httpx.AsyncClient,
     temp_public_key: str,
     temp_secret_key: str,
-) -> None:
-    """Process all articles for a proposal - upload header and inline images to Blossom."""
+) -> bool:
+    """Process all articles for a proposal - upload header and inline images to Blossom.
+
+    Returns True if ALL articles were processed successfully, False if any failed.
+    """
     articles = get_proposal_articles(proposal_id)
     if not articles:
-        return
+        return True  # No articles = success
 
     print(f"Processing {len(articles)} articles for proposal {proposal_id}")
+    all_succeeded = True
 
     for article in articles:
         article_id = article["id"]
@@ -814,6 +822,7 @@ async def process_proposal_articles(
             # If any upload failed, don't mark as ready - will retry on next run
             if upload_failed:
                 print(f"Proposal article {article_id} has failed uploads, will retry")
+                all_succeeded = False
                 continue
 
             # 4. Replace URLs in markdown
@@ -835,6 +844,9 @@ async def process_proposal_articles(
 
         except Exception as e:
             print(f"Failed to process proposal article {article_id}: {e}")
+            all_succeeded = False
+
+    return all_succeeded
 
 
 # ============================================
@@ -866,14 +878,18 @@ async def process_gift_articles(
     client: httpx.AsyncClient,
     temp_public_key: str,
     temp_secret_key: str,
-) -> None:
-    """Process all articles for a gift - upload header and inline images to Blossom."""
+) -> bool:
+    """Process all articles for a gift - upload header and inline images to Blossom.
+
+    Returns True if ALL articles were processed successfully, False if any failed.
+    """
     articles = get_gift_articles(gift_id)
 
     if not articles:
-        return
+        return True  # No articles = success
 
     print(f"Processing {len(articles)} articles for gift {gift_id}")
+    all_succeeded = True
 
     for article in articles:
         article_id = article["id"]
@@ -935,6 +951,7 @@ async def process_gift_articles(
             # If any upload failed, don't mark as ready - will retry on next run
             if upload_failed:
                 print(f"Gift article {article_id} has failed uploads, will retry")
+                all_succeeded = False
                 continue
 
             # 4. Replace URLs in markdown
@@ -957,7 +974,9 @@ async def process_gift_articles(
 
         except Exception as e:
             print(f"Failed to process article {article_id}: {e}")
-            # Continue with other articles
+            all_succeeded = False
+
+    return all_succeeded
 
 
 async def process_gift(gift: dict) -> None:
@@ -1072,7 +1091,11 @@ async def process_gift(gift: dict) -> None:
                     continue
 
             # Process articles (upload header and inline images to Blossom)
-            await process_gift_articles(gift_id, client, temp_public_key, temp_secret_key)
+            articles_ok = await process_gift_articles(gift_id, client, temp_public_key, temp_secret_key)
+            if not articles_ok:
+                print(f"Gift {gift_id} has failed article uploads, will retry")
+                update_gift_status(gift_id, "pending")
+                return
 
         # Mark gift as ready
         update_gift_status(gift_id, "ready")
