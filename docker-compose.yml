@@ -32,7 +32,7 @@ services:
       - DATABASE_PATH=/data/instagram.db
       - BACKEND_URL=http://backend:8000
       - BLOSSOM_SERVER=https://blossom.primal.net
-      - CONCURRENCY=3
+      - CONCURRENCY=8
       - MAX_RETRIES=3
       - NOSTR_RELAYS=wss://relay.primal.net,wss://relay.damus.io,wss://nos.lol
     volumes:

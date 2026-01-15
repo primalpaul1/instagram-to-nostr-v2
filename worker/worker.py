@@ -1172,7 +1172,9 @@ async def worker_loop():
 
     # Track last cleanup time
     last_cleanup = 0
+    last_status_log = 0
     CLEANUP_INTERVAL = 3600  # Run cleanup every hour
+    STATUS_LOG_INTERVAL = 60  # Log queue status every minute
     DISK_WARNING_THRESHOLD = 80  # Warn when disk usage exceeds 80%
 
     def check_disk_space():
@@ -1194,8 +1196,19 @@ async def worker_loop():
 
     while True:
         try:
-            # Periodic cleanup of expired proposals and gifts
             now = time.time()
+
+            # Periodic queue status logging for monitoring
+            if now - last_status_log > STATUS_LOG_INTERVAL:
+                pending_proposals = get_pending_proposals(limit=100)
+                pending_gifts = get_pending_gifts(limit=100)
+                pending_tasks = get_pending_tasks(limit=100)
+                total_pending = len(pending_proposals) + len(pending_gifts) + len(pending_tasks)
+                if total_pending > 0:
+                    print(f"[Queue Status] {len(pending_proposals)} proposals, {len(pending_gifts)} gifts, {len(pending_tasks)} tasks pending")
+                last_status_log = now
+
+            # Periodic cleanup of expired proposals and gifts
             if now - last_cleanup > CLEANUP_INTERVAL:
                 # Check disk space first
                 check_disk_space()
@@ -1206,6 +1219,7 @@ async def worker_loop():
                 deleted_gifts = cleanup_expired_gifts()
                 if deleted_gifts > 0:
                     print(f"Cleaned up {deleted_gifts} expired/old gifts")
+
                 last_cleanup = now
 
             # Get and process pending profile events first
