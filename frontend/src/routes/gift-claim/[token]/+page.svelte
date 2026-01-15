@@ -752,7 +752,7 @@
             </div>
 
             <div class="step-card">
-              <div class="step-number">2</div>
+              <img src="/primal-logo.png" alt="Primal" class="primal-logo" />
               <div class="step-content">
                 <h4>Get Primal App</h4>
                 <p>Access your content anywhere</p>
@@ -1343,6 +1343,13 @@
     flex-shrink: 0;
   }
 
+  .primal-logo {
+    width: 2rem;
+    height: 2rem;
+    flex-shrink: 0;
+    border-radius: 50%;
+  }
+
   .step-content {
     flex: 1;
   }
@@ -1364,7 +1371,11 @@
   .key-actions {
     display: flex;
     gap: 0.5rem;
-    flex-wrap: wrap;
+  }
+
+  .key-actions .action-btn {
+    flex: 1;
+    justify-content: center;
   }
 
   .action-btn {
