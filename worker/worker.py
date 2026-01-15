@@ -22,14 +22,18 @@ import re
 
 from db import (
     get_pending_tasks,
+    claim_next_pending_task,
     get_task_retry_count,
     get_jobs_with_unpublished_profiles,
+    claim_next_unpublished_profile,
+    reset_stale_processing_profiles,
     init_db,
     update_job_status,
     update_job_profile_published,
     update_task_status,
     # Proposal functions
     get_pending_proposals,
+    claim_next_pending_proposal,
     get_proposal_posts,
     get_proposal_articles,
     update_proposal_status,
@@ -41,6 +45,7 @@ from db import (
     reset_stale_processing_proposals,
     # Gift functions
     get_pending_gifts,
+    claim_next_pending_gift,
     get_gift_posts,
     get_gift_articles,
     update_gift_status,
@@ -1220,42 +1225,59 @@ async def worker_loop():
                 if deleted_gifts > 0:
                     print(f"Cleaned up {deleted_gifts} expired/old gifts")
 
+                # Reset stale processing items (crashed workers)
+                reset_stale_processing_proposals()
+                reset_stale_processing_gifts()
+                reset_stale_processing_profiles()
+
                 last_cleanup = now
 
-            # Get and process pending profile events first
-            profiles = get_jobs_with_unpublished_profiles(limit=5)
-            if profiles:
-                print(f"Found {len(profiles)} profiles to publish")
-                for profile in profiles:
-                    await process_profile(profile)
+            # Process items using atomic claim functions
+            # This ensures multiple workers don't process the same item
+            processed_any = False
 
-            # Get and process pending proposals
-            proposals = get_pending_proposals(limit=3)
-            if proposals:
-                print(f"Found {len(proposals)} pending proposals")
-                for proposal in proposals:
-                    await process_proposal(proposal)
+            # Process profiles (claim one at a time)
+            profile = claim_next_unpublished_profile()
+            if profile:
+                print(f"Claimed profile for @{profile.get('handle', 'unknown')}")
+                await process_profile(profile)
+                processed_any = True
 
-            # Get and process pending gifts
-            gifts = get_pending_gifts(limit=3)
-            if gifts:
-                print(f"Found {len(gifts)} pending gifts")
-                for gift in gifts:
-                    await process_gift(gift)
+            # Process proposals (claim one at a time)
+            proposal = claim_next_pending_proposal()
+            if proposal:
+                print(f"Claimed proposal {proposal['id']} for @{proposal.get('ig_handle', 'unknown')}")
+                await process_proposal(proposal)
+                processed_any = True
 
-            # Get pending tasks
-            tasks = get_pending_tasks(limit=CONCURRENCY * 2)
+            # Process gifts (claim one at a time)
+            gift = claim_next_pending_gift()
+            if gift:
+                print(f"Claimed gift {gift['id']} for @{gift.get('ig_handle', 'unknown')}")
+                await process_gift(gift)
+                processed_any = True
 
-            if tasks:
-                print(f"Found {len(tasks)} pending tasks")
+            # Process tasks concurrently (claim multiple, up to CONCURRENCY)
+            async def claim_and_process_task():
+                """Claim and process one task atomically."""
+                task = claim_next_pending_task()
+                if task:
+                    await process_task(task)
+                    return True
+                return False
 
-                # Process tasks concurrently (up to CONCURRENCY limit)
-                await asyncio.gather(
-                    *[process_with_semaphore(task) for task in tasks],
-                    return_exceptions=True,
-                )
-            elif not profiles and not proposals and not gifts:
-                # No tasks, profiles, proposals, or gifts - wait before polling again
+            # Launch CONCURRENCY workers to claim and process tasks
+            task_results = await asyncio.gather(
+                *[claim_and_process_task() for _ in range(CONCURRENCY)],
+                return_exceptions=True,
+            )
+            tasks_processed = sum(1 for r in task_results if r is True)
+            if tasks_processed > 0:
+                print(f"Processed {tasks_processed} tasks")
+                processed_any = True
+
+            if not processed_any:
+                # No items to process - wait before polling again
                 await asyncio.sleep(POLL_INTERVAL)
 
         except Exception as e:

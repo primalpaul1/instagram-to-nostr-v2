@@ -60,6 +60,49 @@ def get_pending_tasks(limit: int = 10) -> list[dict]:
         return [dict(row) for row in cursor.fetchall()]
 
 
+def claim_next_pending_task() -> Optional[dict]:
+    """Atomically claim one pending task for processing.
+
+    Returns the claimed task or None if no tasks available.
+    Safe for concurrent workers - only one worker can claim each task.
+    """
+    with get_connection() as conn:
+        while True:
+            # Find a candidate
+            cursor = conn.execute(
+                """
+                SELECT vt.*, j.public_key_hex, j.secret_key_hex
+                FROM video_tasks vt
+                JOIN jobs j ON vt.job_id = j.id
+                WHERE vt.status = 'pending'
+                ORDER BY vt.created_at ASC
+                LIMIT 1
+                """
+            )
+            row = cursor.fetchone()
+
+            if not row:
+                return None  # No pending tasks
+
+            task = dict(row)
+
+            # Try to claim it atomically
+            cursor = conn.execute(
+                """
+                UPDATE video_tasks
+                SET status = 'uploading'
+                WHERE id = ? AND status = 'pending'
+                """,
+                (task['id'],),
+            )
+
+            if cursor.rowcount > 0:
+                # We successfully claimed it
+                return task
+
+            # Someone else claimed it, try again
+
+
 def update_task_status(
     task_id: str,
     status: str,
@@ -166,6 +209,69 @@ def get_jobs_with_unpublished_profiles(limit: int = 10) -> list[dict]:
         return [dict(row) for row in cursor.fetchall()]
 
 
+def claim_next_unpublished_profile() -> Optional[dict]:
+    """Atomically claim one unpublished profile for processing.
+
+    Returns the claimed profile or None if none available.
+    Safe for concurrent workers - only one worker can claim each profile.
+    Uses profile_published: 0=unpublished, -1=processing, 1=published
+    """
+    with get_connection() as conn:
+        while True:
+            # Find a candidate
+            cursor = conn.execute(
+                """
+                SELECT id, handle, public_key_hex, secret_key_hex,
+                       profile_name, profile_bio, profile_picture_url, profile_blossom_url
+                FROM jobs
+                WHERE profile_published = 0
+                  AND profile_name IS NOT NULL
+                ORDER BY created_at ASC
+                LIMIT 1
+                """
+            )
+            row = cursor.fetchone()
+
+            if not row:
+                return None  # No unpublished profiles
+
+            profile = dict(row)
+
+            # Try to claim it atomically (set to -1 = processing)
+            cursor = conn.execute(
+                """
+                UPDATE jobs
+                SET profile_published = -1
+                WHERE id = ? AND profile_published = 0
+                """,
+                (profile['id'],),
+            )
+
+            if cursor.rowcount > 0:
+                # We successfully claimed it
+                return profile
+
+            # Someone else claimed it, try again
+
+
+def reset_stale_processing_profiles(older_than_minutes: int = 10) -> int:
+    """Reset profiles stuck in processing state back to unpublished.
+
+    Called periodically to handle crashed workers.
+    """
+    with get_connection() as conn:
+        cursor = conn.execute(
+            """
+            UPDATE jobs
+            SET profile_published = 0
+            WHERE profile_published = -1
+              AND updated_at < datetime('now', ? || ' minutes')
+            """,
+            (f"-{older_than_minutes}",),
+        )
+        return cursor.rowcount
+
+
 def update_job_profile_published(
     job_id: str,
     profile_blossom_url: Optional[str] = None,
@@ -202,6 +308,47 @@ def get_pending_proposals(limit: int = 10) -> list[dict]:
             (limit,),
         )
         return [dict(row) for row in cursor.fetchall()]
+
+
+def claim_next_pending_proposal() -> Optional[dict]:
+    """Atomically claim one pending proposal for processing.
+
+    Returns the claimed proposal or None if none available.
+    Safe for concurrent workers - only one worker can claim each proposal.
+    """
+    with get_connection() as conn:
+        while True:
+            # Find a candidate
+            cursor = conn.execute(
+                """
+                SELECT * FROM proposals
+                WHERE status = 'pending'
+                ORDER BY created_at ASC
+                LIMIT 1
+                """
+            )
+            row = cursor.fetchone()
+
+            if not row:
+                return None  # No pending proposals
+
+            proposal = dict(row)
+
+            # Try to claim it atomically
+            cursor = conn.execute(
+                """
+                UPDATE proposals
+                SET status = 'processing'
+                WHERE id = ? AND status = 'pending'
+                """,
+                (proposal['id'],),
+            )
+
+            if cursor.rowcount > 0:
+                # We successfully claimed it
+                return proposal
+
+            # Someone else claimed it, try again
 
 
 def get_proposal_posts(proposal_id: str) -> list[dict]:
@@ -398,6 +545,47 @@ def get_pending_gifts(limit: int = 10) -> list[dict]:
             (limit,),
         )
         return [dict(row) for row in cursor.fetchall()]
+
+
+def claim_next_pending_gift() -> Optional[dict]:
+    """Atomically claim one pending gift for processing.
+
+    Returns the claimed gift or None if none available.
+    Safe for concurrent workers - only one worker can claim each gift.
+    """
+    with get_connection() as conn:
+        while True:
+            # Find a candidate
+            cursor = conn.execute(
+                """
+                SELECT * FROM gifts
+                WHERE status = 'pending'
+                ORDER BY created_at ASC
+                LIMIT 1
+                """
+            )
+            row = cursor.fetchone()
+
+            if not row:
+                return None  # No pending gifts
+
+            gift = dict(row)
+
+            # Try to claim it atomically
+            cursor = conn.execute(
+                """
+                UPDATE gifts
+                SET status = 'processing'
+                WHERE id = ? AND status = 'pending'
+                """,
+                (gift['id'],),
+            )
+
+            if cursor.rowcount > 0:
+                # We successfully claimed it
+                return gift
+
+            # Someone else claimed it, try again
 
 
 def get_gift_posts(gift_id: str) -> list[dict]:
