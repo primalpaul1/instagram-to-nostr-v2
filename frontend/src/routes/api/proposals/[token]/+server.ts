@@ -1,8 +1,12 @@
 import { json } from '@sveltejs/kit';
 import {
+  getProposalByToken,
   getProposalByTokenWithPosts,
+  getProposalByTokenWithArticles,
+  getProposalByTokenWithBoth,
   markProposalClaimed,
-  updateProposalPostStatus
+  updateProposalPostStatus,
+  updateProposalArticleStatus
 } from '$lib/server/db';
 import type { RequestHandler } from './$types';
 
@@ -10,12 +14,11 @@ export const GET: RequestHandler = async ({ params }) => {
   try {
     const { token } = params;
 
-    const result = await getProposalByTokenWithPosts(token);
-    if (!result) {
+    // First get the proposal to check its type
+    const proposal = await getProposalByToken(token);
+    if (!proposal) {
       return json({ error: 'Proposal not found' }, { status: 404 });
     }
-
-    const { proposal, posts } = result;
 
     // Check if expired
     const expiresAt = new Date(proposal.expires_at);
@@ -23,33 +26,39 @@ export const GET: RequestHandler = async ({ params }) => {
       return json({ error: 'This proposal has expired' }, { status: 410 });
     }
 
-    // Parse profile data
+    // Parse profile/feed data
     let profile = null;
+    let feed = null;
     if (proposal.profile_data) {
       try {
-        profile = JSON.parse(proposal.profile_data);
+        const parsed = JSON.parse(proposal.profile_data);
+        if (proposal.proposal_type === 'articles') {
+          feed = parsed.feed || parsed;
+          profile = parsed.profile || null;
+        } else if (proposal.proposal_type === 'combined') {
+          profile = parsed.profile || null;
+          feed = parsed.feed || null;
+        } else {
+          profile = parsed;
+        }
       } catch {
         // Ignore parse errors
       }
     }
 
-    // Format posts for response
-    const formattedPosts = posts.map(post => {
+    // Helper to format posts
+    const formatPosts = (posts: any[]) => posts.map(post => {
       let mediaItems = [];
       let blossomUrls = [];
 
       try {
         mediaItems = JSON.parse(post.media_items);
-      } catch {
-        // Ignore parse errors
-      }
+      } catch {}
 
       if (post.blossom_urls) {
         try {
           blossomUrls = JSON.parse(post.blossom_urls);
-        } catch {
-          // Ignore parse errors
-        }
+        } catch {}
       }
 
       return {
@@ -64,16 +73,88 @@ export const GET: RequestHandler = async ({ params }) => {
       };
     });
 
-    return json({
-      status: proposal.status,
-      targetNpub: proposal.target_npub,
-      targetPubkeyHex: proposal.target_pubkey_hex,
-      handle: proposal.ig_handle,
-      profile,
-      posts: formattedPosts,
-      createdAt: proposal.created_at,
-      expiresAt: proposal.expires_at
+    // Helper to format articles
+    const formatArticles = (articles: any[]) => articles.map(article => {
+      let hashtags: string[] = [];
+      if (article.hashtags) {
+        try {
+          hashtags = JSON.parse(article.hashtags);
+        } catch {}
+      }
+
+      return {
+        id: article.id,
+        title: article.title,
+        summary: article.summary,
+        content_markdown: article.content_markdown,
+        published_at: article.published_at,
+        link: article.link,
+        image_url: article.image_url,
+        blossom_image_url: article.blossom_image_url,
+        hashtags,
+        status: article.status
+      };
     });
+
+    // Handle based on proposal type
+    const proposalType = proposal.proposal_type || 'posts';
+
+    if (proposalType === 'combined') {
+      const result = await getProposalByTokenWithBoth(token);
+      if (!result) {
+        return json({ error: 'Proposal not found' }, { status: 404 });
+      }
+
+      return json({
+        status: proposal.status,
+        proposal_type: 'combined',
+        targetNpub: proposal.target_npub,
+        targetPubkeyHex: proposal.target_pubkey_hex,
+        handle: proposal.ig_handle,
+        profile,
+        feed,
+        posts: formatPosts(result.posts),
+        articles: formatArticles(result.articles),
+        createdAt: proposal.created_at,
+        expiresAt: proposal.expires_at
+      });
+    } else if (proposalType === 'articles') {
+      const result = await getProposalByTokenWithArticles(token);
+      if (!result) {
+        return json({ error: 'Proposal not found' }, { status: 404 });
+      }
+
+      return json({
+        status: proposal.status,
+        proposal_type: 'articles',
+        targetNpub: proposal.target_npub,
+        targetPubkeyHex: proposal.target_pubkey_hex,
+        handle: proposal.ig_handle,
+        profile,
+        feed,
+        articles: formatArticles(result.articles),
+        createdAt: proposal.created_at,
+        expiresAt: proposal.expires_at
+      });
+    } else {
+      // Default: posts
+      const result = await getProposalByTokenWithPosts(token);
+      if (!result) {
+        return json({ error: 'Proposal not found' }, { status: 404 });
+      }
+
+      return json({
+        status: proposal.status,
+        proposal_type: 'posts',
+        targetNpub: proposal.target_npub,
+        targetPubkeyHex: proposal.target_pubkey_hex,
+        handle: proposal.ig_handle,
+        profile,
+        posts: formatPosts(result.posts),
+        createdAt: proposal.created_at,
+        expiresAt: proposal.expires_at
+      });
+    }
   } catch (err) {
     console.error('Error fetching proposal:', err);
     return json({ error: 'Failed to fetch proposal' }, { status: 500 });
@@ -84,14 +165,12 @@ export const POST: RequestHandler = async ({ params, request }) => {
   try {
     const { token } = params;
     const body = await request.json();
-    const { action, pubkeyHex, postId } = body;
+    const { action, pubkeyHex, postId, articleId, postIds, articleIds } = body;
 
-    const result = await getProposalByTokenWithPosts(token);
-    if (!result) {
+    const proposal = await getProposalByToken(token);
+    if (!proposal) {
       return json({ error: 'Proposal not found' }, { status: 404 });
     }
-
-    const { proposal } = result;
 
     // Check if expired
     const expiresAt = new Date(proposal.expires_at);
@@ -127,28 +206,42 @@ export const POST: RequestHandler = async ({ params, request }) => {
       return json({ success: true });
     }
 
+    // Post actions
     if (action === 'markPostPublished') {
-      // Mark a specific post as published
       if (!postId) {
         return json({ error: 'Missing postId' }, { status: 400 });
       }
-
       await updateProposalPostStatus(postId, 'published');
       return json({ success: true });
     }
 
     if (action === 'markPostsPublished') {
-      // Batch mark multiple posts as published
-      const { postIds } = body;
       if (!postIds || !Array.isArray(postIds)) {
         return json({ error: 'Missing postIds array' }, { status: 400 });
       }
-
-      // Mark all posts as published
       for (const id of postIds) {
         await updateProposalPostStatus(id, 'published');
       }
       return json({ success: true, count: postIds.length });
+    }
+
+    // Article actions
+    if (action === 'markArticlePublished') {
+      if (!articleId) {
+        return json({ error: 'Missing articleId' }, { status: 400 });
+      }
+      await updateProposalArticleStatus(articleId, 'published');
+      return json({ success: true });
+    }
+
+    if (action === 'markArticlesPublished') {
+      if (!articleIds || !Array.isArray(articleIds)) {
+        return json({ error: 'Missing articleIds array' }, { status: 400 });
+      }
+      for (const id of articleIds) {
+        await updateProposalArticleStatus(id, 'published');
+      }
+      return json({ success: true, count: articleIds.length });
     }
 
     return json({ error: 'Unknown action' }, { status: 400 });

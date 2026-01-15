@@ -14,6 +14,7 @@
   } from '$lib/nip46';
   import {
     createMultiMediaPostEvent,
+    createLongFormContentEvent,
     signWithNIP46,
     publishToRelays,
     importToPrimalCache,
@@ -33,6 +34,19 @@
     status: string;
   }
 
+  interface ProposalArticle {
+    id: number;
+    title: string;
+    summary: string | null;
+    content_markdown: string;
+    published_at: string | null;
+    link: string | null;
+    image_url: string | null;
+    blossom_image_url: string | null;
+    hashtags: string[];
+    status: string;
+  }
+
   interface Profile {
     username: string;
     display_name?: string;
@@ -40,13 +54,23 @@
     profile_picture_url?: string;
   }
 
+  interface FeedInfo {
+    url: string;
+    title?: string;
+    description?: string;
+    image_url?: string;
+  }
+
   interface Proposal {
     status: string;
+    proposal_type: 'posts' | 'articles' | 'combined';
     targetNpub: string;
     targetPubkeyHex: string;
     handle: string;
     profile: Profile | null;
+    feed?: FeedInfo;
     posts: ProposalPost[];
+    articles: ProposalArticle[];
   }
 
   let step: PageStep = 'loading';
@@ -65,13 +89,20 @@
   let connectedPubkey = '';
 
   // Publishing state
-  interface TaskStatus {
+  interface PostTaskStatus {
     post: ProposalPost;
     status: 'pending' | 'signing' | 'publishing' | 'complete' | 'error';
     error?: string;
   }
-  let tasks: TaskStatus[] = [];
-  let activeIndices: Set<number> = new Set();
+  interface ArticleTaskStatus {
+    article: ProposalArticle;
+    status: 'pending' | 'signing' | 'publishing' | 'complete' | 'error';
+    error?: string;
+  }
+  let postTasks: PostTaskStatus[] = [];
+  let articleTasks: ArticleTaskStatus[] = [];
+  let activePostIndices: Set<number> = new Set();
+  let activeArticleIndices: Set<number> = new Set();
 
   // Post editing state
   let selectedPostIndex: number | null = null;
@@ -79,12 +110,25 @@
   let editedCaptions: Record<number, string> = {}; // postId -> edited caption
   let excludedPosts: Set<number> = new Set(); // postIds to exclude from publishing
 
-  $: selectedPost = selectedPostIndex !== null && proposal ? proposal.posts[selectedPostIndex] : null;
-  $: includedPosts = proposal ? proposal.posts.filter(p => !excludedPosts.has(p.id)) : [];
-  $: includedCount = includedPosts.length;
+  // Article editing state
+  let selectedArticleIndex: number | null = null;
+  let editingArticleTitle = '';
+  let editedArticleTitles: Record<number, string> = {}; // articleId -> edited title
+  let excludedArticles: Set<number> = new Set(); // articleIds to exclude from publishing
 
-  $: completedCount = tasks.filter(t => t.status === 'complete').length;
-  $: totalCount = tasks.length;
+  $: selectedPost = selectedPostIndex !== null && proposal ? proposal.posts[selectedPostIndex] : null;
+  $: selectedArticle = selectedArticleIndex !== null && proposal ? proposal.articles[selectedArticleIndex] : null;
+  $: includedPosts = proposal?.posts ? proposal.posts.filter(p => !excludedPosts.has(p.id)) : [];
+  $: includedArticles = proposal?.articles ? proposal.articles.filter(a => !excludedArticles.has(a.id)) : [];
+  $: includedPostCount = includedPosts.length;
+  $: includedArticleCount = includedArticles.length;
+
+  $: completedPostCount = postTasks.filter(t => t.status === 'complete').length;
+  $: completedArticleCount = articleTasks.filter(t => t.status === 'complete').length;
+  $: totalPostCount = postTasks.length;
+  $: totalArticleCount = articleTasks.length;
+  $: totalCount = totalPostCount + totalArticleCount;
+  $: completedCount = completedPostCount + completedArticleCount;
   $: progressPercent = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
 
   const token = $page.params.token;
@@ -154,7 +198,13 @@
         return;
       }
 
-      proposal = data;
+      // Ensure arrays are present with defaults
+      proposal = {
+        ...data,
+        proposal_type: data.proposal_type || 'posts',
+        posts: data.posts || [],
+        articles: data.articles || []
+      };
       step = 'preview';
     } catch (err) {
       error = err instanceof Error ? err.message : 'Failed to load proposal';
@@ -245,8 +295,9 @@
         return;
       }
 
-      // Verified! Set up tasks for included posts only
-      tasks = includedPosts.map(post => ({ post, status: 'pending' }));
+      // Verified! Set up tasks for included posts and articles
+      postTasks = includedPosts.map(post => ({ post, status: 'pending' }));
+      articleTasks = includedArticles.map(article => ({ article, status: 'pending' }));
       step = 'publishing';
       await startPublishing();
     } catch (err) {
@@ -258,6 +309,7 @@
   // Collect signed events for batch import to Primal cache
   let signedEvents: Event[] = [];
   let publishedPostIds: number[] = [];
+  let publishedArticleIds: number[] = [];
 
   async function startPublishing() {
     if (!nip46Connection || !proposal) return;
@@ -267,25 +319,50 @@
     const CONCURRENCY = 4;
     signedEvents = [];
     publishedPostIds = [];
+    publishedArticleIds = [];
 
     try {
-      const queue: number[] = [...Array(tasks.length).keys()];
+      // Process posts first
+      if (postTasks.length > 0) {
+        const postQueue: number[] = [...Array(postTasks.length).keys()];
 
-      async function processQueue() {
-        while (queue.length > 0) {
-          const index = queue.shift();
-          if (index !== undefined) {
-            activeIndices.add(index);
-            activeIndices = activeIndices;
-            await publishPost(index);
-            activeIndices.delete(index);
-            activeIndices = activeIndices;
+        async function processPostQueue() {
+          while (postQueue.length > 0) {
+            const index = postQueue.shift();
+            if (index !== undefined) {
+              activePostIndices.add(index);
+              activePostIndices = activePostIndices;
+              await publishPost(index);
+              activePostIndices.delete(index);
+              activePostIndices = activePostIndices;
+            }
           }
         }
+
+        const postWorkers = Array(CONCURRENCY).fill(null).map(() => processPostQueue());
+        await Promise.all(postWorkers);
       }
 
-      const workers = Array(CONCURRENCY).fill(null).map(() => processQueue());
-      await Promise.all(workers);
+      // Then process articles
+      if (articleTasks.length > 0) {
+        const articleQueue: number[] = [...Array(articleTasks.length).keys()];
+
+        async function processArticleQueue() {
+          while (articleQueue.length > 0) {
+            const index = articleQueue.shift();
+            if (index !== undefined) {
+              activeArticleIndices.add(index);
+              activeArticleIndices = activeArticleIndices;
+              await publishArticle(index);
+              activeArticleIndices.delete(index);
+              activeArticleIndices = activeArticleIndices;
+            }
+          }
+        }
+
+        const articleWorkers = Array(CONCURRENCY).fill(null).map(() => processArticleQueue());
+        await Promise.all(articleWorkers);
+      }
 
       // Batch import all events to Primal cache (fire and forget)
       if (signedEvents.length > 0) {
@@ -300,6 +377,18 @@
           body: JSON.stringify({
             action: 'markPostsPublished',
             postIds: publishedPostIds
+          })
+        });
+      }
+
+      // Batch mark all articles as published
+      if (publishedArticleIds.length > 0) {
+        await fetch(`/api/proposals/${token}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'markArticlesPublished',
+            articleIds: publishedArticleIds
           })
         });
       }
@@ -321,15 +410,15 @@
   }
 
   async function publishPost(index: number) {
-    const task = tasks[index];
+    const task = postTasks[index];
     if (!nip46Connection || !proposal) return;
 
     try {
-      tasks[index] = { ...task, status: 'signing' };
-      tasks = [...tasks];
+      postTasks[index] = { ...task, status: 'signing' };
+      postTasks = [...postTasks];
 
       // Build media uploads from blossom URLs
-      const mediaUploads: MediaUpload[] = task.post.blossom_urls.map((url, i) => ({
+      const mediaUploads: MediaUpload[] = task.post.blossom_urls.map((url) => ({
         url,
         sha256: url.split('/').pop() || '', // Extract hash from URL
         mimeType: task.post.post_type === 'reel' ? 'video/mp4' : 'image/jpeg',
@@ -353,8 +442,8 @@
       // Small delay between signings to help signer preserve timestamps
       await new Promise(resolve => setTimeout(resolve, 100));
 
-      tasks[index] = { ...tasks[index], status: 'publishing' };
-      tasks = [...tasks];
+      postTasks[index] = { ...postTasks[index], status: 'publishing' };
+      postTasks = [...postTasks];
 
       // Publish to relays
       const publishResult = await publishToRelays(signedPost, NOSTR_RELAYS);
@@ -367,17 +456,91 @@
       signedEvents.push(signedPost);
       publishedPostIds.push(task.post.id);
 
-      tasks[index] = { ...tasks[index], status: 'complete' };
-      tasks = [...tasks];
+      postTasks[index] = { ...postTasks[index], status: 'complete' };
+      postTasks = [...postTasks];
 
     } catch (err) {
       console.error(`Error publishing post ${index}:`, err);
-      tasks[index] = {
-        ...tasks[index],
+      postTasks[index] = {
+        ...postTasks[index],
         status: 'error',
         error: err instanceof Error ? err.message : 'Unknown error'
       };
-      tasks = [...tasks];
+      postTasks = [...postTasks];
+    }
+  }
+
+  async function publishArticle(index: number) {
+    const task = articleTasks[index];
+    if (!nip46Connection || !proposal) return;
+
+    try {
+      articleTasks[index] = { ...task, status: 'signing' };
+      articleTasks = [...articleTasks];
+
+      // Use edited title if available
+      const title = editedArticleTitles[task.article.id] ?? task.article.title;
+
+      // Create identifier from link or title
+      const identifier = task.article.link
+        ? task.article.link.replace(/^https?:\/\//, '').replace(/[^a-zA-Z0-9-]/g, '-').slice(0, 100)
+        : title.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 100);
+
+      // Parse published_at to Unix timestamp
+      let publishedAt: string | undefined;
+      if (task.article.published_at) {
+        try {
+          const date = new Date(task.article.published_at);
+          if (!isNaN(date.getTime())) {
+            publishedAt = Math.floor(date.getTime() / 1000).toString();
+          }
+        } catch {
+          // Ignore parse errors
+        }
+      }
+
+      // Create article event
+      const articleEvent = createLongFormContentEvent(connectedPubkey, {
+        identifier,
+        title,
+        summary: task.article.summary || undefined,
+        imageUrl: task.article.blossom_image_url || task.article.image_url || undefined,
+        publishedAt,
+        hashtags: task.article.hashtags,
+        content: task.article.content_markdown
+      });
+
+      // Sign with NIP-46
+      const signedArticle = await signWithNIP46(nip46Connection, articleEvent);
+
+      // Small delay between signings
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      articleTasks[index] = { ...articleTasks[index], status: 'publishing' };
+      articleTasks = [...articleTasks];
+
+      // Publish to relays
+      const publishResult = await publishToRelays(signedArticle, NOSTR_RELAYS);
+
+      if (publishResult.success.length === 0) {
+        throw new Error('Failed to publish to any relay');
+      }
+
+      // Collect for batch operations at the end
+      signedEvents.push(signedArticle);
+      publishedArticleIds.push(task.article.id);
+
+      articleTasks[index] = { ...articleTasks[index], status: 'complete' };
+      articleTasks = [...articleTasks];
+
+    } catch (err) {
+      console.error(`Error publishing article ${index}:`, err);
+      articleTasks[index] = {
+        ...articleTasks[index],
+        status: 'error',
+        error: err instanceof Error ? err.message : 'Unknown error'
+      };
+      articleTasks = [...articleTasks];
     }
   }
 
@@ -448,6 +611,53 @@
     // No preview available
     return null;
   }
+
+  // Article editing functions
+  function openArticleDetail(index: number) {
+    if (!proposal) return;
+    selectedArticleIndex = index;
+    const article = proposal.articles[index];
+    editingArticleTitle = editedArticleTitles[article.id] ?? article.title;
+  }
+
+  function closeArticleDetail() {
+    selectedArticleIndex = null;
+    editingArticleTitle = '';
+  }
+
+  function saveArticleTitle() {
+    if (selectedArticleIndex === null || !proposal) return;
+    const article = proposal.articles[selectedArticleIndex];
+    editedArticleTitles[article.id] = editingArticleTitle;
+    editedArticleTitles = editedArticleTitles; // trigger reactivity
+    closeArticleDetail();
+  }
+
+  function getArticleTitle(article: ProposalArticle): string {
+    return editedArticleTitles[article.id] ?? article.title;
+  }
+
+  function isArticleEdited(article: ProposalArticle): boolean {
+    return article.id in editedArticleTitles;
+  }
+
+  function isArticleExcluded(article: ProposalArticle): boolean {
+    return excludedArticles.has(article.id);
+  }
+
+  function toggleArticleExclude(article: ProposalArticle) {
+    if (excludedArticles.has(article.id)) {
+      excludedArticles.delete(article.id);
+    } else {
+      excludedArticles.add(article.id);
+    }
+    excludedArticles = excludedArticles; // trigger reactivity
+    closeArticleDetail();
+  }
+
+  function getArticlePreviewImage(article: ProposalArticle): string | null {
+    return article.blossom_image_url || article.image_url || null;
+  }
 </script>
 
 <svelte:head>
@@ -491,20 +701,51 @@
             <path d="M12 7h4.5a2.5 2.5 0 000-5C13 2 12 7 12 7z"/>
           </svg>
         </div>
-        <h2>Your Instagram Content is Ready!</h2>
-        <p class="subtitle">Someone prepared your @{proposal.handle} content for Nostr</p>
+        <h2>Your Content is Ready!</h2>
+        <p class="subtitle">
+          {#if proposal.proposal_type === 'articles'}
+            Someone prepared your RSS content for Nostr
+          {:else if proposal.proposal_type === 'combined'}
+            Someone prepared your @{proposal.handle} posts + articles for Nostr
+          {:else}
+            Someone prepared your @{proposal.handle} content for Nostr
+          {/if}
+        </p>
 
         <div class="summary-card">
           <div class="summary-row">
-            <span class="label">From Instagram</span>
-            <span class="value">@{proposal.handle}</span>
+            <span class="label">
+              {#if proposal.proposal_type === 'articles'}
+                From RSS
+              {:else}
+                From Instagram
+              {/if}
+            </span>
+            <span class="value">
+              {#if proposal.proposal_type === 'articles' && proposal.feed}
+                {proposal.feed.title || proposal.handle}
+              {:else}
+                @{proposal.handle}
+              {/if}
+            </span>
           </div>
           <div class="summary-row">
             <span class="label">Content</span>
             <span class="value">
-              {includedCount} of {proposal.posts.length} posts
-              {#if excludedPosts.size > 0}
-                <span class="excluded-note">({excludedPosts.size} removed)</span>
+              {#if proposal.proposal_type === 'posts' || proposal.proposal_type === 'combined'}
+                {includedPostCount} of {proposal.posts.length} posts
+                {#if excludedPosts.size > 0}
+                  <span class="excluded-note">({excludedPosts.size} removed)</span>
+                {/if}
+              {/if}
+              {#if proposal.proposal_type === 'combined'}
+                ,
+              {/if}
+              {#if proposal.proposal_type === 'articles' || proposal.proposal_type === 'combined'}
+                {includedArticleCount} of {proposal.articles.length} articles
+                {#if excludedArticles.size > 0}
+                  <span class="excluded-note">({excludedArticles.size} removed)</span>
+                {/if}
               {/if}
             </span>
           </div>
@@ -514,61 +755,116 @@
           </div>
         </div>
 
-        <div class="posts-preview">
-          <div class="preview-header">
-            <span>Preview</span>
-            <span class="edit-hint">Tap to edit or remove</span>
+        <!-- Posts preview -->
+        {#if proposal.posts.length > 0}
+          <div class="posts-preview">
+            <div class="preview-header">
+              <span>Posts</span>
+              <span class="edit-hint">Tap to edit or remove</span>
+            </div>
+            <div class="preview-grid">
+              {#each proposal.posts as post, i}
+                <button
+                  class="preview-item"
+                  class:excluded={isPostExcluded(post)}
+                  on:click={() => openPostDetail(i)}
+                >
+                  {#if getMediaPreviewUrl(post)}
+                    <img src={getMediaPreviewUrl(post)} alt="" loading="lazy" decoding="async" />
+                  {:else}
+                    <div class="placeholder">
+                      {#if post.post_type === 'reel'}
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                          <polygon points="5 3 19 12 5 21 5 3"/>
+                        </svg>
+                      {:else}
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                          <rect x="3" y="3" width="18" height="18" rx="2"/>
+                          <circle cx="8.5" cy="8.5" r="1.5"/>
+                          <path d="M21 15l-5-5L5 21"/>
+                        </svg>
+                      {/if}
+                    </div>
+                  {/if}
+                  {#if isPostExcluded(post)}
+                    <div class="excluded-overlay">
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"/>
+                        <line x1="6" y1="6" x2="18" y2="18"/>
+                      </svg>
+                    </div>
+                  {:else}
+                    {#if isPostEdited(post)}
+                      <div class="edited-badge">
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                          <path d="M20 6L9 17l-5-5"/>
+                        </svg>
+                      </div>
+                    {/if}
+                    <div class="hover-overlay">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
+                        <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                      </svg>
+                    </div>
+                  {/if}
+                </button>
+              {/each}
+            </div>
           </div>
-          <div class="preview-grid">
-            {#each proposal.posts as post, i}
-              <button
-                class="preview-item"
-                class:excluded={isPostExcluded(post)}
-                on:click={() => openPostDetail(i)}
-              >
-                {#if getMediaPreviewUrl(post)}
-                  <img src={getMediaPreviewUrl(post)} alt="" loading="lazy" decoding="async" />
-                {:else}
-                  <div class="placeholder">
-                    {#if post.post_type === 'reel'}
-                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                        <polygon points="5 3 19 12 5 21 5 3"/>
+        {/if}
+
+        <!-- Articles preview -->
+        {#if proposal.articles.length > 0}
+          <div class="articles-preview">
+            <div class="preview-header">
+              <span>Articles</span>
+              <span class="edit-hint">Tap to edit or remove</span>
+            </div>
+            <div class="articles-list">
+              {#each proposal.articles as article, i}
+                <button
+                  class="article-item"
+                  class:excluded={isArticleExcluded(article)}
+                  on:click={() => openArticleDetail(i)}
+                >
+                  {#if getArticlePreviewImage(article)}
+                    <img src={getArticlePreviewImage(article)} alt="" class="article-thumb" loading="lazy" />
+                  {:else}
+                    <div class="article-thumb placeholder">
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                        <polyline points="14 2 14 8 20 8"/>
+                        <line x1="16" y1="13" x2="8" y2="13"/>
+                        <line x1="16" y1="17" x2="8" y2="17"/>
                       </svg>
-                    {:else}
-                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                        <rect x="3" y="3" width="18" height="18" rx="2"/>
-                        <circle cx="8.5" cy="8.5" r="1.5"/>
-                        <path d="M21 15l-5-5L5 21"/>
-                      </svg>
+                    </div>
+                  {/if}
+                  <div class="article-info">
+                    <span class="article-title">{getArticleTitle(article)}</span>
+                    {#if article.summary}
+                      <span class="article-summary">{article.summary.slice(0, 80)}{article.summary.length > 80 ? '...' : ''}</span>
                     {/if}
                   </div>
-                {/if}
-                {#if isPostExcluded(post)}
-                  <div class="excluded-overlay">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <line x1="18" y1="6" x2="6" y2="18"/>
-                      <line x1="6" y1="6" x2="18" y2="18"/>
-                    </svg>
-                  </div>
-                {:else}
-                  {#if isPostEdited(post)}
-                    <div class="edited-badge">
+                  {#if isArticleExcluded(article)}
+                    <div class="article-excluded-badge">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"/>
+                        <line x1="6" y1="6" x2="18" y2="18"/>
+                      </svg>
+                    </div>
+                  {:else if isArticleEdited(article)}
+                    <div class="article-edited-badge">
                       <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
                         <path d="M20 6L9 17l-5-5"/>
                       </svg>
                     </div>
                   {/if}
-                  <div class="hover-overlay">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
-                      <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                    </svg>
-                  </div>
-                {/if}
-              </button>
-            {/each}
+                </button>
+              {/each}
+            </div>
           </div>
-        </div>
+        {/if}
 
         <button class="primary-btn" on:click={startConnect}>
           Connect Primal to Claim
@@ -578,7 +874,7 @@
         </button>
 
         <p class="disclaimer">
-          You'll sign these posts with Primal. Only the account matching the target npub can claim this content.
+          You'll sign this content with Primal. Only the account matching the target npub can claim it.
         </p>
       </div>
 
@@ -663,11 +959,11 @@
           </svg>
         </div>
         <h2>Publishing Your Content</h2>
-        <p class="subtitle">Primal is signing each post</p>
+        <p class="subtitle">Primal is signing your content</p>
 
         <div class="progress-card">
           <div class="progress-header">
-            <span>{completedCount} / {totalCount} posts</span>
+            <span>{completedCount} / {totalCount} items</span>
             <span>{Math.round(progressPercent)}%</span>
           </div>
           <div class="progress-bar">
@@ -675,35 +971,77 @@
           </div>
         </div>
 
-        <div class="tasks-list">
-          {#each tasks as task, i}
-            <div
-              class="task-item"
-              class:active={activeIndices.has(i)}
-              class:complete={task.status === 'complete'}
-              class:error={task.status === 'error'}
-            >
-              <div class="task-status">
-                {#if task.status === 'complete'}
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
-                    <path d="M20 6L9 17l-5-5"/>
-                  </svg>
-                {:else if task.status === 'error'}
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <line x1="18" y1="6" x2="6" y2="18"/>
-                    <line x1="6" y1="6" x2="18" y2="18"/>
-                  </svg>
-                {:else if ['signing', 'publishing'].includes(task.status)}
-                  <div class="task-spinner"></div>
-                {:else}
-                  <div class="task-pending"></div>
-                {/if}
-              </div>
-              <span class="task-caption">{task.post.caption?.slice(0, 30) || 'Untitled'}</span>
-              <span class="task-label">{getStatusLabel(task.status)}</span>
+        <!-- Post tasks -->
+        {#if postTasks.length > 0}
+          <div class="tasks-section">
+            <div class="tasks-section-header">Posts</div>
+            <div class="tasks-list">
+              {#each postTasks as task, i}
+                <div
+                  class="task-item"
+                  class:active={activePostIndices.has(i)}
+                  class:complete={task.status === 'complete'}
+                  class:error={task.status === 'error'}
+                >
+                  <div class="task-status">
+                    {#if task.status === 'complete'}
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                        <path d="M20 6L9 17l-5-5"/>
+                      </svg>
+                    {:else if task.status === 'error'}
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"/>
+                        <line x1="6" y1="6" x2="18" y2="18"/>
+                      </svg>
+                    {:else if ['signing', 'publishing'].includes(task.status)}
+                      <div class="task-spinner"></div>
+                    {:else}
+                      <div class="task-pending"></div>
+                    {/if}
+                  </div>
+                  <span class="task-caption">{task.post.caption?.slice(0, 30) || 'Untitled'}</span>
+                  <span class="task-label">{getStatusLabel(task.status)}</span>
+                </div>
+              {/each}
             </div>
-          {/each}
-        </div>
+          </div>
+        {/if}
+
+        <!-- Article tasks -->
+        {#if articleTasks.length > 0}
+          <div class="tasks-section">
+            <div class="tasks-section-header">Articles</div>
+            <div class="tasks-list">
+              {#each articleTasks as task, i}
+                <div
+                  class="task-item"
+                  class:active={activeArticleIndices.has(i)}
+                  class:complete={task.status === 'complete'}
+                  class:error={task.status === 'error'}
+                >
+                  <div class="task-status">
+                    {#if task.status === 'complete'}
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                        <path d="M20 6L9 17l-5-5"/>
+                      </svg>
+                    {:else if task.status === 'error'}
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"/>
+                        <line x1="6" y1="6" x2="18" y2="18"/>
+                      </svg>
+                    {:else if ['signing', 'publishing'].includes(task.status)}
+                      <div class="task-spinner"></div>
+                    {:else}
+                      <div class="task-pending"></div>
+                    {/if}
+                  </div>
+                  <span class="task-caption">{task.article.title.slice(0, 30)}</span>
+                  <span class="task-label">{getStatusLabel(task.status)}</span>
+                </div>
+              {/each}
+            </div>
+          </div>
+        {/if}
       </div>
 
     {:else if step === 'complete'}
@@ -713,14 +1051,22 @@
             <path d="M20 6L9 17l-5-5"/>
           </svg>
         </div>
-        <h2>You Own Your Posts!</h2>
-        <p class="subtitle">Your content is now yours forever on Primal</p>
+        <h2>You Own Your Content!</h2>
+        <p class="subtitle">Your content is now yours forever on Nostr</p>
 
         <div class="stats-card">
-          <div class="stat">
-            <span class="stat-value">{completedCount}</span>
-            <span class="stat-label">posts published</span>
-          </div>
+          {#if completedPostCount > 0}
+            <div class="stat">
+              <span class="stat-value">{completedPostCount}</span>
+              <span class="stat-label">posts published</span>
+            </div>
+          {/if}
+          {#if completedArticleCount > 0}
+            <div class="stat">
+              <span class="stat-value">{completedArticleCount}</span>
+              <span class="stat-label">articles published</span>
+            </div>
+          {/if}
         </div>
 
         <a
@@ -820,6 +1166,90 @@
           <div class="modal-actions">
             <button class="secondary-btn" on:click={closePostDetail}>Cancel</button>
             <button class="primary-btn small" on:click={saveCaption}>Save Changes</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  {/if}
+
+  {#if selectedArticle}
+    <div class="modal-backdrop" on:click={closeArticleDetail} on:keydown={(e) => e.key === 'Escape' && closeArticleDetail()} role="button" tabindex="-1">
+      <div class="post-modal article-modal" on:click|stopPropagation role="dialog" aria-modal="true" tabindex="0">
+        <div class="modal-header">
+          <h3>Edit Article</h3>
+          <button class="close-btn" on:click={closeArticleDetail} aria-label="Close">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M18 6L6 18M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+
+        {#if getArticlePreviewImage(selectedArticle)}
+          <div class="modal-media">
+            <img
+              src={getArticlePreviewImage(selectedArticle)}
+              alt=""
+              loading="eager"
+              decoding="async"
+              class="media-preview"
+            />
+          </div>
+        {/if}
+
+        <div class="modal-body">
+          <label for="article-title-edit">Title</label>
+          <input
+            id="article-title-edit"
+            type="text"
+            bind:value={editingArticleTitle}
+            placeholder="Article title..."
+            class="title-input"
+          />
+
+          {#if selectedArticle.summary}
+            <div class="article-summary-preview">
+              <label>Summary</label>
+              <p>{selectedArticle.summary}</p>
+            </div>
+          {/if}
+
+          <div class="article-content-preview">
+            <label>Content Preview</label>
+            <p class="content-excerpt">{selectedArticle.content_markdown.slice(0, 200)}...</p>
+          </div>
+
+          {#if selectedArticle.published_at}
+            <div class="post-date">
+              Originally published: {new Date(selectedArticle.published_at).toLocaleDateString()}
+            </div>
+          {/if}
+        </div>
+
+        <div class="modal-footer">
+          <button
+            class="delete-btn"
+            class:restore={isArticleExcluded(selectedArticle)}
+            on:click={() => toggleArticleExclude(selectedArticle)}
+          >
+            {#if isArticleExcluded(selectedArticle)}
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M3 6h18"/>
+                <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+                <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+              </svg>
+              Restore Article
+            {:else}
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M3 6h18"/>
+                <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+                <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+              </svg>
+              Remove Article
+            {/if}
+          </button>
+          <div class="modal-actions">
+            <button class="secondary-btn" on:click={closeArticleDetail}>Cancel</button>
+            <button class="primary-btn small" on:click={saveArticleTitle}>Save Changes</button>
           </div>
         </div>
       </div>
@@ -1650,5 +2080,179 @@
     flex: 1;
     height: 1px;
     background: var(--border);
+  }
+
+  /* Articles preview */
+  .articles-preview {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 0.875rem;
+    margin-bottom: 1.5rem;
+    overflow: hidden;
+  }
+
+  .articles-list {
+    display: flex;
+    flex-direction: column;
+  }
+
+  button.article-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    text-align: left;
+    transition: background 0.2s ease;
+  }
+
+  button.article-item:last-child {
+    border-bottom: none;
+  }
+
+  button.article-item:hover {
+    background: var(--bg-primary);
+  }
+
+  button.article-item.excluded {
+    opacity: 0.5;
+  }
+
+  .article-thumb {
+    width: 48px;
+    height: 48px;
+    border-radius: 0.5rem;
+    object-fit: cover;
+    flex-shrink: 0;
+  }
+
+  .article-thumb.placeholder {
+    background: var(--bg-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+  }
+
+  .article-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .article-title {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .article-summary {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .article-excluded-badge {
+    width: 24px;
+    height: 24px;
+    background: rgba(var(--error-rgb, 239, 68, 68), 0.15);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--error, #ef4444);
+    flex-shrink: 0;
+  }
+
+  .article-edited-badge {
+    width: 24px;
+    height: 24px;
+    background: var(--success);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    flex-shrink: 0;
+  }
+
+  /* Article modal */
+  .article-modal .title-input {
+    width: 100%;
+    padding: 0.875rem 1rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-light);
+    border-radius: 0.75rem;
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    font-family: inherit;
+  }
+
+  .article-modal .title-input:focus {
+    border-color: var(--accent);
+    outline: none;
+  }
+
+  .article-summary-preview,
+  .article-content-preview {
+    margin-top: 1rem;
+  }
+
+  .article-summary-preview label,
+  .article-content-preview label {
+    display: block;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    margin-bottom: 0.25rem;
+  }
+
+  .article-summary-preview p,
+  .article-content-preview p {
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+    line-height: 1.4;
+    margin: 0;
+  }
+
+  .content-excerpt {
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  /* Tasks section for publishing */
+  .tasks-section {
+    margin-bottom: 1rem;
+  }
+
+  .tasks-section-header {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 0.5rem;
+    padding-left: 0.25rem;
+  }
+
+  /* Stats card multiple stats */
+  .stats-card {
+    display: flex;
+    gap: 2rem;
+    justify-content: center;
+  }
+
+  .stat + .stat {
+    padding-left: 2rem;
+    border-left: 1px solid var(--border);
   }
 </style>

@@ -50,7 +50,8 @@ CREATE TABLE IF NOT EXISTS proposals (
   target_npub TEXT NOT NULL,
   target_pubkey_hex TEXT NOT NULL,
   ig_handle TEXT NOT NULL,
-  profile_data TEXT,  -- JSON: {username, display_name, bio, profile_picture_url}
+  profile_data TEXT,  -- JSON: {username, display_name, bio, profile_picture_url} or {profile, feed}
+  proposal_type TEXT DEFAULT 'posts' CHECK (proposal_type IN ('posts', 'articles', 'combined')),
   status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'ready', 'claimed', 'expired')),
   claimed_at DATETIME,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -72,11 +73,30 @@ CREATE TABLE IF NOT EXISTS proposal_posts (
   FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE
 );
 
+-- Articles within a proposal (for RSS/blog proposals)
+CREATE TABLE IF NOT EXISTS proposal_articles (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  proposal_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  summary TEXT,
+  content_markdown TEXT NOT NULL,
+  published_at TEXT,
+  link TEXT,
+  image_url TEXT,
+  blossom_image_url TEXT,
+  hashtags TEXT,  -- JSON array
+  inline_image_urls TEXT,  -- JSON mapping: {"original_url": "blossom_url"}
+  status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'ready', 'published')),
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE
+);
+
 -- Indexes for proposals
 CREATE INDEX IF NOT EXISTS idx_proposals_claim_token ON proposals(claim_token);
 CREATE INDEX IF NOT EXISTS idx_proposals_status ON proposals(status);
 CREATE INDEX IF NOT EXISTS idx_proposals_expires_at ON proposals(expires_at);
 CREATE INDEX IF NOT EXISTS idx_proposal_posts_proposal_id ON proposal_posts(proposal_id);
+CREATE INDEX IF NOT EXISTS idx_proposal_articles_proposal_id ON proposal_articles(proposal_id);
 
 -- Gifts for deterministic key derivation (no npub required)
 CREATE TABLE IF NOT EXISTS gifts (

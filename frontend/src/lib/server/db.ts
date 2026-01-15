@@ -210,6 +210,7 @@ export interface Proposal {
   target_pubkey_hex: string;
   ig_handle: string;
   profile_data: string | null;  // JSON string
+  proposal_type: 'posts' | 'articles' | 'combined';
   status: 'pending' | 'processing' | 'ready' | 'claimed' | 'expired';
   claimed_at: string | null;
   created_at: string;
@@ -226,6 +227,22 @@ export interface ProposalPost {
   blossom_urls: string | null;  // JSON string
   thumbnail_url: string | null;
   status: 'pending' | 'uploading' | 'ready' | 'published';
+  created_at: string;
+}
+
+export interface ProposalArticle {
+  id: number;
+  proposal_id: string;
+  title: string;
+  summary: string | null;
+  content_markdown: string;
+  published_at: string | null;
+  link: string | null;
+  image_url: string | null;
+  blossom_image_url: string | null;
+  hashtags: string | null;  // JSON string
+  inline_image_urls: string | null;  // JSON mapping
+  status: 'pending' | 'ready' | 'published';
   created_at: string;
 }
 
@@ -247,6 +264,7 @@ export async function ensureProposalTables(): Promise<void> {
         target_pubkey_hex TEXT NOT NULL,
         ig_handle TEXT NOT NULL,
         profile_data TEXT,
+        proposal_type TEXT DEFAULT 'posts' CHECK (proposal_type IN ('posts', 'articles', 'combined')),
         status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'ready', 'claimed', 'expired')),
         claimed_at DATETIME,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -270,12 +288,69 @@ export async function ensureProposalTables(): Promise<void> {
       )
     `);
 
+    database.run(`
+      CREATE TABLE IF NOT EXISTS proposal_articles (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        proposal_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        summary TEXT,
+        content_markdown TEXT NOT NULL,
+        published_at TEXT,
+        link TEXT,
+        image_url TEXT,
+        blossom_image_url TEXT,
+        hashtags TEXT,
+        inline_image_urls TEXT,
+        status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'ready', 'published')),
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE
+      )
+    `);
+
     database.run('CREATE INDEX IF NOT EXISTS idx_proposals_claim_token ON proposals(claim_token)');
     database.run('CREATE INDEX IF NOT EXISTS idx_proposals_status ON proposals(status)');
     database.run('CREATE INDEX IF NOT EXISTS idx_proposals_expires_at ON proposals(expires_at)');
     database.run('CREATE INDEX IF NOT EXISTS idx_proposal_posts_proposal_id ON proposal_posts(proposal_id)');
+    database.run('CREATE INDEX IF NOT EXISTS idx_proposal_articles_proposal_id ON proposal_articles(proposal_id)');
 
     saveDb(database);
+  } else {
+    // Table exists, check if proposal_type column exists
+    const colCheck = database.exec("PRAGMA table_info(proposals)");
+    const columns = colCheck.length > 0 ? colCheck[0].values.map(row => row[1]) : [];
+
+    if (!columns.includes('proposal_type')) {
+      database.run("ALTER TABLE proposals ADD COLUMN proposal_type TEXT DEFAULT 'posts' CHECK (proposal_type IN ('posts', 'articles', 'combined'))");
+      saveDb(database);
+    }
+
+    // Check if proposal_articles table exists
+    const articlesCheck = database.exec(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='proposal_articles'"
+    );
+
+    if (articlesCheck.length === 0 || articlesCheck[0].values.length === 0) {
+      database.run(`
+        CREATE TABLE IF NOT EXISTS proposal_articles (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          proposal_id TEXT NOT NULL,
+          title TEXT NOT NULL,
+          summary TEXT,
+          content_markdown TEXT NOT NULL,
+          published_at TEXT,
+          link TEXT,
+          image_url TEXT,
+          blossom_image_url TEXT,
+          hashtags TEXT,
+          inline_image_urls TEXT,
+          status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'ready', 'published')),
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE
+        )
+      `);
+      database.run('CREATE INDEX IF NOT EXISTS idx_proposal_articles_proposal_id ON proposal_articles(proposal_id)');
+      saveDb(database);
+    }
   }
 }
 
@@ -286,7 +361,8 @@ export async function createProposal(
   targetPubkeyHex: string,
   igHandle: string,
   profileData?: string,
-  expiresAt?: string
+  expiresAt?: string,
+  proposalType: 'posts' | 'articles' | 'combined' = 'posts'
 ): Promise<Proposal> {
   await ensureProposalTables();
   const database = await getDb();
@@ -295,9 +371,9 @@ export async function createProposal(
   const expiration = expiresAt || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
   database.run(
-    `INSERT INTO proposals (id, claim_token, target_npub, target_pubkey_hex, ig_handle, profile_data, expires_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [id, claimToken, targetNpub, targetPubkeyHex, igHandle, profileData || null, expiration]
+    `INSERT INTO proposals (id, claim_token, target_npub, target_pubkey_hex, ig_handle, profile_data, proposal_type, expires_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [id, claimToken, targetNpub, targetPubkeyHex, igHandle, profileData || null, proposalType, expiration]
   );
   saveDb(database);
   return (await getProposal(id))!;
@@ -402,6 +478,82 @@ export async function getProposalByTokenWithPosts(claimToken: string): Promise<{
 
   const posts = await getProposalPosts(proposal.id);
   return { proposal, posts };
+}
+
+// Proposal article functions
+
+export async function createProposalArticle(
+  proposalId: string,
+  title: string,
+  contentMarkdown: string,
+  summary?: string,
+  publishedAt?: string,
+  link?: string,
+  imageUrl?: string,
+  hashtags?: string[]
+): Promise<ProposalArticle> {
+  await ensureProposalTables();
+  const database = await getDb();
+
+  database.run(
+    `INSERT INTO proposal_articles (proposal_id, title, summary, content_markdown, published_at, link, image_url, hashtags, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
+    [
+      proposalId,
+      title,
+      summary || null,
+      contentMarkdown,
+      publishedAt || null,
+      link || null,
+      imageUrl || null,
+      hashtags ? JSON.stringify(hashtags) : null
+    ]
+  );
+  saveDb(database);
+
+  // Get the last inserted article
+  const result = database.exec(
+    'SELECT * FROM proposal_articles WHERE proposal_id = ? ORDER BY id DESC LIMIT 1',
+    [proposalId]
+  );
+  return rowToObject<ProposalArticle>(result[0].columns, result[0].values[0]);
+}
+
+export async function getProposalArticles(proposalId: string): Promise<ProposalArticle[]> {
+  await ensureProposalTables();
+  const database = await getDb();
+  const result = database.exec(
+    'SELECT * FROM proposal_articles WHERE proposal_id = ? ORDER BY id',
+    [proposalId]
+  );
+  if (result.length === 0) return [];
+  return result[0].values.map(row => rowToObject<ProposalArticle>(result[0].columns, row));
+}
+
+export async function updateProposalArticleStatus(
+  articleId: number,
+  status: ProposalArticle['status']
+): Promise<void> {
+  const database = await getDb();
+  database.run('UPDATE proposal_articles SET status = ? WHERE id = ?', [status, articleId]);
+  saveDb(database);
+}
+
+export async function getProposalByTokenWithArticles(claimToken: string): Promise<{ proposal: Proposal; articles: ProposalArticle[] } | null> {
+  const proposal = await getProposalByToken(claimToken);
+  if (!proposal) return null;
+
+  const articles = await getProposalArticles(proposal.id);
+  return { proposal, articles };
+}
+
+export async function getProposalByTokenWithBoth(claimToken: string): Promise<{ proposal: Proposal; posts: ProposalPost[]; articles: ProposalArticle[] } | null> {
+  const proposal = await getProposalByToken(claimToken);
+  if (!proposal) return null;
+
+  const posts = await getProposalPosts(proposal.id);
+  const articles = await getProposalArticles(proposal.id);
+  return { proposal, posts, articles };
 }
 
 export async function getPendingProposals(): Promise<Proposal[]> {

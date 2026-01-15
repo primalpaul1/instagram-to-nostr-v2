@@ -250,6 +250,49 @@ def update_proposal_post_status(
             )
 
 
+def get_proposal_articles(proposal_id: str) -> list[dict]:
+    """Get all articles for a proposal."""
+    with get_connection() as conn:
+        cursor = conn.execute(
+            """
+            SELECT * FROM proposal_articles
+            WHERE proposal_id = ?
+            ORDER BY id ASC
+            """,
+            (proposal_id,),
+        )
+        return [dict(row) for row in cursor.fetchall()]
+
+
+def update_proposal_article_images(
+    article_id: int,
+    blossom_image_url: Optional[str],
+    content_markdown: str,
+    inline_image_urls: Optional[str] = None,
+):
+    """Update article after image processing."""
+    with get_connection() as conn:
+        conn.execute(
+            """
+            UPDATE proposal_articles
+            SET blossom_image_url = ?,
+                content_markdown = ?,
+                inline_image_urls = ?
+            WHERE id = ?
+            """,
+            (blossom_image_url, content_markdown, inline_image_urls, article_id),
+        )
+
+
+def update_proposal_article_status(article_id: int, status: str):
+    """Update a proposal article's status."""
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE proposal_articles SET status = ? WHERE id = ?",
+            (status, article_id),
+        )
+
+
 def cleanup_expired_proposals() -> int:
     """
     Delete proposals that:

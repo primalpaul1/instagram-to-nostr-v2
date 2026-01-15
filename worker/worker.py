@@ -31,8 +31,11 @@ from db import (
     # Proposal functions
     get_pending_proposals,
     get_proposal_posts,
+    get_proposal_articles,
     update_proposal_status,
     update_proposal_post_status,
+    update_proposal_article_images,
+    update_proposal_article_status,
     cleanup_expired_proposals,
     reset_stale_processing_proposals,
     # Gift functions
@@ -732,6 +735,9 @@ async def process_proposal(proposal: dict) -> None:
                     # Continue with other posts
                     continue
 
+            # Process articles (upload header and inline images to Blossom)
+            await process_proposal_articles(proposal_id, client, temp_public_key, temp_secret_key)
+
         # Mark proposal as ready
         update_proposal_status(proposal_id, "ready")
         print(f"Proposal {proposal_id} is ready for claiming")
@@ -740,6 +746,87 @@ async def process_proposal(proposal: dict) -> None:
         print(f"Failed to process proposal {proposal_id}: {e}")
         # Reset to pending for retry
         update_proposal_status(proposal_id, "pending")
+
+
+async def process_proposal_articles(
+    proposal_id: str,
+    client: httpx.AsyncClient,
+    temp_public_key: str,
+    temp_secret_key: str,
+) -> None:
+    """Process all articles for a proposal - upload header and inline images to Blossom."""
+    articles = get_proposal_articles(proposal_id)
+    if not articles:
+        return
+
+    print(f"Processing {len(articles)} articles for proposal {proposal_id}")
+
+    for article in articles:
+        article_id = article["id"]
+        url_mapping = {}
+        blossom_header = None
+
+        try:
+            # 1. Upload header image if exists
+            image_url = article.get("image_url")
+            existing_blossom = article.get("blossom_image_url")
+
+            if image_url and not existing_blossom:
+                try:
+                    result = await upload_media_to_blossom(
+                        client=client,
+                        media_url=image_url,
+                        media_type="image",
+                        public_key_hex=temp_public_key,
+                        secret_key_hex=temp_secret_key,
+                    )
+                    blossom_header = result["url"]
+                    print(f"Uploaded header image for proposal article {article_id}")
+                except Exception as e:
+                    print(f"Failed to upload header image for proposal article {article_id}: {e}")
+            else:
+                blossom_header = existing_blossom
+
+            # 2. Extract inline images from markdown
+            content = article.get("content_markdown", "")
+            inline_urls = extract_markdown_images(content)
+
+            # 3. Upload each inline image
+            for url in inline_urls:
+                if url.startswith("data:") or "blossom" in url.lower():
+                    continue
+                try:
+                    result = await upload_media_to_blossom(
+                        client=client,
+                        media_url=url,
+                        media_type="image",
+                        public_key_hex=temp_public_key,
+                        secret_key_hex=temp_secret_key,
+                    )
+                    url_mapping[url] = result["url"]
+                    print(f"Uploaded inline image for proposal article {article_id}")
+                except Exception as e:
+                    print(f"Failed to upload inline image {url[:60]}: {e}")
+
+            # 4. Replace URLs in markdown
+            updated_content = content
+            if url_mapping:
+                updated_content = replace_markdown_images(content, url_mapping)
+
+            # 5. Update database
+            update_proposal_article_images(
+                article_id=article_id,
+                blossom_image_url=blossom_header,
+                content_markdown=updated_content,
+                inline_image_urls=json.dumps(url_mapping) if url_mapping else None,
+            )
+
+            # 6. Mark article as ready
+            update_proposal_article_status(article_id, "ready")
+            print(f"Proposal article {article_id} processed successfully")
+
+        except Exception as e:
+            print(f"Failed to process proposal article {article_id}: {e}")
 
 
 # ============================================
