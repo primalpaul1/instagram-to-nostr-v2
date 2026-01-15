@@ -779,8 +779,8 @@
             <span class="value mono">{targetNpub.slice(0, 24)}...</span>
           </div>
           <div class="summary-row">
-            <span class="label">Posts</span>
-            <span class="value">{selectedCount} items</span>
+            <span class="label">Content</span>
+            <span class="value">{totalSelectedCount} items</span>
           </div>
           <div class="summary-row">
             <span class="label">Expires</span>
