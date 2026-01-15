@@ -1,5 +1,6 @@
 import { json } from '@sveltejs/kit';
-import { createGift, createGiftPost, createGiftArticle } from '$lib/server/db';
+import { createGiftWithContent } from '$lib/server/db';
+import type { GiftPostInput, GiftArticleInput } from '$lib/server/db';
 import type { RequestHandler } from './$types';
 
 function generateId(): string {
@@ -121,47 +122,42 @@ export const POST: RequestHandler = async ({ request, url }) => {
     // Use feed URL as handle for articles-only, otherwise use the social handle
     const giftHandle = giftType === 'articles' ? (feed?.url || 'RSS Feed') : handle;
 
-    const gift = await createGift(
+    // Convert posts to GiftPostInput format
+    const postsInput: GiftPostInput[] = ((giftType === 'posts' || giftType === 'combined') && posts)
+      ? posts.map(post => ({
+          postType: post.post_type,
+          mediaItems: JSON.stringify(post.media_items),
+          caption: post.caption,
+          originalDate: post.original_date,
+          thumbnailUrl: post.thumbnail_url
+        }))
+      : [];
+
+    // Convert articles to GiftArticleInput format
+    const articlesInput: GiftArticleInput[] = ((giftType === 'articles' || giftType === 'combined') && articles)
+      ? articles.map(article => ({
+          title: article.title,
+          contentMarkdown: article.content_markdown,
+          summary: article.summary,
+          publishedAt: article.published_at,
+          link: article.link,
+          imageUrl: article.image_url,
+          blossomImageUrl: article.blossom_image_url,
+          hashtags: article.hashtags
+        }))
+      : [];
+
+    // Create gift with all content atomically - prevents race conditions
+    // where the gift or posts could be lost due to concurrent database writes
+    await createGiftWithContent(
       giftId,
       claimToken,
       giftHandle,
       profileData,
-      undefined, // expiresAt - use default
-      giftType
+      giftType,
+      postsInput,
+      articlesInput
     );
-
-    // All gifts go through worker for image processing (including article-only gifts)
-    // Worker will mark them as 'ready' after uploading images to Blossom
-
-    // Create gift posts and/or articles based on type
-    if ((giftType === 'posts' || giftType === 'combined') && posts) {
-      for (const post of posts) {
-        await createGiftPost(
-          giftId,
-          post.post_type,
-          JSON.stringify(post.media_items),
-          post.caption,
-          post.original_date,
-          post.thumbnail_url
-        );
-      }
-    }
-
-    if ((giftType === 'articles' || giftType === 'combined') && articles) {
-      for (const article of articles) {
-        await createGiftArticle(
-          giftId,
-          article.title,
-          article.content_markdown,
-          article.summary,
-          article.published_at,
-          article.link,
-          article.image_url,
-          article.blossom_image_url,
-          article.hashtags
-        );
-      }
-    }
 
     // Build the claim URL
     const baseUrl = url.origin || 'https://ownyourposts.com';

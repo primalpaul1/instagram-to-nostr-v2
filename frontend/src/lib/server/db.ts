@@ -7,7 +7,54 @@ const DATABASE_PATH = env.DATABASE_PATH || '/data/instagram.db';
 
 let SQL: Awaited<ReturnType<typeof initSqlJs>> | null = null;
 
-async function getDb(): Promise<Database> {
+// Async mutex to prevent race conditions on database access
+// Without this, concurrent requests can overwrite each other's changes
+let dbLock: Promise<void> = Promise.resolve();
+let dbLockResolve: (() => void) | null = null;
+
+async function acquireDbLock(): Promise<void> {
+  // Wait for any existing lock to be released
+  await dbLock;
+  // Create a new lock
+  dbLock = new Promise((resolve) => {
+    dbLockResolve = resolve;
+  });
+}
+
+function releaseDbLock(): void {
+  if (dbLockResolve) {
+    dbLockResolve();
+    dbLockResolve = null;
+  }
+}
+
+// Execute a database operation with lock protection
+async function withDb<T>(operation: (db: Database) => T): Promise<T> {
+  await acquireDbLock();
+  try {
+    const db = await getDbInternal();
+    const result = operation(db);
+    saveDbInternal(db);
+    return result;
+  } finally {
+    releaseDbLock();
+  }
+}
+
+// Execute multiple database operations in a single locked transaction
+async function withDbTransaction<T>(operation: (db: Database, save: () => void) => T): Promise<T> {
+  await acquireDbLock();
+  try {
+    const db = await getDbInternal();
+    const save = () => saveDbInternal(db);
+    const result = operation(db, save);
+    return result;
+  } finally {
+    releaseDbLock();
+  }
+}
+
+async function getDbInternal(): Promise<Database> {
   // Initialize sql.js once
   if (!SQL) {
     SQL = await initSqlJs();
@@ -47,10 +94,19 @@ async function getDb(): Promise<Database> {
   return db;
 }
 
-function saveDb(db: Database): void {
+function saveDbInternal(db: Database): void {
   const data = db.export();
   const buffer = Buffer.from(data);
   fs.writeFileSync(DATABASE_PATH, buffer);
+}
+
+// Legacy functions for backward compatibility - still use locking
+async function getDb(): Promise<Database> {
+  return getDbInternal();
+}
+
+function saveDb(db: Database): void {
+  saveDbInternal(db);
 }
 
 export interface Job {
@@ -107,14 +163,15 @@ export async function createJob(
   profileBio?: string,
   profilePictureUrl?: string
 ): Promise<Job> {
-  const database = await getDb();
-  database.run(
-    `INSERT INTO jobs (id, handle, public_key_hex, secret_key_hex, status, profile_name, profile_bio, profile_picture_url)
-     VALUES (?, ?, ?, ?, 'pending', ?, ?, ?)`,
-    [id, handle, publicKeyHex, secretKeyHex, profileName || null, profileBio || null, profilePictureUrl || null]
-  );
-  saveDb(database);
-  return (await getJob(id))!;
+  return withDb(async (database) => {
+    database.run(
+      `INSERT INTO jobs (id, handle, public_key_hex, secret_key_hex, status, profile_name, profile_bio, profile_picture_url)
+       VALUES (?, ?, ?, ?, 'pending', ?, ?, ?)`,
+      [id, handle, publicKeyHex, secretKeyHex, profileName || null, profileBio || null, profilePictureUrl || null]
+    );
+    const result = database.exec('SELECT * FROM jobs WHERE id = ?', [id]);
+    return rowToObject<Job>(result[0].columns, result[0].values[0]);
+  });
 }
 
 export async function getJob(id: string): Promise<Job | undefined> {
@@ -125,13 +182,13 @@ export async function getJob(id: string): Promise<Job | undefined> {
 }
 
 export async function updateJobStatus(id: string, status: Job['status']): Promise<void> {
-  const database = await getDb();
-  database.run(
-    `UPDATE jobs SET status = ?, updated_at = datetime('now')
-     WHERE id = ?`,
-    [status, id]
-  );
-  saveDb(database);
+  return withDb(async (database) => {
+    database.run(
+      `UPDATE jobs SET status = ?, updated_at = datetime('now')
+       WHERE id = ?`,
+      [status, id]
+    );
+  });
 }
 
 export async function createVideoTask(
@@ -148,30 +205,31 @@ export async function createVideoTask(
   postType?: 'reel' | 'image' | 'carousel',
   mediaItems?: string  // JSON string
 ): Promise<VideoTask> {
-  const database = await getDb();
-  database.run(
-    `INSERT INTO video_tasks (
-      id, job_id, instagram_url, filename, caption, original_date,
-      width, height, duration, thumbnail_url, post_type, media_items, status
-    )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
-    [
-      id,
-      jobId,
-      instagramUrl,
-      filename || null,
-      caption || null,
-      originalDate || null,
-      width || null,
-      height || null,
-      duration || null,
-      thumbnailUrl || null,
-      postType || 'reel',
-      mediaItems || null
-    ]
-  );
-  saveDb(database);
-  return (await getVideoTask(id))!;
+  return withDb(async (database) => {
+    database.run(
+      `INSERT INTO video_tasks (
+        id, job_id, instagram_url, filename, caption, original_date,
+        width, height, duration, thumbnail_url, post_type, media_items, status
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
+      [
+        id,
+        jobId,
+        instagramUrl,
+        filename || null,
+        caption || null,
+        originalDate || null,
+        width || null,
+        height || null,
+        duration || null,
+        thumbnailUrl || null,
+        postType || 'reel',
+        mediaItems || null
+      ]
+    );
+    const result = database.exec('SELECT * FROM video_tasks WHERE id = ?', [id]);
+    return rowToObject<VideoTask>(result[0].columns, result[0].values[0]);
+  });
 }
 
 export async function getVideoTask(id: string): Promise<VideoTask | undefined> {
@@ -365,18 +423,20 @@ export async function createProposal(
   proposalType: 'posts' | 'articles' | 'combined' = 'posts'
 ): Promise<Proposal> {
   await ensureProposalTables();
-  const database = await getDb();
 
-  // Default expiration: 30 days from now
-  const expiration = expiresAt || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+  return withDb(async (database) => {
+    // Default expiration: 30 days from now
+    const expiration = expiresAt || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
-  database.run(
-    `INSERT INTO proposals (id, claim_token, target_npub, target_pubkey_hex, ig_handle, profile_data, proposal_type, expires_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [id, claimToken, targetNpub, targetPubkeyHex, igHandle, profileData || null, proposalType, expiration]
-  );
-  saveDb(database);
-  return (await getProposal(id))!;
+    database.run(
+      `INSERT INTO proposals (id, claim_token, target_npub, target_pubkey_hex, ig_handle, profile_data, proposal_type, expires_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, claimToken, targetNpub, targetPubkeyHex, igHandle, profileData || null, proposalType, expiration]
+    );
+
+    const result = database.exec('SELECT * FROM proposals WHERE id = ?', [id]);
+    return rowToObject<Proposal>(result[0].columns, result[0].values[0]);
+  });
 }
 
 export async function getProposal(id: string): Promise<Proposal | undefined> {
@@ -396,18 +456,18 @@ export async function getProposalByToken(claimToken: string): Promise<Proposal |
 }
 
 export async function updateProposalStatus(id: string, status: Proposal['status']): Promise<void> {
-  const database = await getDb();
-  database.run('UPDATE proposals SET status = ? WHERE id = ?', [status, id]);
-  saveDb(database);
+  return withDb(async (database) => {
+    database.run('UPDATE proposals SET status = ? WHERE id = ?', [status, id]);
+  });
 }
 
 export async function markProposalClaimed(id: string): Promise<void> {
-  const database = await getDb();
-  database.run(
-    `UPDATE proposals SET status = 'claimed', claimed_at = datetime('now') WHERE id = ?`,
-    [id]
-  );
-  saveDb(database);
+  return withDb(async (database) => {
+    database.run(
+      `UPDATE proposals SET status = 'claimed', claimed_at = datetime('now') WHERE id = ?`,
+      [id]
+    );
+  });
 }
 
 export async function createProposalPost(
@@ -419,21 +479,21 @@ export async function createProposalPost(
   thumbnailUrl?: string
 ): Promise<ProposalPost> {
   await ensureProposalTables();
-  const database = await getDb();
 
-  database.run(
-    `INSERT INTO proposal_posts (proposal_id, post_type, media_items, caption, original_date, thumbnail_url)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    [proposalId, postType, mediaItems, caption || null, originalDate || null, thumbnailUrl || null]
-  );
-  saveDb(database);
+  return withDb(async (database) => {
+    database.run(
+      `INSERT INTO proposal_posts (proposal_id, post_type, media_items, caption, original_date, thumbnail_url)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [proposalId, postType, mediaItems, caption || null, originalDate || null, thumbnailUrl || null]
+    );
 
-  // Get the last inserted post
-  const result = database.exec(
-    'SELECT * FROM proposal_posts WHERE proposal_id = ? ORDER BY id DESC LIMIT 1',
-    [proposalId]
-  );
-  return rowToObject<ProposalPost>(result[0].columns, result[0].values[0]);
+    // Get the last inserted post
+    const result = database.exec(
+      'SELECT * FROM proposal_posts WHERE proposal_id = ? ORDER BY id DESC LIMIT 1',
+      [proposalId]
+    );
+    return rowToObject<ProposalPost>(result[0].columns, result[0].values[0]);
+  });
 }
 
 export async function getProposalPosts(proposalId: string): Promise<ProposalPost[]> {
@@ -452,16 +512,16 @@ export async function updateProposalPostStatus(
   status: ProposalPost['status'],
   blossomUrls?: string
 ): Promise<void> {
-  const database = await getDb();
-  if (blossomUrls) {
-    database.run(
-      'UPDATE proposal_posts SET status = ?, blossom_urls = ? WHERE id = ?',
-      [status, blossomUrls, postId]
-    );
-  } else {
-    database.run('UPDATE proposal_posts SET status = ? WHERE id = ?', [status, postId]);
-  }
-  saveDb(database);
+  return withDb(async (database) => {
+    if (blossomUrls) {
+      database.run(
+        'UPDATE proposal_posts SET status = ?, blossom_urls = ? WHERE id = ?',
+        [status, blossomUrls, postId]
+      );
+    } else {
+      database.run('UPDATE proposal_posts SET status = ? WHERE id = ?', [status, postId]);
+    }
+  });
 }
 
 export async function getProposalWithPosts(proposalId: string): Promise<{ proposal: Proposal; posts: ProposalPost[] } | null> {
@@ -493,30 +553,30 @@ export async function createProposalArticle(
   hashtags?: string[]
 ): Promise<ProposalArticle> {
   await ensureProposalTables();
-  const database = await getDb();
 
-  database.run(
-    `INSERT INTO proposal_articles (proposal_id, title, summary, content_markdown, published_at, link, image_url, hashtags, status)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
-    [
-      proposalId,
-      title,
-      summary || null,
-      contentMarkdown,
-      publishedAt || null,
-      link || null,
-      imageUrl || null,
-      hashtags ? JSON.stringify(hashtags) : null
-    ]
-  );
-  saveDb(database);
+  return withDb(async (database) => {
+    database.run(
+      `INSERT INTO proposal_articles (proposal_id, title, summary, content_markdown, published_at, link, image_url, hashtags, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
+      [
+        proposalId,
+        title,
+        summary || null,
+        contentMarkdown,
+        publishedAt || null,
+        link || null,
+        imageUrl || null,
+        hashtags ? JSON.stringify(hashtags) : null
+      ]
+    );
 
-  // Get the last inserted article
-  const result = database.exec(
-    'SELECT * FROM proposal_articles WHERE proposal_id = ? ORDER BY id DESC LIMIT 1',
-    [proposalId]
-  );
-  return rowToObject<ProposalArticle>(result[0].columns, result[0].values[0]);
+    // Get the last inserted article
+    const result = database.exec(
+      'SELECT * FROM proposal_articles WHERE proposal_id = ? ORDER BY id DESC LIMIT 1',
+      [proposalId]
+    );
+    return rowToObject<ProposalArticle>(result[0].columns, result[0].values[0]);
+  });
 }
 
 export async function getProposalArticles(proposalId: string): Promise<ProposalArticle[]> {
@@ -534,9 +594,9 @@ export async function updateProposalArticleStatus(
   articleId: number,
   status: ProposalArticle['status']
 ): Promise<void> {
-  const database = await getDb();
-  database.run('UPDATE proposal_articles SET status = ? WHERE id = ?', [status, articleId]);
-  saveDb(database);
+  return withDb(async (database) => {
+    database.run('UPDATE proposal_articles SET status = ? WHERE id = ?', [status, articleId]);
+  });
 }
 
 export async function getProposalByTokenWithArticles(claimToken: string): Promise<{ proposal: Proposal; articles: ProposalArticle[] } | null> {
@@ -763,18 +823,21 @@ export async function createGift(
   giftType: 'posts' | 'articles' | 'combined' = 'posts'
 ): Promise<Gift> {
   await ensureGiftTables();
-  const database = await getDb();
 
-  // Default expiration: 30 days from now
-  const expiration = expiresAt || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+  return withDb(async (database) => {
+    // Default expiration: 30 days from now
+    const expiration = expiresAt || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
-  database.run(
-    `INSERT INTO gifts (id, claim_token, ig_handle, salt, profile_data, gift_type, expires_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [id, claimToken, igHandle, '', profileData || null, giftType, expiration]
-  );
-  saveDb(database);
-  return (await getGift(id))!;
+    database.run(
+      `INSERT INTO gifts (id, claim_token, ig_handle, salt, profile_data, gift_type, expires_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [id, claimToken, igHandle, '', profileData || null, giftType, expiration]
+    );
+
+    // Return the gift we just created
+    const result = database.exec('SELECT * FROM gifts WHERE id = ?', [id]);
+    return rowToObject<Gift>(result[0].columns, result[0].values[0]);
+  });
 }
 
 export async function getGift(id: string): Promise<Gift | undefined> {
@@ -794,18 +857,18 @@ export async function getGiftByToken(claimToken: string): Promise<Gift | undefin
 }
 
 export async function updateGiftStatus(id: string, status: Gift['status']): Promise<void> {
-  const database = await getDb();
-  database.run('UPDATE gifts SET status = ? WHERE id = ?', [status, id]);
-  saveDb(database);
+  return withDb(async (database) => {
+    database.run('UPDATE gifts SET status = ? WHERE id = ?', [status, id]);
+  });
 }
 
 export async function markGiftClaimed(id: string): Promise<void> {
-  const database = await getDb();
-  database.run(
-    `UPDATE gifts SET status = 'claimed', claimed_at = datetime('now') WHERE id = ?`,
-    [id]
-  );
-  saveDb(database);
+  return withDb(async (database) => {
+    database.run(
+      `UPDATE gifts SET status = 'claimed', claimed_at = datetime('now') WHERE id = ?`,
+      [id]
+    );
+  });
 }
 
 export async function createGiftPost(
@@ -817,21 +880,21 @@ export async function createGiftPost(
   thumbnailUrl?: string
 ): Promise<GiftPost> {
   await ensureGiftTables();
-  const database = await getDb();
 
-  database.run(
-    `INSERT INTO gift_posts (gift_id, post_type, media_items, caption, original_date, thumbnail_url)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    [giftId, postType, mediaItems, caption || null, originalDate || null, thumbnailUrl || null]
-  );
-  saveDb(database);
+  return withDb(async (database) => {
+    database.run(
+      `INSERT INTO gift_posts (gift_id, post_type, media_items, caption, original_date, thumbnail_url)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [giftId, postType, mediaItems, caption || null, originalDate || null, thumbnailUrl || null]
+    );
 
-  // Get the last inserted post
-  const result = database.exec(
-    'SELECT * FROM gift_posts WHERE gift_id = ? ORDER BY id DESC LIMIT 1',
-    [giftId]
-  );
-  return rowToObject<GiftPost>(result[0].columns, result[0].values[0]);
+    // Get the last inserted post
+    const result = database.exec(
+      'SELECT * FROM gift_posts WHERE gift_id = ? ORDER BY id DESC LIMIT 1',
+      [giftId]
+    );
+    return rowToObject<GiftPost>(result[0].columns, result[0].values[0]);
+  });
 }
 
 export async function getGiftPosts(giftId: string): Promise<GiftPost[]> {
@@ -850,16 +913,16 @@ export async function updateGiftPostStatus(
   status: GiftPost['status'],
   blossomUrls?: string
 ): Promise<void> {
-  const database = await getDb();
-  if (blossomUrls) {
-    database.run(
-      'UPDATE gift_posts SET status = ?, blossom_urls = ? WHERE id = ?',
-      [status, blossomUrls, postId]
-    );
-  } else {
-    database.run('UPDATE gift_posts SET status = ? WHERE id = ?', [status, postId]);
-  }
-  saveDb(database);
+  return withDb(async (database) => {
+    if (blossomUrls) {
+      database.run(
+        'UPDATE gift_posts SET status = ?, blossom_urls = ? WHERE id = ?',
+        [status, blossomUrls, postId]
+      );
+    } else {
+      database.run('UPDATE gift_posts SET status = ? WHERE id = ?', [status, postId]);
+    }
+  });
 }
 
 export async function getGiftWithPosts(giftId: string): Promise<{ gift: Gift; posts: GiftPost[] } | null> {
@@ -892,31 +955,31 @@ export async function createGiftArticle(
   hashtags?: string[]
 ): Promise<GiftArticle> {
   await ensureGiftTables();
-  const database = await getDb();
 
-  database.run(
-    `INSERT INTO gift_articles (gift_id, title, summary, content_markdown, published_at, link, image_url, blossom_image_url, hashtags, status)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
-    [
-      giftId,
-      title,
-      summary || null,
-      contentMarkdown,
-      publishedAt || null,
-      link || null,
-      imageUrl || null,
-      blossomImageUrl || null,
-      hashtags ? JSON.stringify(hashtags) : null
-    ]
-  );
-  saveDb(database);
+  return withDb(async (database) => {
+    database.run(
+      `INSERT INTO gift_articles (gift_id, title, summary, content_markdown, published_at, link, image_url, blossom_image_url, hashtags, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
+      [
+        giftId,
+        title,
+        summary || null,
+        contentMarkdown,
+        publishedAt || null,
+        link || null,
+        imageUrl || null,
+        blossomImageUrl || null,
+        hashtags ? JSON.stringify(hashtags) : null
+      ]
+    );
 
-  // Get the last inserted article
-  const result = database.exec(
-    'SELECT * FROM gift_articles WHERE gift_id = ? ORDER BY id DESC LIMIT 1',
-    [giftId]
-  );
-  return rowToObject<GiftArticle>(result[0].columns, result[0].values[0]);
+    // Get the last inserted article
+    const result = database.exec(
+      'SELECT * FROM gift_articles WHERE gift_id = ? ORDER BY id DESC LIMIT 1',
+      [giftId]
+    );
+    return rowToObject<GiftArticle>(result[0].columns, result[0].values[0]);
+  });
 }
 
 export async function getGiftArticles(giftId: string): Promise<GiftArticle[]> {
@@ -934,9 +997,9 @@ export async function updateGiftArticleStatus(
   articleId: number,
   status: GiftArticle['status']
 ): Promise<void> {
-  const database = await getDb();
-  database.run('UPDATE gift_articles SET status = ? WHERE id = ?', [status, articleId]);
-  saveDb(database);
+  return withDb(async (database) => {
+    database.run('UPDATE gift_articles SET status = ? WHERE id = ?', [status, articleId]);
+  });
 }
 
 export async function getGiftByTokenWithArticles(claimToken: string): Promise<{ gift: Gift; articles: GiftArticle[] } | null> {
@@ -991,6 +1054,83 @@ export async function cleanupExpiredGifts(): Promise<number> {
   }
 
   return count;
+}
+
+// Transactional gift creation - creates gift with all posts and articles atomically
+// This prevents race conditions where the gift or some posts could be lost
+export interface GiftPostInput {
+  postType: 'reel' | 'image' | 'carousel';
+  mediaItems: string;
+  caption?: string;
+  originalDate?: string;
+  thumbnailUrl?: string;
+}
+
+export interface GiftArticleInput {
+  title: string;
+  contentMarkdown: string;
+  summary?: string;
+  publishedAt?: string;
+  link?: string;
+  imageUrl?: string;
+  blossomImageUrl?: string;
+  hashtags?: string[];
+}
+
+export async function createGiftWithContent(
+  id: string,
+  claimToken: string,
+  igHandle: string,
+  profileData: string | undefined,
+  giftType: 'posts' | 'articles' | 'combined',
+  posts: GiftPostInput[],
+  articles: GiftArticleInput[]
+): Promise<Gift> {
+  await ensureGiftTables();
+
+  return withDb(async (database) => {
+    // Default expiration: 30 days from now
+    const expiration = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
+    // Create the gift
+    database.run(
+      `INSERT INTO gifts (id, claim_token, ig_handle, salt, profile_data, gift_type, expires_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [id, claimToken, igHandle, '', profileData || null, giftType, expiration]
+    );
+
+    // Create all posts
+    for (const post of posts) {
+      database.run(
+        `INSERT INTO gift_posts (gift_id, post_type, media_items, caption, original_date, thumbnail_url)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [id, post.postType, post.mediaItems, post.caption || null, post.originalDate || null, post.thumbnailUrl || null]
+      );
+    }
+
+    // Create all articles
+    for (const article of articles) {
+      database.run(
+        `INSERT INTO gift_articles (gift_id, title, summary, content_markdown, published_at, link, image_url, blossom_image_url, hashtags, status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
+        [
+          id,
+          article.title,
+          article.summary || null,
+          article.contentMarkdown,
+          article.publishedAt || null,
+          article.link || null,
+          article.imageUrl || null,
+          article.blossomImageUrl || null,
+          article.hashtags ? JSON.stringify(article.hashtags) : null
+        ]
+      );
+    }
+
+    // Return the gift we just created
+    const result = database.exec('SELECT * FROM gifts WHERE id = ?', [id]);
+    return rowToObject<Gift>(result[0].columns, result[0].values[0]);
+  });
 }
 
 // ============================================
@@ -1086,18 +1226,19 @@ export async function createRssGift(
   expiresAt?: string
 ): Promise<RssGift> {
   await ensureRssGiftTables();
-  const database = await getDb();
 
-  // Default expiration: 30 days from now
-  const expiration = expiresAt || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+  return withDb(async (database) => {
+    // Default expiration: 30 days from now
+    const expiration = expiresAt || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
-  database.run(
-    `INSERT INTO rss_gifts (id, claim_token, feed_url, feed_title, feed_description, feed_image_url, status, expires_at)
-     VALUES (?, ?, ?, ?, ?, ?, 'ready', ?)`,
-    [id, claimToken, feedUrl, feedTitle || null, feedDescription || null, feedImageUrl || null, expiration]
-  );
-  saveDb(database);
-  return (await getRssGift(id))!;
+    database.run(
+      `INSERT INTO rss_gifts (id, claim_token, feed_url, feed_title, feed_description, feed_image_url, status, expires_at)
+       VALUES (?, ?, ?, ?, ?, ?, 'ready', ?)`,
+      [id, claimToken, feedUrl, feedTitle || null, feedDescription || null, feedImageUrl || null, expiration]
+    );
+    const result = database.exec('SELECT * FROM rss_gifts WHERE id = ?', [id]);
+    return rowToObject<RssGift>(result[0].columns, result[0].values[0]);
+  });
 }
 
 export async function getRssGift(id: string): Promise<RssGift | undefined> {
@@ -1117,12 +1258,12 @@ export async function getRssGiftByToken(claimToken: string): Promise<RssGift | u
 }
 
 export async function markRssGiftClaimed(id: string): Promise<void> {
-  const database = await getDb();
-  database.run(
-    `UPDATE rss_gifts SET status = 'claimed', claimed_at = datetime('now') WHERE id = ?`,
-    [id]
-  );
-  saveDb(database);
+  return withDb(async (database) => {
+    database.run(
+      `UPDATE rss_gifts SET status = 'claimed', claimed_at = datetime('now') WHERE id = ?`,
+      [id]
+    );
+  });
 }
 
 export async function createRssGiftArticle(
@@ -1137,31 +1278,31 @@ export async function createRssGiftArticle(
   hashtags?: string[]
 ): Promise<RssGiftArticle> {
   await ensureRssGiftTables();
-  const database = await getDb();
 
-  database.run(
-    `INSERT INTO rss_gift_articles (rss_gift_id, title, summary, content_markdown, published_at, link, image_url, blossom_image_url, hashtags, status)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready')`,
-    [
-      rssGiftId,
-      title,
-      summary || null,
-      contentMarkdown,
-      publishedAt || null,
-      link || null,
-      imageUrl || null,
-      blossomImageUrl || null,
-      hashtags ? JSON.stringify(hashtags) : null
-    ]
-  );
-  saveDb(database);
+  return withDb(async (database) => {
+    database.run(
+      `INSERT INTO rss_gift_articles (rss_gift_id, title, summary, content_markdown, published_at, link, image_url, blossom_image_url, hashtags, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready')`,
+      [
+        rssGiftId,
+        title,
+        summary || null,
+        contentMarkdown,
+        publishedAt || null,
+        link || null,
+        imageUrl || null,
+        blossomImageUrl || null,
+        hashtags ? JSON.stringify(hashtags) : null
+      ]
+    );
 
-  // Get the last inserted article
-  const result = database.exec(
-    'SELECT * FROM rss_gift_articles WHERE rss_gift_id = ? ORDER BY id DESC LIMIT 1',
-    [rssGiftId]
-  );
-  return rowToObject<RssGiftArticle>(result[0].columns, result[0].values[0]);
+    // Get the last inserted article
+    const result = database.exec(
+      'SELECT * FROM rss_gift_articles WHERE rss_gift_id = ? ORDER BY id DESC LIMIT 1',
+      [rssGiftId]
+    );
+    return rowToObject<RssGiftArticle>(result[0].columns, result[0].values[0]);
+  });
 }
 
 export async function getRssGiftArticles(rssGiftId: string): Promise<RssGiftArticle[]> {
@@ -1179,9 +1320,9 @@ export async function updateRssGiftArticleStatus(
   articleId: number,
   status: RssGiftArticle['status']
 ): Promise<void> {
-  const database = await getDb();
-  database.run('UPDATE rss_gift_articles SET status = ? WHERE id = ?', [status, articleId]);
-  saveDb(database);
+  return withDb(async (database) => {
+    database.run('UPDATE rss_gift_articles SET status = ? WHERE id = ?', [status, articleId]);
+  });
 }
 
 export async function getRssGiftByTokenWithArticles(claimToken: string): Promise<{ gift: RssGift; articles: RssGiftArticle[] } | null> {
