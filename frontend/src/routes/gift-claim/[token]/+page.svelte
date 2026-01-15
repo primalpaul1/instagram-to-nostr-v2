@@ -108,6 +108,24 @@
   $: keySaved = nsecCopied || keyDownloaded;
   $: allTasksComplete = totalCount > 0 && completedCount === totalCount;
 
+  // Resume state - track how many were already published
+  let alreadyPublishedCount = 0;
+  let isResuming = false;
+
+  // Detect if gift has partially published items (for resume UI on preview)
+  $: hasPartiallyPublished = gift ? (
+    (gift.posts || []).some(p => p.status === 'published') ||
+    (gift.articles || []).some(a => a.status === 'published')
+  ) : false;
+  $: prePublishedCount = gift ? (
+    (gift.posts || []).filter(p => p.status === 'published').length +
+    (gift.articles || []).filter(a => a.status === 'published').length
+  ) : 0;
+  $: remainingCount = gift ? (
+    (gift.posts || []).filter(p => p.status !== 'published').length +
+    (gift.articles || []).filter(a => a.status !== 'published').length
+  ) : 0;
+
   function getPrimalDownloadUrl(): string {
     if (typeof navigator === 'undefined') return 'https://primal.net/downloads';
     const ua = navigator.userAgent;
@@ -222,18 +240,38 @@
   async function startPublishing() {
     if (!keypair || !gift) return;
 
-    // Set up tasks based on gift type
+    // Filter out already-published items for resume capability
+    const unpublishedPosts = (gift.posts || []).filter(p => p.status !== 'published');
+    const unpublishedArticles = (gift.articles || []).filter(a => a.status !== 'published');
+
+    // Track resume state
+    const totalPosts = gift.posts?.length || 0;
+    const totalArticles = gift.articles?.length || 0;
+    alreadyPublishedCount = (totalPosts - unpublishedPosts.length) + (totalArticles - unpublishedArticles.length);
+    isResuming = alreadyPublishedCount > 0;
+
+    // Set up tasks based on gift type (only unpublished items)
     if (gift.gift_type === 'articles') {
-      tasks = gift.articles.map(article => ({ type: 'article' as const, article, status: 'pending' as const }));
+      tasks = unpublishedArticles.map(article => ({ type: 'article' as const, article, status: 'pending' as const }));
     } else if (gift.gift_type === 'combined') {
       // Combined gifts: posts first, then articles
-      const postTasks = gift.posts.map(post => ({ type: 'post' as const, post, status: 'pending' as const }));
-      const articleTasks = gift.articles.map(article => ({ type: 'article' as const, article, status: 'pending' as const }));
+      const postTasks = unpublishedPosts.map(post => ({ type: 'post' as const, post, status: 'pending' as const }));
+      const articleTasks = unpublishedArticles.map(article => ({ type: 'article' as const, article, status: 'pending' as const }));
       tasks = [...postTasks, ...articleTasks];
     } else {
-      tasks = gift.posts.map(post => ({ type: 'post' as const, post, status: 'pending' as const }));
+      tasks = unpublishedPosts.map(post => ({ type: 'post' as const, post, status: 'pending' as const }));
     }
     step = 'publishing';
+
+    // If all items already published, just mark as claimed and show success
+    if (tasks.length === 0) {
+      await fetch(`/api/gifts/${token}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'complete' })
+      });
+      return;
+    }
 
     const signedEvents: any[] = [];
     const publishedPostIds: number[] = [];
@@ -325,10 +363,21 @@
 
           signedEvents.push(signedEvent);
 
-          // Track IDs separately for posts and articles
+          // IMMEDIATELY checkpoint this item as published in the database
+          // This enables resume if iOS Safari suspends JavaScript
           if (task.type === 'article') {
+            await fetch(`/api/gifts/${token}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'markArticlePublished', articleId: task.article.id })
+            });
             publishedArticleIds.push(task.article.id);
           } else {
+            await fetch(`/api/gifts/${token}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'markPostPublished', postId: task.post.id })
+            });
             publishedPostIds.push(task.post.id);
           }
 
@@ -359,28 +408,8 @@
         }
       }
 
-      // Mark items as published
-      if (publishedPostIds.length > 0) {
-        await fetch(`/api/gifts/${token}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'markPostsPublished',
-            postIds: publishedPostIds
-          })
-        });
-      }
-
-      if (publishedArticleIds.length > 0) {
-        await fetch(`/api/gifts/${token}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'markArticlesPublished',
-            articleIds: publishedArticleIds
-          })
-        });
-      }
+      // Note: Individual posts/articles are already marked as published
+      // immediately after each successful relay publish (per-item checkpointing)
 
       // Mark gift as claimed
       await fetch(`/api/gifts/${token}`, {
@@ -612,8 +641,21 @@
           {/if}
         {/if}
 
+        {#if hasPartiallyPublished}
+          <div class="resume-notice">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+            </svg>
+            <span>{prePublishedCount} already published, {remainingCount} remaining</span>
+          </div>
+        {/if}
+
         <button class="primary-btn" on:click={claimAccount}>
-          Claim My Account
+          {#if hasPartiallyPublished}
+            Resume Publishing
+          {:else}
+            Claim My Account
+          {/if}
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M5 12h14M12 5l7 7-7 7"/>
           </svg>
@@ -655,7 +697,13 @@
             {:else}
               <span class="progress-title">Publishing...</span>
             {/if}
-            <span class="progress-detail">{completedCount} of {totalCount} {isCombinedGift ? 'items' : (isArticleGift ? 'articles' : 'posts')}</span>
+            <span class="progress-detail">
+              {#if isResuming && completedCount === 0}
+                Resuming... {alreadyPublishedCount} already done, {totalCount} remaining
+              {:else}
+                {completedCount + alreadyPublishedCount} of {totalCount + alreadyPublishedCount} {isCombinedGift ? 'items' : (isArticleGift ? 'articles' : 'posts')}
+              {/if}
+            </span>
           </div>
         </div>
 
@@ -954,6 +1002,24 @@
   .posts-preview .label {
     color: var(--text-secondary);
     font-size: 0.875rem;
+  }
+
+  .resume-notice {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    background: rgba(34, 197, 94, 0.1);
+    border: 1px solid rgba(34, 197, 94, 0.3);
+    border-radius: 0.75rem;
+    color: #22c55e;
+    font-size: 0.875rem;
+    margin-bottom: 1rem;
+  }
+
+  .resume-notice svg {
+    animation: spin 2s linear infinite;
   }
 
   .primary-btn {
