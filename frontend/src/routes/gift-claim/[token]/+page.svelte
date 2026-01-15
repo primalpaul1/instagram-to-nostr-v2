@@ -10,6 +10,7 @@
     createLongFormContentEvent,
     publishToRelays,
     importToPrimalCache,
+    importSingleToPrimalCache,
     NOSTR_RELAYS,
     type MediaUpload,
     type ArticleMetadata
@@ -276,6 +277,7 @@
     const signedEvents: any[] = [];
     const publishedPostIds: number[] = [];
     const publishedArticleIds: number[] = [];
+    const relayPromises: Promise<{ success: string[]; failed: string[] }>[] = [];
 
     try {
       // First, publish profile if available (for post or article gifts)
@@ -288,11 +290,13 @@
         );
 
         const signedProfile = finalizeEvent(profileEvent as EventTemplate, hexToBytes(keypair.privateKeyHex));
-        await publishToRelays(signedProfile, NOSTR_RELAYS);
+        // Import profile to Primal immediately, fire relay publish in background
+        await importSingleToPrimalCache(signedProfile);
+        relayPromises.push(publishToRelays(signedProfile, NOSTR_RELAYS));
         signedEvents.push(signedProfile);
       }
 
-      // Process items sequentially
+      // Process items with Primal-first approach for fast visibility
       for (let i = 0; i < tasks.length; i++) {
         tasks[i] = { ...tasks[i], status: 'signing' };
         tasks = [...tasks];
@@ -354,17 +358,12 @@
           tasks[i] = { ...tasks[i], status: 'publishing' };
           tasks = [...tasks];
 
-          // Publish to relays
-          const publishResult = await publishToRelays(signedEvent, NOSTR_RELAYS);
-
-          if (publishResult.success.length === 0) {
-            throw new Error('Failed to publish to any relay');
-          }
+          // 1. Import to Primal cache immediately (await) - post visible in Primal right away
+          await importSingleToPrimalCache(signedEvent);
 
           signedEvents.push(signedEvent);
 
-          // IMMEDIATELY checkpoint this item as published in the database
-          // This enables resume if iOS Safari suspends JavaScript
+          // 2. Checkpoint to database (await) - iOS resume safety
           if (task.type === 'article') {
             await fetch(`/api/gifts/${token}`, {
               method: 'POST',
@@ -381,6 +380,10 @@
             publishedPostIds.push(task.post.id);
           }
 
+          // 3. Fire relay publishing in background (no await) - will complete while we process next item
+          relayPromises.push(publishToRelays(signedEvent, NOSTR_RELAYS));
+
+          // 4. Mark complete immediately - don't wait for relays
           tasks[i] = { ...tasks[i], status: 'complete' };
           tasks = [...tasks];
 
@@ -393,20 +396,13 @@
           };
           tasks = [...tasks];
         }
-
-        // Small delay between items
-        await new Promise(resolve => setTimeout(resolve, 100));
+        // No artificial delay - proceed immediately to next item
       }
 
-      // Batch import to Primal cache
-      // For articles and combined gifts, await to ensure articles appear in Primal Reads
-      if (signedEvents.length > 0) {
-        if (gift.gift_type === 'articles' || gift.gift_type === 'combined') {
-          await importToPrimalCache(signedEvents);
-        } else {
-          importToPrimalCache(signedEvents).catch(() => {});
-        }
-      }
+      // Wait for all relay publishing to complete and log results
+      const relayResults = await Promise.allSettled(relayPromises);
+      const relaySuccessCount = relayResults.filter(r => r.status === 'fulfilled').length;
+      console.log(`Relay sync complete: ${relaySuccessCount}/${relayPromises.length} successful`);
 
       // Note: Individual posts/articles are already marked as published
       // immediately after each successful relay publish (per-item checkpointing)

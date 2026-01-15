@@ -372,6 +372,51 @@ export async function publishToRelays(
 }
 
 /**
+ * Import a single event to Primal's cache server immediately.
+ * Used for fast publishing where each event should appear in Primal right away.
+ * Returns quickly with a short timeout.
+ */
+export async function importSingleToPrimalCache(event: Event): Promise<boolean> {
+  return new Promise((resolve) => {
+    try {
+      const ws = new WebSocket(PRIMAL_CACHE_URL);
+      const subId = Math.random().toString(36).substring(2, 14);
+
+      // Short timeout for single event - 3 seconds
+      const timeout = setTimeout(() => {
+        ws.close();
+        resolve(false);
+      }, 3000);
+
+      ws.onopen = () => {
+        // Send both import_events and direct EVENT for best coverage
+        const importMessage = JSON.stringify([
+          'REQ',
+          subId,
+          { cache: ['import_events', { events: [event] }] }
+        ]);
+        ws.send(importMessage);
+        ws.send(JSON.stringify(['EVENT', event]));
+      };
+
+      ws.onmessage = () => {
+        // Got a response - consider it successful
+        clearTimeout(timeout);
+        ws.close();
+        resolve(true);
+      };
+
+      ws.onerror = () => {
+        clearTimeout(timeout);
+        resolve(false);
+      };
+    } catch {
+      resolve(false);
+    }
+  });
+}
+
+/**
  * Import events directly to Primal's cache server.
  * This ensures events appear in Primal immediately, even with old timestamps.
  * Tries multiple methods: import_events API and direct EVENT broadcast.
