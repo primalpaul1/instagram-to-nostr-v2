@@ -765,6 +765,7 @@ async def process_proposal_articles(
         article_id = article["id"]
         url_mapping = {}
         blossom_header = None
+        upload_failed = False
 
         try:
             # 1. Upload header image if exists
@@ -784,6 +785,7 @@ async def process_proposal_articles(
                     print(f"Uploaded header image for proposal article {article_id}")
                 except Exception as e:
                     print(f"Failed to upload header image for proposal article {article_id}: {e}")
+                    upload_failed = True
             else:
                 blossom_header = existing_blossom
 
@@ -791,7 +793,7 @@ async def process_proposal_articles(
             content = article.get("content_markdown", "")
             inline_urls = extract_markdown_images(content)
 
-            # 3. Upload each inline image
+            # 3. Upload each inline image - ALL must succeed
             for url in inline_urls:
                 if url.startswith("data:") or "blossom" in url.lower():
                     continue
@@ -807,6 +809,12 @@ async def process_proposal_articles(
                     print(f"Uploaded inline image for proposal article {article_id}")
                 except Exception as e:
                     print(f"Failed to upload inline image {url[:60]}: {e}")
+                    upload_failed = True
+
+            # If any upload failed, don't mark as ready - will retry on next run
+            if upload_failed:
+                print(f"Proposal article {article_id} has failed uploads, will retry")
+                continue
 
             # 4. Replace URLs in markdown
             updated_content = content
@@ -871,6 +879,7 @@ async def process_gift_articles(
         article_id = article["id"]
         url_mapping = {}
         blossom_header = None
+        upload_failed = False
 
         try:
             # 1. Upload header image if exists and not already on Blossom
@@ -891,7 +900,7 @@ async def process_gift_articles(
                     print(f"Header image uploaded: {blossom_header}")
                 except Exception as e:
                     print(f"Failed to upload header image for article {article_id}: {e}")
-                    # Keep original URL on failure
+                    upload_failed = True
             else:
                 blossom_header = existing_blossom
 
@@ -902,7 +911,7 @@ async def process_gift_articles(
             if inline_urls:
                 print(f"Found {len(inline_urls)} inline images in article {article_id}")
 
-            # 3. Upload each inline image
+            # 3. Upload each inline image - ALL must succeed
             for url in inline_urls:
                 # Skip data URIs and already-uploaded Blossom URLs
                 if url.startswith("data:") or "blossom" in url.lower():
@@ -921,7 +930,12 @@ async def process_gift_articles(
                     print(f"Inline image uploaded: {result['url']}")
                 except Exception as e:
                     print(f"Failed to upload inline image {url[:60]}: {e}")
-                    # Keep original URL on failure
+                    upload_failed = True
+
+            # If any upload failed, don't mark as ready - will retry on next run
+            if upload_failed:
+                print(f"Gift article {article_id} has failed uploads, will retry")
+                continue
 
             # 4. Replace URLs in markdown
             updated_content = content
