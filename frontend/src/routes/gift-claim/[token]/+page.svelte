@@ -708,7 +708,7 @@
         <div class="whats-next-section">
             <h3>What's Next?</h3>
 
-            <div class="step-card">
+            <div class="step-card" class:highlight={!keySaved}>
               <div class="step-number">1</div>
               <div class="step-content">
                 <h4>Save Your Key</h4>
@@ -747,7 +747,7 @@
               </div>
             </div>
 
-            <div class="step-card">
+            <div class="step-card" class:disabled={!keySaved}>
               <img src="/primal-logo.png" alt="Primal" class="primal-logo" />
               <div class="step-content">
                 <h4>Get Primal App</h4>
@@ -773,7 +773,7 @@
               </div>
             </div>
 
-            <div class="step-card">
+            <div class="step-card" class:disabled={!keySaved}>
               <div class="step-number">3</div>
               <div class="step-content">
                 <h4>Log in with your key</h4>
@@ -1323,6 +1323,16 @@
     border: 1px solid var(--border);
     border-radius: 0.75rem;
     margin-bottom: 0.75rem;
+    transition: all 0.2s ease;
+  }
+
+  .step-card.highlight {
+    border-color: #a855f7;
+    background: rgba(168, 85, 247, 0.08);
+  }
+
+  .step-card.disabled {
+    opacity: 0.5;
   }
 
   .step-number {
