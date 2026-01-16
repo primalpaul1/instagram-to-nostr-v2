@@ -81,6 +81,7 @@
   let keypair: Keypair | null = null;
   let nsecCopied = false;
   let keyDownloaded = false;
+  let keyEverSaved = false;  // Persistent - doesn't reset after button feedback
 
   // Publishing state
   interface PostTaskStatus {
@@ -106,7 +107,7 @@
   $: postCount = gift?.posts?.length || 0;
   $: articleCount = gift?.articles?.length || 0;
   $: itemCount = isCombinedGift ? postCount + articleCount : (isArticleGift ? articleCount : postCount);
-  $: keySaved = nsecCopied || keyDownloaded;
+  $: keySaved = keyEverSaved;
   $: allTasksComplete = totalCount > 0 && completedCount === totalCount;
 
   // Resume state - track how many were already published
@@ -223,6 +224,7 @@
     if (!keypair) return;
     navigator.clipboard.writeText(keypair.nsec);
     nsecCopied = true;
+    keyEverSaved = true;
     setTimeout(() => nsecCopied = false, 2000);
   }
 
@@ -236,6 +238,7 @@
     a.click();
     URL.revokeObjectURL(url);
     keyDownloaded = true;
+    keyEverSaved = true;
   }
 
   async function startPublishing() {

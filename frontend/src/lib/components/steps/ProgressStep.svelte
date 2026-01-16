@@ -96,7 +96,8 @@
   // Key state (for immediate display)
   let nsecCopied = false;
   let keyDownloaded = false;
-  $: keySaved = nsecCopied || keyDownloaded;
+  let keyEverSaved = false;  // Persistent - doesn't reset after button feedback
+  $: keySaved = keyEverSaved;
 
   // Legacy state
   let legacyJobStatus: LegacyJobStatus | null = null;
@@ -640,6 +641,7 @@
     if (!$wizard.keyPair) return;
     navigator.clipboard.writeText($wizard.keyPair.nsec);
     nsecCopied = true;
+    keyEverSaved = true;
     setTimeout(() => nsecCopied = false, 2000);
   }
 
@@ -674,6 +676,7 @@ Store it somewhere safe!
     a.click();
     URL.revokeObjectURL(url);
     keyDownloaded = true;
+    keyEverSaved = true;
   }
 
   function getPrimalDownloadUrl(): string {
