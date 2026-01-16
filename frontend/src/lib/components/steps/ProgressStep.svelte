@@ -240,8 +240,8 @@
       sessionStorage.removeItem('migration_in_progress');
     }
 
-    // Done!
-    wizard.setStep('complete');
+    // Done - stay on this page, just update phase
+    phase = 'complete';
   }
 
   async function pollUntilReady() {
@@ -689,135 +689,39 @@ Store it somewhere safe!
 </script>
 
 <div class="progress-step">
-  <div class="header">
-    <div class="migrating-icon">
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M17 2l4 4-4 4"/>
-        <path d="M3 11v-1a4 4 0 014-4h14"/>
-        <path d="M7 22l-4-4 4-4"/>
-        <path d="M21 13v1a4 4 0 01-4 4H3"/>
-      </svg>
-    </div>
-    <h2>{phase === 'waiting' ? 'Preparing your content' : 'Publishing to Nostr'}</h2>
-    <p class="subtitle">{statusMessage}</p>
-  </div>
-
-  <div class="progress-card">
+  <!-- Compact progress box -->
+  <div class="progress-card" class:complete={phase === 'complete'}>
     {#if phase === 'waiting' && !migrationData}
-      <!-- Initial loading state -->
-      <div class="progress-loading">
+      <div class="progress-row">
         <div class="loading-spinner-small"></div>
-        <span>Connecting to server...</span>
+        <span class="progress-status">Connecting...</span>
+      </div>
+    {:else if phase === 'complete'}
+      <div class="progress-row">
+        <div class="check-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+            <path d="M20 6L9 17l-5-5"/>
+          </svg>
+        </div>
+        <span class="progress-status complete">All done!</span>
+        <span class="progress-count">{completedCount}/{totalCount}</span>
       </div>
     {:else}
-      <div class="progress-header">
-        <div class="progress-stats">
-          <span class="current">{completedCount}</span>
-          <span class="divider">/</span>
-          <span class="total">{totalCount}</span>
-          <span class="label">{phase === 'waiting' ? 'ready' : 'published'}</span>
-        </div>
-        <span class="progress-percent">{Math.round(progressPercent)}%</span>
+      <div class="progress-row">
+        {#if phase === 'waiting'}
+          <div class="loading-spinner-small"></div>
+          <span class="progress-status">Preparing media...</span>
+        {:else}
+          <div class="loading-spinner-small"></div>
+          <span class="progress-status">Publishing...</span>
+        {/if}
+        <span class="progress-count">{completedCount}/{totalCount}</span>
       </div>
       <div class="progress-bar">
         <div class="progress-fill" style="width: {progressPercent}%"></div>
       </div>
     {/if}
   </div>
-
-  {#if isMigrationMode}
-    <!-- Migration tasks -->
-    {#if tasks.length > 0}
-      <div class="tasks-list">
-        {#each tasks as task}
-          <div class="task-item" class:error={task.status === 'error'} class:complete={task.status === 'complete'} class:active={['uploading', 'signing', 'publishing'].includes(task.status)}>
-            <div class="task-status">
-              {#if task.status === 'complete'}
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
-                  <path d="M20 6L9 17l-5-5"/>
-                </svg>
-              {:else if task.status === 'error'}
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <line x1="18" y1="6" x2="6" y2="18"/>
-                  <line x1="6" y1="6" x2="18" y2="18"/>
-                </svg>
-              {:else if ['uploading', 'signing', 'publishing'].includes(task.status)}
-                <div class="task-spinner"></div>
-              {:else}
-                <div class="task-pending"></div>
-              {/if}
-            </div>
-            <div class="task-info">
-              <span class="task-caption">{task.title}{task.title.length > 40 ? '...' : ''}</span>
-              <span class="task-label">{getStatusLabel(task.status)}</span>
-            </div>
-          </div>
-          {#if task.status === 'error' && task.error}
-            <div class="task-error-msg">{task.error}</div>
-          {/if}
-        {/each}
-      </div>
-    {:else}
-      <div class="loading-state">
-        <div class="loading-spinner"></div>
-        <span>Preparing content...</span>
-      </div>
-    {/if}
-  {:else if isLegacyMode}
-    <!-- Legacy job tasks -->
-    {#if legacyJobStatus}
-      <div class="tasks-list">
-        {#each legacyJobStatus.tasks as task}
-          <div class="task-item" class:error={task.status === 'error'} class:complete={task.status === 'complete'} class:active={task.status === 'uploading' || task.status === 'publishing'}>
-            <div class="task-status">
-              {#if task.status === 'complete'}
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
-                  <path d="M20 6L9 17l-5-5"/>
-                </svg>
-              {:else if task.status === 'error'}
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <line x1="18" y1="6" x2="6" y2="18"/>
-                  <line x1="6" y1="6" x2="18" y2="18"/>
-                </svg>
-              {:else if task.status === 'uploading' || task.status === 'publishing'}
-                <div class="task-spinner"></div>
-              {:else}
-                <div class="task-pending"></div>
-              {/if}
-            </div>
-            <div class="task-info">
-              <span class="task-caption">{task.caption?.slice(0, 35) || 'Untitled'}{(task.caption?.length ?? 0) > 35 ? '...' : ''}</span>
-              <span class="task-label">{getStatusLabel(task.status)}</span>
-            </div>
-          </div>
-          {#if task.status === 'error' && task.error}
-            <div class="task-error-msg">{task.error}</div>
-          {/if}
-        {/each}
-      </div>
-    {:else}
-      <div class="loading-state">
-        <div class="loading-spinner"></div>
-        <span>Connecting to server...</span>
-      </div>
-    {/if}
-  {:else}
-    <div class="loading-state">
-      <div class="loading-spinner"></div>
-      <span>Starting migration...</span>
-    </div>
-  {/if}
-
-  {#if errorCount > 0}
-    <div class="error-banner">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <circle cx="12" cy="12" r="10"/>
-        <line x1="12" y1="8" x2="12" y2="12"/>
-        <line x1="12" y1="16" x2="12.01" y2="16"/>
-      </svg>
-      <span>{errorCount} item{errorCount !== 1 ? 's' : ''} failed. They will be skipped.</span>
-    </div>
-  {/if}
 
   <!-- What's Next section - shown immediately for migration flow -->
   {#if isMigrationMode && $wizard.keyPair}
@@ -944,74 +848,58 @@ Store it somewhere safe!
   .progress-card {
     background: var(--bg-tertiary);
     border: 1px solid var(--border);
-    border-radius: 0.875rem;
-    padding: 1.25rem;
+    border-radius: 0.75rem;
+    padding: 1rem 1.25rem;
     margin-bottom: 1.5rem;
   }
 
-  .progress-header {
+  .progress-card.complete {
+    border-color: var(--success);
+    background: rgba(var(--success-rgb), 0.08);
+  }
+
+  .progress-row {
     display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    margin-bottom: 0.75rem;
+    align-items: center;
+    gap: 0.75rem;
   }
 
-  .progress-stats {
-    display: flex;
-    align-items: baseline;
-    gap: 0.25rem;
+  .progress-status {
+    flex: 1;
+    font-size: 0.9375rem;
+    color: var(--text-primary);
   }
 
-  .progress-stats .current {
-    font-size: 1.5rem;
-    font-weight: 700;
-    color: var(--accent);
+  .progress-status.complete {
+    color: var(--success);
+    font-weight: 600;
   }
 
-  .progress-stats .divider {
-    color: var(--text-muted);
-    margin: 0 0.125rem;
-  }
-
-  .progress-stats .total {
-    font-size: 1rem;
-    color: var(--text-secondary);
-  }
-
-  .progress-stats .label {
-    font-size: 0.875rem;
-    color: var(--text-muted);
-    margin-left: 0.375rem;
-  }
-
-  .progress-percent {
+  .progress-count {
     font-size: 0.875rem;
     font-weight: 600;
     color: var(--text-secondary);
   }
 
+  .check-icon {
+    color: var(--success);
+    display: flex;
+    align-items: center;
+  }
+
   .progress-bar {
-    height: 6px;
+    height: 4px;
     background: var(--bg-primary);
-    border-radius: 3px;
+    border-radius: 2px;
     overflow: hidden;
+    margin-top: 0.75rem;
   }
 
   .progress-fill {
     height: 100%;
     background: var(--accent-gradient);
-    border-radius: 3px;
+    border-radius: 2px;
     transition: width 0.4s ease;
-  }
-
-  .progress-loading {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.75rem;
-    padding: 0.5rem 0;
-    color: var(--text-secondary);
-    font-size: 0.875rem;
   }
 
   .loading-spinner-small {
