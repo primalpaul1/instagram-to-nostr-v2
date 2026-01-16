@@ -246,11 +246,73 @@
       sessionStorage.removeItem('migration_in_progress');
     }
 
-    // Done - stay on this page, just update phase
+    // Done - celebrate!
     phase = 'complete';
+    celebrateCompletion();
 
     // Silent relay verification in background
     verifyRelaysInBackground();
+  }
+
+  function celebrateCompletion() {
+    // Haptic feedback for mobile
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+      navigator.vibrate([50, 30, 100, 30, 50]); // Celebration pattern
+    }
+
+    // Trigger confetti
+    showConfetti = true;
+    createConfetti();
+
+    // Stop after a few seconds
+    setTimeout(() => {
+      showConfetti = false;
+    }, 4000);
+  }
+
+  // Confetti state
+  let showConfetti = false;
+  let confettiPieces: { x: number; y: number; color: string; rotation: number; scale: number; velocity: { x: number; y: number }; rotationSpeed: number }[] = [];
+
+  function createConfetti() {
+    const colors = ['#a855f7', '#22c55e', '#f59e0b', '#3b82f6', '#ec4899', '#8b5cf6'];
+    confettiPieces = [];
+
+    for (let i = 0; i < 100; i++) {
+      confettiPieces.push({
+        x: Math.random() * 100,
+        y: -10 - Math.random() * 20,
+        color: colors[Math.floor(Math.random() * colors.length)],
+        rotation: Math.random() * 360,
+        scale: 0.5 + Math.random() * 0.5,
+        velocity: {
+          x: (Math.random() - 0.5) * 3,
+          y: 2 + Math.random() * 3
+        },
+        rotationSpeed: (Math.random() - 0.5) * 10
+      });
+    }
+
+    animateConfetti();
+  }
+
+  function animateConfetti() {
+    if (!showConfetti) return;
+
+    confettiPieces = confettiPieces.map(piece => ({
+      ...piece,
+      x: piece.x + piece.velocity.x,
+      y: piece.y + piece.velocity.y,
+      rotation: piece.rotation + piece.rotationSpeed,
+      velocity: {
+        x: piece.velocity.x * 0.99,
+        y: piece.velocity.y + 0.1
+      }
+    })).filter(piece => piece.y < 120);
+
+    if (confettiPieces.length > 0) {
+      requestAnimationFrame(animateConfetti);
+    }
   }
 
   async function pollAndPublish(
@@ -685,9 +747,26 @@ Store it somewhere safe!
 </script>
 
 <div class="progress-step">
-  <!-- Circular progress with rotating sayings -->
-  <div class="progress-card" class:complete={phase === 'complete'}>
-    <div class="progress-circle" class:complete={phase === 'complete'}>
+  <!-- Confetti overlay -->
+  {#if showConfetti}
+    <div class="confetti-container">
+      {#each confettiPieces as piece}
+        <div
+          class="confetti"
+          style="
+            left: {piece.x}%;
+            top: {piece.y}%;
+            background: {piece.color};
+            transform: rotate({piece.rotation}deg) scale({piece.scale});
+          "
+        />
+      {/each}
+    </div>
+  {/if}
+
+  <!-- Compact progress with rotating sayings -->
+  <div class="progress-card" class:complete={phase === 'complete'} class:celebrating={showConfetti}>
+    <div class="progress-circle" class:complete={phase === 'complete'} class:celebrating={showConfetti}>
       <svg viewBox="0 0 36 36">
         <path
           class="progress-bg"
@@ -705,7 +784,7 @@ Store it somewhere safe!
       </svg>
       <div class="progress-percent">
         {#if phase === 'complete'}
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
             <path d="M20 6L9 17l-5-5"/>
           </svg>
         {:else}
@@ -715,12 +794,12 @@ Store it somewhere safe!
     </div>
 
     {#if phase === 'complete'}
-      <p class="nostr-saying complete">All done!</p>
+      <p class="nostr-saying complete">You're in!</p>
+      <p class="success-subtitle">Welcome to the future of social</p>
     {:else}
       <p class="nostr-saying">{NOSTR_SAYINGS[currentSayingIndex]}</p>
+      <p class="progress-count">{completedCount}/{totalCount}</p>
     {/if}
-
-    <p class="progress-count">{completedCount}/{totalCount} published</p>
   </div>
 
   <!-- What's Next section - shown immediately for migration flow -->
@@ -845,48 +924,94 @@ Store it somewhere safe!
     font-size: 0.9375rem;
   }
 
+  /* Confetti */
+  .confetti-container {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 1000;
+    overflow: hidden;
+  }
+
+  .confetti {
+    position: absolute;
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+  }
+
   .progress-card {
     background: var(--bg-tertiary);
     border: 1px solid var(--border);
     border-radius: 1rem;
-    padding: 1.5rem;
+    padding: 1rem 1.25rem;
     margin-bottom: 1.5rem;
     display: flex;
     flex-direction: column;
     align-items: center;
     text-align: center;
+    transition: all 0.3s ease;
   }
 
   .progress-card.complete {
-    border-color: var(--success);
-    background: rgba(var(--success-rgb), 0.08);
+    border-color: #22c55e;
+    background: rgba(34, 197, 94, 0.1);
+  }
+
+  .progress-card.celebrating {
+    animation: celebrate-pulse 0.6s ease-out;
+    box-shadow: 0 0 30px rgba(34, 197, 94, 0.4);
+  }
+
+  @keyframes celebrate-pulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.02); }
+    100% { transform: scale(1); }
   }
 
   .progress-circle {
     position: relative;
-    width: 80px;
-    height: 80px;
-    margin-bottom: 1rem;
+    width: 56px;
+    height: 56px;
+    margin-bottom: 0.75rem;
   }
 
   .progress-circle svg {
     transform: rotate(-90deg);
     width: 100%;
     height: 100%;
+    filter: drop-shadow(0 0 6px rgba(168, 85, 247, 0.3));
+  }
+
+  .progress-circle.complete svg {
+    filter: drop-shadow(0 0 10px rgba(34, 197, 94, 0.5));
+  }
+
+  .progress-circle.celebrating svg {
+    animation: glow-pulse 0.5s ease-out;
+  }
+
+  @keyframes glow-pulse {
+    0% { filter: drop-shadow(0 0 10px rgba(34, 197, 94, 0.5)); }
+    50% { filter: drop-shadow(0 0 25px rgba(34, 197, 94, 0.8)); }
+    100% { filter: drop-shadow(0 0 10px rgba(34, 197, 94, 0.5)); }
   }
 
   .progress-bg {
     fill: none;
     stroke: var(--bg-primary);
-    stroke-width: 3;
+    stroke-width: 3.5;
   }
 
   .progress-fill-circle {
     fill: none;
     stroke: #a855f7;
-    stroke-width: 3;
+    stroke-width: 3.5;
     stroke-linecap: round;
-    transition: stroke-dasharray 0.5s ease;
+    transition: stroke-dasharray 0.4s ease-out;
   }
 
   .progress-circle.complete .progress-fill-circle {
@@ -898,7 +1023,7 @@ Store it somewhere safe!
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    font-size: 1.125rem;
+    font-size: 0.9375rem;
     font-weight: 700;
     color: var(--text-primary);
     display: flex;
@@ -908,26 +1033,53 @@ Store it somewhere safe!
 
   .progress-circle.complete .progress-percent {
     color: #22c55e;
+    animation: check-pop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  }
+
+  @keyframes check-pop {
+    0% { transform: translate(-50%, -50%) scale(0); }
+    60% { transform: translate(-50%, -50%) scale(1.2); }
+    100% { transform: translate(-50%, -50%) scale(1); }
   }
 
   .nostr-saying {
-    font-size: 1rem;
+    font-size: 0.875rem;
     font-weight: 500;
-    color: var(--text-primary);
-    margin: 0 0 0.5rem 0;
-    min-height: 1.5rem;
-    transition: opacity 0.3s ease;
+    color: var(--text-secondary);
+    margin: 0;
+    min-height: 1.25rem;
+    transition: all 0.3s ease;
   }
 
   .nostr-saying.complete {
     color: #22c55e;
-    font-weight: 600;
+    font-size: 1.125rem;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+    animation: text-pop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
   }
 
-  .progress-count {
+  @keyframes text-pop {
+    0% { transform: scale(0.8); opacity: 0; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+
+  .success-subtitle {
     font-size: 0.8125rem;
     color: var(--text-secondary);
     margin: 0;
+    animation: fade-in 0.5s ease-out 0.2s both;
+  }
+
+  @keyframes fade-in {
+    0% { opacity: 0; transform: translateY(5px); }
+    100% { opacity: 1; transform: translateY(0); }
+  }
+
+  .progress-count {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin: 0.25rem 0 0 0;
   }
 
   .loading-spinner-small {
