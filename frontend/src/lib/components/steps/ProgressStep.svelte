@@ -87,11 +87,21 @@
   }
 
   // State
-  let phase: 'waiting' | 'uploading' | 'signing' | 'complete' = 'waiting';
+  let phase: 'publishing' | 'complete' = 'publishing';
   let migrationData: MigrationData | null = null;
   let tasks: TaskStatus[] = [];
   let pollInterval: ReturnType<typeof setInterval>;
   let publishedEvents: Event[] = [];
+
+  // Track which posts/articles we've already started publishing (to avoid duplicates)
+  let publishingPostIds = new Set<number>();
+  let publishingArticleIds = new Set<number>();
+  let publishedPostIds = new Set<number>();
+  let publishedArticleIds = new Set<number>();
+
+  // For concurrent publishing
+  let activePublishCount = 0;
+  const MAX_CONCURRENT_PUBLISH = 3;
 
   // Key state (for immediate display)
   let nsecCopied = false;
@@ -127,17 +137,13 @@
   $: isMigrationMode = !!$wizard.migrationId;
   $: isLegacyMode = !isMigrationMode && !!$wizard.jobId;
 
-  // During waiting phase, use migration progress; during signing phase, use tasks
+  // Progress is based on published count vs total
   $: totalCount = isMigrationMode
-    ? (phase === 'waiting' && migrationData
-        ? migrationData.progress.totalPosts + migrationData.progress.totalArticles
-        : tasks.length)
+    ? (migrationData ? migrationData.posts.length + migrationData.articles.length : 0)
     : (legacyJobStatus?.tasks.length ?? 0);
 
   $: completedCount = isMigrationMode
-    ? (phase === 'waiting' && migrationData
-        ? migrationData.progress.readyPosts + migrationData.progress.readyArticles
-        : tasks.filter(t => t.status === 'complete').length)
+    ? publishedPostIds.size + publishedArticleIds.size
     : (legacyJobStatus?.tasks.filter(t => t.status === 'complete').length ?? 0);
 
   $: errorCount = isMigrationMode
@@ -145,26 +151,6 @@
     : (legacyJobStatus?.tasks.filter(t => t.status === 'error').length ?? 0);
 
   $: progressPercent = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
-
-  $: statusMessage = getStatusMessage();
-
-  function getStatusMessage(): string {
-    if (phase === 'waiting') {
-      if (migrationData) {
-        const ready = migrationData.progress.readyPosts + migrationData.progress.readyArticles;
-        const total = migrationData.progress.totalPosts + migrationData.progress.totalArticles;
-        return `Preparing media... ${ready}/${total}`;
-      }
-      return 'Connecting to server...';
-    }
-    if (phase === 'uploading') {
-      return 'Uploading remaining media...';
-    }
-    if (phase === 'signing') {
-      return 'Signing and publishing...';
-    }
-    return 'Complete!';
-  }
 
   onMount(() => {
     // Check for saved migration state (iOS resume support)
@@ -200,6 +186,7 @@
 
   // ============================================
   // Migration Flow (new client-side signing)
+  // Publishes posts as they become ready, not waiting for all
   // ============================================
 
   async function startMigrationFlow() {
@@ -240,24 +227,18 @@
       }));
     }
 
-    // Phase 1: Poll until migration is ready
-    await pollUntilReady();
+    // Publish profile first (if available) - do this once at the start
+    let profilePublished = false;
 
-    if (!migrationData || migrationData.migration.status !== 'ready') {
-      wizard.setError('Migration preparation failed');
-      return;
-    }
+    // Main loop: poll and publish as posts become ready
+    await pollAndPublish(secretKeyBytes, publicKeyHex, () => {
+      if (!profilePublished && migrationData?.migration.profile_data) {
+        profilePublished = true;
+        publishProfile(secretKeyBytes, publicKeyHex);
+      }
+    });
 
-    // Phase 2: Sign and publish
-    phase = 'signing';
-
-    // Phase 3: Publish profile if available
-    await publishProfile(secretKeyBytes, publicKeyHex);
-
-    // Phase 4: Sign and publish content
-    await publishContent(secretKeyBytes, publicKeyHex);
-
-    // Phase 5: Mark migration complete
+    // Mark migration complete
     await markMigrationComplete();
 
     // Clear sessionStorage on success
@@ -267,11 +248,20 @@
 
     // Done - stay on this page, just update phase
     phase = 'complete';
+
+    // Silent relay verification in background
+    verifyRelaysInBackground();
   }
 
-  async function pollUntilReady() {
+  async function pollAndPublish(
+    secretKeyBytes: Uint8Array,
+    publicKeyHex: string,
+    onFirstData: () => void
+  ) {
     const migrationId = $wizard.migrationId;
     if (!migrationId) return;
+
+    let firstDataReceived = false;
 
     while (true) {
       try {
@@ -282,16 +272,59 @@
 
         migrationData = await response.json();
 
-        if (migrationData.migration.status === 'ready') {
-          // Initialize tasks from migration data
-          initializeTasks();
-          return;
+        // Call onFirstData callback once we have data
+        if (!firstDataReceived && migrationData) {
+          firstDataReceived = true;
+          onFirstData();
         }
 
-        if (migrationData.migration.status === 'complete') {
-          // Already complete, skip to end
-          wizard.setStep('complete');
-          return;
+        // Check for already-published posts (resume support)
+        for (const post of migrationData.posts) {
+          if (post.status === 'published' && !publishedPostIds.has(post.id)) {
+            publishedPostIds.add(post.id);
+          }
+        }
+        for (const article of migrationData.articles) {
+          if (article.status === 'published' && !publishedArticleIds.has(article.id)) {
+            publishedArticleIds.add(article.id);
+          }
+        }
+
+        // Find posts that are ready but not yet being published
+        const readyPosts = migrationData.posts.filter(
+          p => p.status === 'ready' && !publishingPostIds.has(p.id) && !publishedPostIds.has(p.id)
+        );
+
+        // Publish ready posts (respecting concurrency limit)
+        for (const post of readyPosts) {
+          if (activePublishCount < MAX_CONCURRENT_PUBLISH) {
+            publishingPostIds.add(post.id);
+            processPost(post, secretKeyBytes, publicKeyHex);
+          }
+        }
+
+        // Find articles that are ready but not yet being published
+        const readyArticles = migrationData.articles.filter(
+          a => a.status === 'ready' && !publishingArticleIds.has(a.id) && !publishedArticleIds.has(a.id)
+        );
+
+        // Publish ready articles (respecting concurrency limit)
+        for (const article of readyArticles) {
+          if (activePublishCount < MAX_CONCURRENT_PUBLISH) {
+            publishingArticleIds.add(article.id);
+            processArticle(article, secretKeyBytes, publicKeyHex);
+          }
+        }
+
+        // Check if all done
+        const totalPosts = migrationData.posts.length;
+        const totalArticles = migrationData.articles.length;
+        const allPublished =
+          publishedPostIds.size >= totalPosts &&
+          publishedArticleIds.size >= totalArticles;
+
+        if (allPublished) {
+          break;
         }
 
         // Wait before polling again
@@ -303,29 +336,19 @@
     }
   }
 
-  function initializeTasks() {
-    if (!migrationData) return;
+  async function verifyRelaysInBackground() {
+    // Wait a moment for initial relay publishes to complete
+    await new Promise(resolve => setTimeout(resolve, 5000));
 
-    tasks = [];
-
-    // Add posts
-    for (const post of migrationData.posts) {
-      tasks.push({
-        id: post.id,
-        title: post.caption?.slice(0, 40) || `Post ${post.id}`,
-        type: 'post',
-        status: post.status === 'published' ? 'complete' : 'waiting'
-      });
-    }
-
-    // Add articles
-    for (const article of migrationData.articles) {
-      tasks.push({
-        id: article.id,
-        title: article.title.slice(0, 40),
-        type: 'article',
-        status: article.status === 'published' ? 'complete' : 'waiting'
-      });
+    for (const event of publishedEvents) {
+      try {
+        const result = await publishToRelays(event, NOSTR_RELAYS);
+        if (result.success.length === 0) {
+          console.warn('Relay retry failed for event:', event.id);
+        }
+      } catch (err) {
+        console.warn('Relay verification error:', err);
+      }
     }
   }
 
@@ -351,64 +374,25 @@
       if (name) {
         const profileEvent = createProfileEvent(publicKeyHex, name, bio, picture);
         const signed = finalizeEvent(profileEvent as EventTemplate, secretKeyBytes);
-        await publishToRelays(signed, NOSTR_RELAYS);
+
+        // Primal cache first for immediate visibility
         await importSingleToPrimalCache(signed);
         publishedEvents.push(signed);
+
+        // Fire relay publishing in background
+        publishToRelays(signed, NOSTR_RELAYS).catch(err => {
+          console.warn('Profile relay publish failed:', err);
+        });
       }
     } catch (err) {
       console.warn('Failed to publish profile:', err);
     }
   }
 
-  async function publishContent(secretKeyBytes: Uint8Array, publicKeyHex: string) {
-    if (!migrationData) return;
-
-    const queue: number[] = [];
-
-    // Queue posts that aren't published yet
-    for (let i = 0; i < migrationData.posts.length; i++) {
-      if (migrationData.posts[i].status !== 'published') {
-        queue.push(i);
-      }
-    }
-
-    // Queue articles that aren't published yet
-    const articleOffset = migrationData.posts.length;
-    for (let i = 0; i < migrationData.articles.length; i++) {
-      if (migrationData.articles[i].status !== 'published') {
-        queue.push(articleOffset + i);
-      }
-    }
-
-    // Process with concurrency
-    async function processQueue() {
-      while (queue.length > 0) {
-        const index = queue.shift();
-        if (index === undefined) break;
-
-        if (index < articleOffset) {
-          await processPost(index, secretKeyBytes, publicKeyHex);
-        } else {
-          await processArticle(index - articleOffset, secretKeyBytes, publicKeyHex);
-        }
-      }
-    }
-
-    const workers = Array(CONCURRENCY).fill(null).map(() => processQueue());
-    await Promise.all(workers);
-  }
-
-  async function processPost(postIndex: number, secretKeyBytes: Uint8Array, publicKeyHex: string) {
-    if (!migrationData) return;
-
-    const post = migrationData.posts[postIndex];
-    const taskIndex = tasks.findIndex(t => t.type === 'post' && t.id === post.id);
-    if (taskIndex === -1) return;
+  async function processPost(post: MigrationPost, secretKeyBytes: Uint8Array, publicKeyHex: string) {
+    activePublishCount++;
 
     try {
-      tasks[taskIndex].status = 'signing';
-      tasks = tasks;
-
       // Parse blossom URLs and media items
       const blossomUrls: string[] = post.blossom_urls ? JSON.parse(post.blossom_urls) : [];
       const mediaItems: { url: string; media_type: string; width?: number; height?: number }[] = JSON.parse(post.media_items);
@@ -433,56 +417,46 @@
         };
       });
 
-      // Create event
+      // Create and sign event
       const eventTemplate = createMultiMediaPostEvent(
         publicKeyHex,
         mediaUploads,
         post.caption || undefined,
         post.original_date || undefined
       );
-
       const signed = finalizeEvent(eventTemplate as EventTemplate, secretKeyBytes);
 
-      // Publish
-      tasks[taskIndex].status = 'publishing';
-      tasks = tasks;
-
-      const result = await publishToRelays(signed, NOSTR_RELAYS);
-      if (result.success.length === 0) {
-        throw new Error('Failed to publish to any relay');
-      }
-
+      // 1. Import to Primal cache first - immediate visibility
       await importSingleToPrimalCache(signed);
       publishedEvents.push(signed);
 
-      // Checkpoint
+      // 2. Fire relay publishing in background (best effort)
+      publishToRelays(signed, NOSTR_RELAYS).catch(err => {
+        console.warn('Post relay publish failed:', err);
+      });
+
+      // 3. Checkpoint to database
       await fetch(`/api/migrations/${$wizard.migrationId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'markPostPublished', postId: post.id })
       });
 
-      tasks[taskIndex].status = 'complete';
-      tasks = tasks;
+      // 4. Mark as published
+      publishedPostIds.add(post.id);
+      publishedPostIds = publishedPostIds; // Trigger reactivity
     } catch (err) {
       console.error('Error processing post:', err);
-      tasks[taskIndex].status = 'error';
-      tasks[taskIndex].error = err instanceof Error ? err.message : 'Unknown error';
-      tasks = tasks;
+      // Don't block on errors, just log
+    } finally {
+      activePublishCount--;
     }
   }
 
-  async function processArticle(articleIndex: number, secretKeyBytes: Uint8Array, publicKeyHex: string) {
-    if (!migrationData) return;
-
-    const article = migrationData.articles[articleIndex];
-    const taskIndex = tasks.findIndex(t => t.type === 'article' && t.id === article.id);
-    if (taskIndex === -1) return;
+  async function processArticle(article: MigrationArticle, secretKeyBytes: Uint8Array, publicKeyHex: string) {
+    activePublishCount++;
 
     try {
-      tasks[taskIndex].status = 'uploading';
-      tasks = tasks;
-
       // Get processed content (worker may have already processed inline images)
       let content = article.content_markdown;
       let headerImageUrl = article.blossom_image_url || article.image_url;
@@ -523,9 +497,6 @@
       }
 
       // Create event
-      tasks[taskIndex].status = 'signing';
-      tasks = tasks;
-
       const hashtags: string[] = article.hashtags ? JSON.parse(article.hashtags) : [];
 
       const articleData: ArticleMetadata = {
@@ -541,32 +512,30 @@
       const eventTemplate = createLongFormContentEvent(publicKeyHex, articleData);
       const signed = finalizeEvent(eventTemplate as EventTemplate, secretKeyBytes);
 
-      // Publish
-      tasks[taskIndex].status = 'publishing';
-      tasks = tasks;
-
-      const result = await publishToRelays(signed, NOSTR_RELAYS);
-      if (result.success.length === 0) {
-        throw new Error('Failed to publish to any relay');
-      }
-
+      // 1. Import to Primal cache first - immediate visibility
       await importSingleToPrimalCache(signed);
       publishedEvents.push(signed);
 
-      // Checkpoint
+      // 2. Fire relay publishing in background (best effort)
+      publishToRelays(signed, NOSTR_RELAYS).catch(err => {
+        console.warn('Article relay publish failed:', err);
+      });
+
+      // 3. Checkpoint to database
       await fetch(`/api/migrations/${$wizard.migrationId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'markArticlePublished', articleId: article.id })
       });
 
-      tasks[taskIndex].status = 'complete';
-      tasks = tasks;
+      // 4. Mark as published
+      publishedArticleIds.add(article.id);
+      publishedArticleIds = publishedArticleIds; // Trigger reactivity
     } catch (err) {
       console.error('Error processing article:', err);
-      tasks[taskIndex].status = 'error';
-      tasks[taskIndex].error = err instanceof Error ? err.message : 'Unknown error';
-      tasks = tasks;
+      // Don't block on errors, just log
+    } finally {
+      activePublishCount--;
     }
   }
 
