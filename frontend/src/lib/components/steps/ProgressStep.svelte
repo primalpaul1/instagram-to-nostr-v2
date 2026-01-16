@@ -143,6 +143,19 @@
   }
 
   onMount(() => {
+    // Check for saved migration state (iOS resume support)
+    const savedMigration = sessionStorage.getItem('migration_in_progress');
+    if (savedMigration && !$wizard.migrationId) {
+      try {
+        const { migrationId, secretKeyHex, publicKeyHex, npub, nsec } = JSON.parse(savedMigration);
+        wizard.setMigrationId(migrationId);
+        wizard.setKeyPair({ publicKey: publicKeyHex, secretKey: secretKeyHex, npub, nsec });
+      } catch (err) {
+        console.warn('Failed to restore migration state:', err);
+        sessionStorage.removeItem('migration_in_progress');
+      }
+    }
+
     if (isMigrationMode) {
       startMigrationFlow();
     } else if (isLegacyMode) {
@@ -160,19 +173,42 @@
   // ============================================
 
   async function startMigrationFlow() {
-    // Generate keypair immediately so user can save it while waiting
-    const secretKeyBytes = generateSecretKey();
-    const secretKeyHex = bytesToHex(secretKeyBytes);
-    const publicKeyHex = getPublicKey(secretKeyBytes);
-    const npub = nip19.npubEncode(publicKeyHex);
-    const nsec = nip19.nsecEncode(secretKeyBytes);
+    let secretKeyBytes: Uint8Array;
+    let secretKeyHex: string;
+    let publicKeyHex: string;
 
-    wizard.setKeyPair({
-      publicKey: publicKeyHex,
-      secretKey: secretKeyHex,
-      npub,
-      nsec
-    });
+    // Check if we're resuming with existing keypair
+    if ($wizard.keyPair) {
+      // Resuming - use existing keypair
+      secretKeyHex = $wizard.keyPair.secretKey;
+      secretKeyBytes = hexToBytes(secretKeyHex);
+      publicKeyHex = $wizard.keyPair.publicKey;
+    } else {
+      // New migration - generate keypair
+      secretKeyBytes = generateSecretKey();
+      secretKeyHex = bytesToHex(secretKeyBytes);
+      publicKeyHex = getPublicKey(secretKeyBytes);
+      const npub = nip19.npubEncode(publicKeyHex);
+      const nsec = nip19.nsecEncode(secretKeyBytes);
+
+      wizard.setKeyPair({
+        publicKey: publicKeyHex,
+        secretKey: secretKeyHex,
+        npub,
+        nsec
+      });
+    }
+
+    // Save to sessionStorage for iOS resume support
+    if (typeof sessionStorage !== 'undefined' && $wizard.migrationId) {
+      sessionStorage.setItem('migration_in_progress', JSON.stringify({
+        migrationId: $wizard.migrationId,
+        secretKeyHex,
+        publicKeyHex,
+        npub: $wizard.keyPair?.npub,
+        nsec: $wizard.keyPair?.nsec
+      }));
+    }
 
     // Phase 1: Poll until migration is ready
     await pollUntilReady();
@@ -193,6 +229,11 @@
 
     // Phase 5: Mark migration complete
     await markMigrationComplete();
+
+    // Clear sessionStorage on success
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.removeItem('migration_in_progress');
+    }
 
     // Done!
     wizard.setStep('complete');
