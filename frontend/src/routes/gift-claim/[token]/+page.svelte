@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { page } from '$app/stores';
   import { finalizeEvent, getPublicKey, type EventTemplate } from 'nostr-tools';
   import { nip19 } from 'nostr-tools';
@@ -144,8 +144,35 @@
 
   const token = $page.params.token;
 
+  // Rotating Nostr sayings
+  const NOSTR_SAYINGS = [
+    "Not your keys, not your content",
+    "One step closer to bloom scrolling",
+    "Control what you see",
+    "Zap Bitcoin",
+    "Sovereign social media is here",
+    "Not their content anymore",
+    "Bye, bye, big tech",
+    "Your feed, your rules",
+    "No algorithm deciding for you",
+    "Own your audience forever",
+    "No more shadow bans"
+  ];
+
+  let currentSayingIndex = 0;
+  let sayingInterval: ReturnType<typeof setInterval>;
+
   onMount(async () => {
+    // Start rotating sayings
+    sayingInterval = setInterval(() => {
+      currentSayingIndex = (currentSayingIndex + 1) % NOSTR_SAYINGS.length;
+    }, 3000);
+
     await loadGift();
+  });
+
+  onDestroy(() => {
+    if (sayingInterval) clearInterval(sayingInterval);
   });
 
   function generateKeypair(): Keypair {
@@ -694,7 +721,7 @@
             {#if allTasksComplete}
               <span class="progress-title complete">All done!</span>
             {:else}
-              <span class="progress-title">Publishing...</span>
+              <span class="progress-title nostr-saying">{NOSTR_SAYINGS[currentSayingIndex]}</span>
             {/if}
             <span class="progress-detail">
               {#if isResuming && completedCount === 0}
@@ -1141,6 +1168,11 @@
     font-size: 1rem;
     font-weight: 600;
     color: var(--text-primary);
+  }
+
+  .progress-title.nostr-saying {
+    font-weight: 500;
+    transition: opacity 0.3s ease;
   }
 
   .progress-title.complete {

@@ -105,6 +105,24 @@
   const BLOSSOM_SERVER = 'https://blossom.primal.net';
   const CONCURRENCY = 2;
 
+  // Rotating Nostr sayings
+  const NOSTR_SAYINGS = [
+    "Not your keys, not your content",
+    "One step closer to bloom scrolling",
+    "Control what you see",
+    "Zap Bitcoin",
+    "Sovereign social media is here",
+    "Not their content anymore",
+    "Bye, bye, big tech",
+    "Your feed, your rules",
+    "No algorithm deciding for you",
+    "Own your audience forever",
+    "No more shadow bans"
+  ];
+
+  let currentSayingIndex = 0;
+  let sayingInterval: ReturnType<typeof setInterval>;
+
   // Computed values
   $: isMigrationMode = !!$wizard.migrationId;
   $: isLegacyMode = !isMigrationMode && !!$wizard.jobId;
@@ -162,6 +180,11 @@
       }
     }
 
+    // Start rotating sayings
+    sayingInterval = setInterval(() => {
+      currentSayingIndex = (currentSayingIndex + 1) % NOSTR_SAYINGS.length;
+    }, 3000);
+
     if (isMigrationMode) {
       startMigrationFlow();
     } else if (isLegacyMode) {
@@ -172,6 +195,7 @@
 
   onDestroy(() => {
     if (pollInterval) clearInterval(pollInterval);
+    if (sayingInterval) clearInterval(sayingInterval);
   });
 
   // ============================================
@@ -692,38 +716,42 @@ Store it somewhere safe!
 </script>
 
 <div class="progress-step">
-  <!-- Compact progress box -->
+  <!-- Circular progress with rotating sayings -->
   <div class="progress-card" class:complete={phase === 'complete'}>
-    {#if phase === 'waiting' && !migrationData}
-      <div class="progress-row">
-        <div class="loading-spinner-small"></div>
-        <span class="progress-status">Connecting...</span>
-      </div>
-    {:else if phase === 'complete'}
-      <div class="progress-row">
-        <div class="check-icon">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+    <div class="progress-circle" class:complete={phase === 'complete'}>
+      <svg viewBox="0 0 36 36">
+        <path
+          class="progress-bg"
+          d="M18 2.0845
+            a 15.9155 15.9155 0 0 1 0 31.831
+            a 15.9155 15.9155 0 0 1 0 -31.831"
+        />
+        <path
+          class="progress-fill-circle"
+          stroke-dasharray="{progressPercent}, 100"
+          d="M18 2.0845
+            a 15.9155 15.9155 0 0 1 0 31.831
+            a 15.9155 15.9155 0 0 1 0 -31.831"
+        />
+      </svg>
+      <div class="progress-percent">
+        {#if phase === 'complete'}
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
             <path d="M20 6L9 17l-5-5"/>
           </svg>
-        </div>
-        <span class="progress-status complete">All done!</span>
-        <span class="progress-count">{completedCount}/{totalCount}</span>
-      </div>
-    {:else}
-      <div class="progress-row">
-        {#if phase === 'waiting'}
-          <div class="loading-spinner-small"></div>
-          <span class="progress-status">Preparing media...</span>
         {:else}
-          <div class="loading-spinner-small"></div>
-          <span class="progress-status">Publishing...</span>
+          {Math.round(progressPercent)}%
         {/if}
-        <span class="progress-count">{completedCount}/{totalCount}</span>
       </div>
-      <div class="progress-bar">
-        <div class="progress-fill" style="width: {progressPercent}%"></div>
-      </div>
+    </div>
+
+    {#if phase === 'complete'}
+      <p class="nostr-saying complete">All done!</p>
+    {:else}
+      <p class="nostr-saying">{NOSTR_SAYINGS[currentSayingIndex]}</p>
     {/if}
+
+    <p class="progress-count">{completedCount}/{totalCount} published</p>
   </div>
 
   <!-- What's Next section - shown immediately for migration flow -->
@@ -851,9 +879,13 @@ Store it somewhere safe!
   .progress-card {
     background: var(--bg-tertiary);
     border: 1px solid var(--border);
-    border-radius: 0.75rem;
-    padding: 1rem 1.25rem;
+    border-radius: 1rem;
+    padding: 1.5rem;
     margin-bottom: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
   }
 
   .progress-card.complete {
@@ -861,48 +893,72 @@ Store it somewhere safe!
     background: rgba(var(--success-rgb), 0.08);
   }
 
-  .progress-row {
+  .progress-circle {
+    position: relative;
+    width: 80px;
+    height: 80px;
+    margin-bottom: 1rem;
+  }
+
+  .progress-circle svg {
+    transform: rotate(-90deg);
+    width: 100%;
+    height: 100%;
+  }
+
+  .progress-bg {
+    fill: none;
+    stroke: var(--bg-primary);
+    stroke-width: 3;
+  }
+
+  .progress-fill-circle {
+    fill: none;
+    stroke: #a855f7;
+    stroke-width: 3;
+    stroke-linecap: round;
+    transition: stroke-dasharray 0.5s ease;
+  }
+
+  .progress-circle.complete .progress-fill-circle {
+    stroke: #22c55e;
+  }
+
+  .progress-percent {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 1.125rem;
+    font-weight: 700;
+    color: var(--text-primary);
     display: flex;
     align-items: center;
-    gap: 0.75rem;
+    justify-content: center;
   }
 
-  .progress-status {
-    flex: 1;
-    font-size: 0.9375rem;
+  .progress-circle.complete .progress-percent {
+    color: #22c55e;
+  }
+
+  .nostr-saying {
+    font-size: 1rem;
+    font-weight: 500;
     color: var(--text-primary);
+    margin: 0 0 0.5rem 0;
+    min-height: 1.5rem;
+    transition: opacity 0.3s ease;
   }
 
-  .progress-status.complete {
-    color: var(--success);
+  .nostr-saying.complete {
+    color: #22c55e;
     font-weight: 600;
   }
 
   .progress-count {
-    font-size: 0.875rem;
-    font-weight: 600;
+    font-size: 0.8125rem;
     color: var(--text-secondary);
-  }
-
-  .check-icon {
-    color: var(--success);
-    display: flex;
-    align-items: center;
-  }
-
-  .progress-bar {
-    height: 4px;
-    background: var(--bg-primary);
-    border-radius: 2px;
-    overflow: hidden;
-    margin-top: 0.75rem;
-  }
-
-  .progress-fill {
-    height: 100%;
-    background: var(--accent-gradient);
-    border-radius: 2px;
-    transition: width 0.4s ease;
+    margin: 0;
   }
 
   .loading-spinner-small {
