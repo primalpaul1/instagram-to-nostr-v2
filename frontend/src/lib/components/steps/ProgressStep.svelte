@@ -108,12 +108,17 @@
   $: isMigrationMode = !!$wizard.migrationId;
   $: isLegacyMode = !isMigrationMode && !!$wizard.jobId;
 
+  // During waiting phase, use migration progress; during signing phase, use tasks
   $: totalCount = isMigrationMode
-    ? tasks.length
+    ? (phase === 'waiting' && migrationData
+        ? migrationData.progress.totalPosts + migrationData.progress.totalArticles
+        : tasks.length)
     : (legacyJobStatus?.tasks.length ?? 0);
 
   $: completedCount = isMigrationMode
-    ? tasks.filter(t => t.status === 'complete').length
+    ? (phase === 'waiting' && migrationData
+        ? migrationData.progress.readyPosts + migrationData.progress.readyArticles
+        : tasks.filter(t => t.status === 'complete').length)
     : (legacyJobStatus?.tasks.filter(t => t.status === 'complete').length ?? 0);
 
   $: errorCount = isMigrationMode
@@ -698,18 +703,26 @@ Store it somewhere safe!
   </div>
 
   <div class="progress-card">
-    <div class="progress-header">
-      <div class="progress-stats">
-        <span class="current">{completedCount}</span>
-        <span class="divider">/</span>
-        <span class="total">{totalCount}</span>
-        <span class="label">items</span>
+    {#if phase === 'waiting' && !migrationData}
+      <!-- Initial loading state -->
+      <div class="progress-loading">
+        <div class="loading-spinner-small"></div>
+        <span>Connecting to server...</span>
       </div>
-      <span class="progress-percent">{Math.round(progressPercent)}%</span>
-    </div>
-    <div class="progress-bar">
-      <div class="progress-fill" style="width: {progressPercent}%"></div>
-    </div>
+    {:else}
+      <div class="progress-header">
+        <div class="progress-stats">
+          <span class="current">{completedCount}</span>
+          <span class="divider">/</span>
+          <span class="total">{totalCount}</span>
+          <span class="label">{phase === 'waiting' ? 'ready' : 'published'}</span>
+        </div>
+        <span class="progress-percent">{Math.round(progressPercent)}%</span>
+      </div>
+      <div class="progress-bar">
+        <div class="progress-fill" style="width: {progressPercent}%"></div>
+      </div>
+    {/if}
   </div>
 
   {#if isMigrationMode}
@@ -989,6 +1002,25 @@ Store it somewhere safe!
     background: var(--accent-gradient);
     border-radius: 3px;
     transition: width 0.4s ease;
+  }
+
+  .progress-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    padding: 0.5rem 0;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+  }
+
+  .loading-spinner-small {
+    width: 1.25rem;
+    height: 1.25rem;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
   }
 
   .tasks-list {
