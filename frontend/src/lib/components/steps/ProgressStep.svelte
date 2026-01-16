@@ -1,22 +1,78 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { wizard, selectedArticles } from '$lib/stores/wizard';
-  import type { ArticleInfo } from '$lib/stores/wizard';
+  import { wizard } from '$lib/stores/wizard';
   import {
     createBlossomAuthEvent,
     createLongFormContentEvent,
+    createMultiMediaPostEvent,
     createProfileEvent,
     createBlossomAuthHeader,
     calculateSHA256,
     publishToRelays,
-    importToPrimalCache,
+    importSingleToPrimalCache,
     NOSTR_RELAYS,
-    type ArticleMetadata
+    type ArticleMetadata,
+    type MediaUpload
   } from '$lib/signing';
   import { generateSecretKey, getPublicKey, finalizeEvent, type EventTemplate, type Event } from 'nostr-tools';
+  import { bytesToHex, hexToBytes } from '@noble/hashes/utils';
+  import { nip19 } from 'nostr-tools';
 
-  // Post task status (for backend job polling)
+  // Migration data from API
+  interface MigrationPost {
+    id: number;
+    post_type: 'reel' | 'image' | 'carousel' | 'video';
+    caption: string | null;
+    original_date: string | null;
+    media_items: string;
+    blossom_urls: string | null;
+    status: string;
+  }
+
+  interface MigrationArticle {
+    id: number;
+    title: string;
+    summary: string | null;
+    content_markdown: string;
+    published_at: string | null;
+    link: string | null;
+    image_url: string | null;
+    blossom_image_url: string | null;
+    hashtags: string | null;
+    inline_image_urls: string | null;
+    status: string;
+  }
+
+  interface MigrationData {
+    migration: {
+      id: string;
+      source_type: string;
+      source_handle: string;
+      profile_data: string | null;
+      status: string;
+    };
+    posts: MigrationPost[];
+    articles: MigrationArticle[];
+    progress: {
+      totalPosts: number;
+      readyPosts: number;
+      totalArticles: number;
+      readyArticles: number;
+      isReady: boolean;
+    };
+  }
+
+  // Task status for UI
   interface TaskStatus {
+    id: number;
+    title: string;
+    type: 'post' | 'article';
+    status: 'waiting' | 'uploading' | 'signing' | 'publishing' | 'complete' | 'error';
+    error?: string;
+  }
+
+  // Legacy job status (for backward compatibility)
+  interface LegacyTaskStatus {
     id: string;
     status: 'pending' | 'uploading' | 'publishing' | 'complete' | 'error';
     caption?: string;
@@ -25,52 +81,68 @@
     error?: string;
   }
 
-  interface JobStatus {
+  interface LegacyJobStatus {
     status: 'pending' | 'processing' | 'complete' | 'error';
-    tasks: TaskStatus[];
+    tasks: LegacyTaskStatus[];
   }
 
-  // Article task status (for client-side publishing)
-  interface ArticleTaskStatus {
-    article: ArticleInfo;
-    status: 'pending' | 'uploading' | 'signing' | 'publishing' | 'complete' | 'error';
-    blossomImageUrl?: string;
-    nostrEventId?: string;
-    error?: string;
-  }
-
-  // Posts state
-  let jobStatus: JobStatus | null = null;
+  // State
+  let phase: 'waiting' | 'uploading' | 'signing' | 'complete' = 'waiting';
+  let migrationData: MigrationData | null = null;
+  let tasks: TaskStatus[] = [];
   let pollInterval: ReturnType<typeof setInterval>;
-
-  // Articles state
-  let articleTasks: ArticleTaskStatus[] = [];
-  let isProcessingArticles = false;
   let publishedEvents: Event[] = [];
+
+  // Legacy state
+  let legacyJobStatus: LegacyJobStatus | null = null;
 
   const BLOSSOM_SERVER = 'https://blossom.primal.net';
   const CONCURRENCY = 2;
 
-  // Reactive counts based on content type
-  $: isArticleMode = $wizard.contentType === 'articles';
-  $: completedCount = isArticleMode
-    ? articleTasks.filter(t => t.status === 'complete').length
-    : (jobStatus?.tasks.filter(t => t.status === 'complete').length ?? 0);
-  $: totalCount = isArticleMode
-    ? articleTasks.length
-    : (jobStatus?.tasks.length ?? 0);
-  $: errorCount = isArticleMode
-    ? articleTasks.filter(t => t.status === 'error').length
-    : (jobStatus?.tasks.filter(t => t.status === 'error').length ?? 0);
+  // Computed values
+  $: isMigrationMode = !!$wizard.migrationId;
+  $: isLegacyMode = !isMigrationMode && !!$wizard.jobId;
+
+  $: totalCount = isMigrationMode
+    ? tasks.length
+    : (legacyJobStatus?.tasks.length ?? 0);
+
+  $: completedCount = isMigrationMode
+    ? tasks.filter(t => t.status === 'complete').length
+    : (legacyJobStatus?.tasks.filter(t => t.status === 'complete').length ?? 0);
+
+  $: errorCount = isMigrationMode
+    ? tasks.filter(t => t.status === 'error').length
+    : (legacyJobStatus?.tasks.filter(t => t.status === 'error').length ?? 0);
+
   $: progressPercent = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
-  $: allArticlesDone = isArticleMode && articleTasks.length > 0 && (completedCount + errorCount === totalCount);
+
+  $: statusMessage = getStatusMessage();
+
+  function getStatusMessage(): string {
+    if (phase === 'waiting') {
+      if (migrationData) {
+        const ready = migrationData.progress.readyPosts + migrationData.progress.readyArticles;
+        const total = migrationData.progress.totalPosts + migrationData.progress.totalArticles;
+        return `Preparing media... ${ready}/${total}`;
+      }
+      return 'Connecting to server...';
+    }
+    if (phase === 'uploading') {
+      return 'Uploading remaining media...';
+    }
+    if (phase === 'signing') {
+      return 'Signing and publishing...';
+    }
+    return 'Complete!';
+  }
 
   onMount(() => {
-    if ($wizard.contentType === 'articles') {
-      startArticlePublishing();
-    } else {
-      pollStatus();
-      pollInterval = setInterval(pollStatus, 2000);
+    if (isMigrationMode) {
+      startMigrationFlow();
+    } else if (isLegacyMode) {
+      pollLegacyStatus();
+      pollInterval = setInterval(pollLegacyStatus, 2000);
     }
   });
 
@@ -78,196 +150,349 @@
     if (pollInterval) clearInterval(pollInterval);
   });
 
-  // Posts: poll backend job status
-  async function pollStatus() {
-    if (!$wizard.jobId) return;
+  // ============================================
+  // Migration Flow (new client-side signing)
+  // ============================================
 
-    try {
-      const response = await fetch(`/api/jobs/${$wizard.jobId}/status`);
-      if (!response.ok) throw new Error('Failed to fetch status');
+  async function startMigrationFlow() {
+    // Phase 1: Poll until migration is ready
+    await pollUntilReady();
 
-      jobStatus = await response.json();
-
-      if (jobStatus?.status === 'complete' || jobStatus?.status === 'error') {
-        clearInterval(pollInterval);
-        wizard.setStep('complete');
-      }
-    } catch (err) {
-      console.error('Error polling status:', err);
-    }
-  }
-
-  // Articles: client-side publishing
-  async function startArticlePublishing() {
-    const selected = $selectedArticles;
-    if (selected.length === 0) {
-      wizard.setStep('complete');
+    if (!migrationData || migrationData.migration.status !== 'ready') {
+      wizard.setError('Migration preparation failed');
       return;
     }
 
-    articleTasks = selected.map(article => ({
-      article,
-      status: 'pending'
-    }));
+    // Phase 2: Generate keypair
+    phase = 'signing';
+    const secretKeyBytes = generateSecretKey();
+    const secretKeyHex = bytesToHex(secretKeyBytes);
+    const publicKeyHex = getPublicKey(secretKeyBytes);
+    const npub = nip19.npubEncode(publicKeyHex);
+    const nsec = nip19.nsecEncode(secretKeyBytes);
 
-    isProcessingArticles = true;
-    await publishArticles();
+    wizard.setKeyPair({
+      publicKey: publicKeyHex,
+      secretKey: secretKeyHex,
+      npub,
+      nsec
+    });
+
+    // Phase 3: Publish profile if available
+    await publishProfile(secretKeyBytes, publicKeyHex);
+
+    // Phase 4: Sign and publish content
+    await publishContent(secretKeyBytes, publicKeyHex);
+
+    // Phase 5: Mark migration complete
+    await markMigrationComplete();
+
+    // Done!
+    wizard.setStep('complete');
   }
 
-  async function publishArticles() {
-    if (!$wizard.keyPair) {
-      console.error('No keypair available');
-      return;
-    }
+  async function pollUntilReady() {
+    const migrationId = $wizard.migrationId;
+    if (!migrationId) return;
 
-    // Convert hex secret key to Uint8Array
-    const secretKeyHex = $wizard.keyPair.secretKey;
-    const secretKey = new Uint8Array(secretKeyHex.match(/.{1,2}/g)!.map(byte => parseInt(byte, 16)));
-    const publicKey = $wizard.keyPair.publicKey;
-
-    try {
-      // Publish profile event first if we have profile data
-      if ($wizard.profile) {
-        const profile = $wizard.profile;
-
-        // Upload profile picture to Blossom if exists
-        let profilePictureUrl: string | undefined;
-        if (profile.profile_picture_url) {
-          try {
-            profilePictureUrl = await uploadImage(profile.profile_picture_url, secretKey, publicKey);
-          } catch (err) {
-            console.warn('Failed to upload profile picture:', err);
-            profilePictureUrl = profile.profile_picture_url;
-          }
+    while (true) {
+      try {
+        const response = await fetch(`/api/migrations/${migrationId}`);
+        if (!response.ok) {
+          throw new Error('Failed to fetch migration status');
         }
 
-        // Create and publish profile event (kind 0)
-        const profileEvent = createProfileEvent(
-          publicKey,
-          profile.display_name || profile.username,
-          profile.bio,
-          profilePictureUrl
-        );
-        const signedProfile = finalizeEvent(profileEvent as EventTemplate, secretKey);
-        await publishToRelays(signedProfile, NOSTR_RELAYS);
-        publishedEvents.push(signedProfile);
-      }
+        migrationData = await response.json();
 
-      const queue: number[] = [...Array(articleTasks.length).keys()];
-
-      async function processQueue() {
-        while (queue.length > 0) {
-          const index = queue.shift();
-          if (index !== undefined) {
-            await processArticle(index, secretKey, publicKey);
-          }
+        if (migrationData.migration.status === 'ready') {
+          // Initialize tasks from migration data
+          initializeTasks();
+          return;
         }
+
+        if (migrationData.migration.status === 'complete') {
+          // Already complete, skip to end
+          wizard.setStep('complete');
+          return;
+        }
+
+        // Wait before polling again
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      } catch (err) {
+        console.error('Error polling migration:', err);
+        await new Promise(resolve => setTimeout(resolve, 3000));
       }
-
-      const workers = Array(CONCURRENCY).fill(null).map(() => processQueue());
-      await Promise.all(workers);
-
-      // Import all published events to Primal cache
-      if (publishedEvents.length > 0) {
-        await importToPrimalCache(publishedEvents);
-      }
-
-      wizard.setStep('complete');
-    } catch (err) {
-      console.error('Publishing error:', err);
-    } finally {
-      isProcessingArticles = false;
     }
   }
 
-  async function processArticle(index: number, secretKey: Uint8Array, publicKey: string) {
-    const task = articleTasks[index];
+  function initializeTasks() {
+    if (!migrationData) return;
+
+    tasks = [];
+
+    // Add posts
+    for (const post of migrationData.posts) {
+      tasks.push({
+        id: post.id,
+        title: post.caption?.slice(0, 40) || `Post ${post.id}`,
+        type: 'post',
+        status: post.status === 'published' ? 'complete' : 'waiting'
+      });
+    }
+
+    // Add articles
+    for (const article of migrationData.articles) {
+      tasks.push({
+        id: article.id,
+        title: article.title.slice(0, 40),
+        type: 'article',
+        status: article.status === 'published' ? 'complete' : 'waiting'
+      });
+    }
+  }
+
+  async function publishProfile(secretKeyBytes: Uint8Array, publicKeyHex: string) {
+    if (!migrationData?.migration.profile_data) return;
 
     try {
-      // Step 1: Upload header image if exists
-      articleTasks[index].status = 'uploading';
-      articleTasks = articleTasks;
+      const profileData = JSON.parse(migrationData.migration.profile_data);
+      const name = profileData.name || profileData.profile?.display_name || profileData.profile?.username;
+      const bio = profileData.bio || profileData.profile?.bio;
+      let picture = profileData.blossom_picture_url || profileData.picture_url || profileData.profile?.profile_picture_url;
 
-      let headerImageUrl: string | undefined;
-      if (task.article.image_url) {
+      // If picture isn't a blossom URL, try to upload it
+      if (picture && !picture.includes('blossom')) {
         try {
-          headerImageUrl = await uploadImage(task.article.image_url, secretKey, publicKey);
-          articleTasks[index].blossomImageUrl = headerImageUrl;
-          articleTasks = articleTasks;
+          picture = await uploadImage(picture, secretKeyBytes, publicKeyHex);
+        } catch (err) {
+          console.warn('Failed to upload profile picture:', err);
+          // Keep original URL
+        }
+      }
+
+      if (name) {
+        const profileEvent = createProfileEvent(publicKeyHex, name, bio, picture);
+        const signed = finalizeEvent(profileEvent as EventTemplate, secretKeyBytes);
+        await publishToRelays(signed, NOSTR_RELAYS);
+        await importSingleToPrimalCache(signed);
+        publishedEvents.push(signed);
+      }
+    } catch (err) {
+      console.warn('Failed to publish profile:', err);
+    }
+  }
+
+  async function publishContent(secretKeyBytes: Uint8Array, publicKeyHex: string) {
+    if (!migrationData) return;
+
+    const queue: number[] = [];
+
+    // Queue posts that aren't published yet
+    for (let i = 0; i < migrationData.posts.length; i++) {
+      if (migrationData.posts[i].status !== 'published') {
+        queue.push(i);
+      }
+    }
+
+    // Queue articles that aren't published yet
+    const articleOffset = migrationData.posts.length;
+    for (let i = 0; i < migrationData.articles.length; i++) {
+      if (migrationData.articles[i].status !== 'published') {
+        queue.push(articleOffset + i);
+      }
+    }
+
+    // Process with concurrency
+    async function processQueue() {
+      while (queue.length > 0) {
+        const index = queue.shift();
+        if (index === undefined) break;
+
+        if (index < articleOffset) {
+          await processPost(index, secretKeyBytes, publicKeyHex);
+        } else {
+          await processArticle(index - articleOffset, secretKeyBytes, publicKeyHex);
+        }
+      }
+    }
+
+    const workers = Array(CONCURRENCY).fill(null).map(() => processQueue());
+    await Promise.all(workers);
+  }
+
+  async function processPost(postIndex: number, secretKeyBytes: Uint8Array, publicKeyHex: string) {
+    if (!migrationData) return;
+
+    const post = migrationData.posts[postIndex];
+    const taskIndex = tasks.findIndex(t => t.type === 'post' && t.id === post.id);
+    if (taskIndex === -1) return;
+
+    try {
+      tasks[taskIndex].status = 'signing';
+      tasks = tasks;
+
+      // Parse blossom URLs and media items
+      const blossomUrls: string[] = post.blossom_urls ? JSON.parse(post.blossom_urls) : [];
+      const mediaItems: { url: string; media_type: string; width?: number; height?: number }[] = JSON.parse(post.media_items);
+
+      if (blossomUrls.length === 0) {
+        throw new Error('No uploaded media URLs');
+      }
+
+      // Build media uploads for event
+      const mediaUploads: MediaUpload[] = blossomUrls.map((url, i) => {
+        const item = mediaItems[i] || {};
+        const sha256 = extractSha256FromBlossomUrl(url);
+        const mimeType = item.media_type === 'video' ? 'video/mp4' : 'image/jpeg';
+
+        return {
+          url,
+          sha256,
+          mimeType,
+          size: 0, // Size not needed for event creation
+          width: item.width,
+          height: item.height
+        };
+      });
+
+      // Create event
+      const eventTemplate = createMultiMediaPostEvent(
+        publicKeyHex,
+        mediaUploads,
+        post.caption || undefined,
+        post.original_date || undefined
+      );
+
+      const signed = finalizeEvent(eventTemplate as EventTemplate, secretKeyBytes);
+
+      // Publish
+      tasks[taskIndex].status = 'publishing';
+      tasks = tasks;
+
+      const result = await publishToRelays(signed, NOSTR_RELAYS);
+      if (result.success.length === 0) {
+        throw new Error('Failed to publish to any relay');
+      }
+
+      await importSingleToPrimalCache(signed);
+      publishedEvents.push(signed);
+
+      // Checkpoint
+      await fetch(`/api/migrations/${$wizard.migrationId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'markPostPublished', postId: post.id })
+      });
+
+      tasks[taskIndex].status = 'complete';
+      tasks = tasks;
+    } catch (err) {
+      console.error('Error processing post:', err);
+      tasks[taskIndex].status = 'error';
+      tasks[taskIndex].error = err instanceof Error ? err.message : 'Unknown error';
+      tasks = tasks;
+    }
+  }
+
+  async function processArticle(articleIndex: number, secretKeyBytes: Uint8Array, publicKeyHex: string) {
+    if (!migrationData) return;
+
+    const article = migrationData.articles[articleIndex];
+    const taskIndex = tasks.findIndex(t => t.type === 'article' && t.id === article.id);
+    if (taskIndex === -1) return;
+
+    try {
+      tasks[taskIndex].status = 'uploading';
+      tasks = tasks;
+
+      // Get processed content (worker may have already processed inline images)
+      let content = article.content_markdown;
+      let headerImageUrl = article.blossom_image_url || article.image_url;
+
+      // If header image isn't on Blossom yet, upload it
+      if (headerImageUrl && !headerImageUrl.includes('blossom')) {
+        try {
+          headerImageUrl = await uploadImage(headerImageUrl, secretKeyBytes, publicKeyHex);
         } catch (err) {
           console.warn('Failed to upload header image:', err);
-          headerImageUrl = task.article.image_url;
         }
       }
 
-      // Step 2: Process inline images in content
-      let processedContent = task.article.content_markdown;
+      // Process any remaining inline images not yet on Blossom
       const imageRegex = /!\[([^\]]*)\]\(([^)]+)\)/g;
       let match;
-      const imageReplacements: { original: string; blossom: string }[] = [];
-
       const imagesToUpload: string[] = [];
-      while ((match = imageRegex.exec(task.article.content_markdown)) !== null) {
+
+      while ((match = imageRegex.exec(article.content_markdown)) !== null) {
         const imageUrl = match[2];
-        if (!imagesToUpload.includes(imageUrl)) {
+        if (!imageUrl.includes('blossom') && !imagesToUpload.includes(imageUrl)) {
           imagesToUpload.push(imageUrl);
         }
       }
 
+      const imageReplacements: { original: string; blossom: string }[] = [];
       for (const imageUrl of imagesToUpload) {
         try {
-          const blossomUrl = await uploadImage(imageUrl, secretKey, publicKey);
+          const blossomUrl = await uploadImage(imageUrl, secretKeyBytes, publicKeyHex);
           imageReplacements.push({ original: imageUrl, blossom: blossomUrl });
         } catch (err) {
-          console.warn('Failed to upload inline image:', imageUrl, err);
+          console.warn('Failed to upload inline image:', err);
         }
       }
 
       for (const { original, blossom } of imageReplacements) {
-        processedContent = processedContent.split(original).join(blossom);
+        content = content.split(original).join(blossom);
       }
 
-      // Step 3: Create and sign the event
-      articleTasks[index].status = 'signing';
-      articleTasks = articleTasks;
+      // Create event
+      tasks[taskIndex].status = 'signing';
+      tasks = tasks;
+
+      const hashtags: string[] = article.hashtags ? JSON.parse(article.hashtags) : [];
 
       const articleData: ArticleMetadata = {
-        identifier: task.article.id,
-        title: task.article.title,
-        summary: task.article.summary,
-        imageUrl: headerImageUrl,
-        publishedAt: task.article.published_at,
-        hashtags: task.article.hashtags || [],
-        content: processedContent
+        identifier: `article-${article.id}`,
+        title: article.title,
+        summary: article.summary || undefined,
+        imageUrl: headerImageUrl || undefined,
+        publishedAt: article.published_at || undefined,
+        hashtags,
+        content
       };
 
-      const eventTemplate = createLongFormContentEvent(publicKey, articleData);
-      const signedEvent = finalizeEvent(eventTemplate as EventTemplate, secretKey);
+      const eventTemplate = createLongFormContentEvent(publicKeyHex, articleData);
+      const signed = finalizeEvent(eventTemplate as EventTemplate, secretKeyBytes);
 
-      // Step 4: Publish to relays
-      articleTasks[index].status = 'publishing';
-      articleTasks = articleTasks;
+      // Publish
+      tasks[taskIndex].status = 'publishing';
+      tasks = tasks;
 
-      const publishResult = await publishToRelays(signedEvent, NOSTR_RELAYS);
-
-      if (publishResult.success.length === 0) {
+      const result = await publishToRelays(signed, NOSTR_RELAYS);
+      if (result.success.length === 0) {
         throw new Error('Failed to publish to any relay');
       }
 
-      articleTasks[index].nostrEventId = signedEvent.id;
-      articleTasks[index].status = 'complete';
-      articleTasks = articleTasks;
+      await importSingleToPrimalCache(signed);
+      publishedEvents.push(signed);
 
-      publishedEvents.push(signedEvent);
+      // Checkpoint
+      await fetch(`/api/migrations/${$wizard.migrationId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'markArticlePublished', articleId: article.id })
+      });
+
+      tasks[taskIndex].status = 'complete';
+      tasks = tasks;
     } catch (err) {
       console.error('Error processing article:', err);
-      articleTasks[index].status = 'error';
-      articleTasks[index].error = err instanceof Error ? err.message : 'Unknown error';
-      articleTasks = articleTasks;
+      tasks[taskIndex].status = 'error';
+      tasks[taskIndex].error = err instanceof Error ? err.message : 'Unknown error';
+      tasks = tasks;
     }
   }
 
-  async function uploadImage(imageUrl: string, secretKey: Uint8Array, publicKey: string): Promise<string> {
+  async function uploadImage(imageUrl: string, secretKeyBytes: Uint8Array, publicKeyHex: string): Promise<string> {
     const response = await fetch('/api/proxy-video', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -283,8 +508,8 @@
     const size = imageData.byteLength;
     const contentType = response.headers.get('content-type') || 'image/jpeg';
 
-    const authEvent = createBlossomAuthEvent(publicKey, sha256, size);
-    const signedAuth = finalizeEvent(authEvent as EventTemplate, secretKey);
+    const authEvent = createBlossomAuthEvent(publicKeyHex, sha256, size);
+    const signedAuth = finalizeEvent(authEvent as EventTemplate, secretKeyBytes);
     const authHeader = createBlossomAuthHeader(signedAuth);
 
     const uploadResponse = await fetch(`${BLOSSOM_SERVER}/upload`, {
@@ -305,8 +530,49 @@
     return result.url || `${BLOSSOM_SERVER}/${sha256}`;
   }
 
-  function getStatusLabel(status: TaskStatus['status'] | ArticleTaskStatus['status']): string {
+  function extractSha256FromBlossomUrl(url: string): string {
+    // Blossom URLs are typically: https://blossom.primal.net/{sha256}.ext
+    const match = url.match(/\/([a-f0-9]{64})/i);
+    return match ? match[1] : '';
+  }
+
+  async function markMigrationComplete() {
+    try {
+      await fetch(`/api/migrations/${$wizard.migrationId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'complete' })
+      });
+    } catch (err) {
+      console.warn('Failed to mark migration complete:', err);
+    }
+  }
+
+  // ============================================
+  // Legacy Job Flow (backward compatibility)
+  // ============================================
+
+  async function pollLegacyStatus() {
+    if (!$wizard.jobId) return;
+
+    try {
+      const response = await fetch(`/api/jobs/${$wizard.jobId}/status`);
+      if (!response.ok) throw new Error('Failed to fetch status');
+
+      legacyJobStatus = await response.json();
+
+      if (legacyJobStatus?.status === 'complete' || legacyJobStatus?.status === 'error') {
+        clearInterval(pollInterval);
+        wizard.setStep('complete');
+      }
+    } catch (err) {
+      console.error('Error polling status:', err);
+    }
+  }
+
+  function getStatusLabel(status: string): string {
     switch (status) {
+      case 'waiting': return 'Waiting';
       case 'pending': return 'Waiting';
       case 'uploading': return 'Uploading';
       case 'signing': return 'Signing';
@@ -328,8 +594,8 @@
         <path d="M21 13v1a4 4 0 01-4 4H3"/>
       </svg>
     </div>
-    <h2>{isArticleMode ? 'Publishing articles' : 'Migration in progress'}</h2>
-    <p class="subtitle">Keep this page open while we {isArticleMode ? 'publish your articles' : 'migrate your content'}</p>
+    <h2>{phase === 'waiting' ? 'Preparing your content' : 'Publishing to Nostr'}</h2>
+    <p class="subtitle">{statusMessage}</p>
   </div>
 
   <div class="progress-card">
@@ -338,7 +604,7 @@
         <span class="current">{completedCount}</span>
         <span class="divider">/</span>
         <span class="total">{totalCount}</span>
-        <span class="label">{isArticleMode ? 'articles' : 'posts'}</span>
+        <span class="label">items</span>
       </div>
       <span class="progress-percent">{Math.round(progressPercent)}%</span>
     </div>
@@ -347,12 +613,12 @@
     </div>
   </div>
 
-  {#if isArticleMode}
-    <!-- Article tasks (client-side) -->
-    {#if articleTasks.length > 0}
+  {#if isMigrationMode}
+    <!-- Migration tasks -->
+    {#if tasks.length > 0}
       <div class="tasks-list">
-        {#each articleTasks as task}
-          <div class="task-item" class:error={task.status === 'error'} class:complete={task.status === 'complete'} class:active={task.status === 'uploading' || task.status === 'signing' || task.status === 'publishing'}>
+        {#each tasks as task}
+          <div class="task-item" class:error={task.status === 'error'} class:complete={task.status === 'complete'} class:active={['uploading', 'signing', 'publishing'].includes(task.status)}>
             <div class="task-status">
               {#if task.status === 'complete'}
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
@@ -363,14 +629,14 @@
                   <line x1="18" y1="6" x2="6" y2="18"/>
                   <line x1="6" y1="6" x2="18" y2="18"/>
                 </svg>
-              {:else if task.status === 'uploading' || task.status === 'signing' || task.status === 'publishing'}
+              {:else if ['uploading', 'signing', 'publishing'].includes(task.status)}
                 <div class="task-spinner"></div>
               {:else}
                 <div class="task-pending"></div>
               {/if}
             </div>
             <div class="task-info">
-              <span class="task-caption">{task.article.title.slice(0, 40)}{task.article.title.length > 40 ? '...' : ''}</span>
+              <span class="task-caption">{task.title}{task.title.length > 40 ? '...' : ''}</span>
               <span class="task-label">{getStatusLabel(task.status)}</span>
             </div>
           </div>
@@ -382,14 +648,14 @@
     {:else}
       <div class="loading-state">
         <div class="loading-spinner"></div>
-        <span>Preparing articles...</span>
+        <span>Preparing content...</span>
       </div>
     {/if}
-  {:else}
-    <!-- Post tasks (backend job polling) -->
-    {#if jobStatus}
+  {:else if isLegacyMode}
+    <!-- Legacy job tasks -->
+    {#if legacyJobStatus}
       <div class="tasks-list">
-        {#each jobStatus.tasks as task}
+        {#each legacyJobStatus.tasks as task}
           <div class="task-item" class:error={task.status === 'error'} class:complete={task.status === 'complete'} class:active={task.status === 'uploading' || task.status === 'publishing'}>
             <div class="task-status">
               {#if task.status === 'complete'}
@@ -423,6 +689,11 @@
         <span>Connecting to server...</span>
       </div>
     {/if}
+  {:else}
+    <div class="loading-state">
+      <div class="loading-spinner"></div>
+      <span>Starting migration...</span>
+    </div>
   {/if}
 
   {#if errorCount > 0}
@@ -432,7 +703,7 @@
         <line x1="12" y1="8" x2="12" y2="12"/>
         <line x1="12" y1="16" x2="12.01" y2="16"/>
       </svg>
-      <span>{errorCount} {isArticleMode ? 'article' : 'post'}{errorCount !== 1 ? 's' : ''} failed. They will be skipped.</span>
+      <span>{errorCount} item{errorCount !== 1 ? 's' : ''} failed. They will be skipped.</span>
     </div>
   {/if}
 </div>

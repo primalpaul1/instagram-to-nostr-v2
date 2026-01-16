@@ -3,6 +3,8 @@
   import { wizard, reelPosts, imagePosts, selectedPosts, selectedPostsCount, selectedArticles, selectedArticlesCount, setMediaCache, getMediaCache } from '$lib/stores/wizard';
   import type { PostInfo, MediaItemInfo, ArticleInfo } from '$lib/stores/wizard';
 
+  let isCreatingMigration = false;
+
   // Pre-download state
   const MAX_CONCURRENT_DOWNLOADS = 3;
   let downloadQueue: MediaItemInfo[] = [];
@@ -71,14 +73,114 @@
   $: totalSelectedCount = $selectedPostsCount;
 
   function handleBack() {
-    wizard.setStep('keys');
+    // For generate mode, go back to handle step (skip keys)
+    // For NIP-46 mode, go back to keys step
+    wizard.setStep($wizard.authMode === 'nip46' ? 'keys' : 'handle');
   }
 
   function handleContinue() {
-    // Check appropriate count based on content type
+    // For NIP-46 mode, go through the old flow (keys → confirm → progress-nip46)
+    if ($wizard.authMode === 'nip46') {
+      const count = $wizard.contentType === 'articles' ? $selectedArticlesCount : totalSelectedCount;
+      if (count === 0) return;
+      wizard.setStep('confirm');
+      return;
+    }
+
+    // For generate mode, create migration and go to progress
+    handleClaimPosts();
+  }
+
+  async function handleClaimPosts() {
     const count = $wizard.contentType === 'articles' ? $selectedArticlesCount : totalSelectedCount;
-    if (count === 0) return;
-    wizard.setStep('confirm');
+    if (count === 0 || isCreatingMigration) return;
+
+    isCreatingMigration = true;
+
+    try {
+      // Determine source type
+      const sourceType = $wizard.sourceType || ($wizard.contentType === 'articles' ? 'rss' : 'instagram');
+
+      // Build profile data
+      let profileData: { name?: string; bio?: string; picture_url?: string } | undefined;
+      if ($wizard.profile) {
+        profileData = {
+          name: $wizard.profile.display_name || $wizard.profile.username,
+          bio: $wizard.profile.bio,
+          picture_url: $wizard.profile.profile_picture_url
+        };
+      }
+
+      // Build feed data for RSS
+      let feedData: { url: string; title?: string; description?: string; image_url?: string } | undefined;
+      if ($wizard.feedInfo) {
+        feedData = {
+          url: $wizard.handle,
+          title: $wizard.feedInfo.title,
+          description: $wizard.feedInfo.description,
+          image_url: $wizard.feedInfo.image_url
+        };
+      }
+
+      // Build request body based on content type
+      const body: Record<string, unknown> = {
+        sourceType,
+        sourceHandle: $wizard.handle,
+        profile: profileData,
+        feed: feedData
+      };
+
+      if ($wizard.contentType === 'articles') {
+        // Articles for RSS
+        body.articles = $selectedArticles.map(a => ({
+          title: a.title,
+          summary: a.summary,
+          content_markdown: a.content_markdown,
+          published_at: a.published_at,
+          link: a.link,
+          image_url: a.image_url,
+          hashtags: a.hashtags
+        }));
+      } else {
+        // Posts for Instagram/TikTok
+        body.posts = $selectedPosts.map(p => ({
+          id: p.id,
+          post_type: p.post_type,
+          caption: p.caption,
+          original_date: p.original_date,
+          thumbnail_url: p.thumbnail_url,
+          media_items: p.media_items.map(m => ({
+            url: m.url,
+            media_type: m.media_type,
+            width: m.width,
+            height: m.height,
+            duration: m.duration,
+            thumbnail_url: m.thumbnail_url
+          }))
+        }));
+      }
+
+      // Create migration
+      const response = await fetch('/api/migrations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || 'Failed to create migration');
+      }
+
+      const { migrationId } = await response.json();
+      wizard.setMigrationId(migrationId);
+      wizard.setStep('progress');
+    } catch (err) {
+      console.error('Error creating migration:', err);
+      wizard.setError(err instanceof Error ? err.message : 'Failed to create migration');
+    } finally {
+      isCreatingMigration = false;
+    }
   }
 
   function formatDuration(seconds?: number): string {
@@ -228,11 +330,21 @@
         </svg>
         Back
       </button>
-      <button class="primary-btn" disabled={$selectedArticlesCount === 0} on:click={handleContinue}>
-        Continue with {$selectedArticlesCount} article{$selectedArticlesCount !== 1 ? 's' : ''}
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M5 12h14M12 5l7 7-7 7"/>
-        </svg>
+      <button class="primary-btn" disabled={$selectedArticlesCount === 0 || isCreatingMigration} on:click={handleContinue}>
+        {#if isCreatingMigration}
+          <div class="btn-spinner"></div>
+          Creating migration...
+        {:else if $wizard.authMode === 'nip46'}
+          Continue with {$selectedArticlesCount} article{$selectedArticlesCount !== 1 ? 's' : ''}
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M5 12h14M12 5l7 7-7 7"/>
+          </svg>
+        {:else}
+          Claim My {$selectedArticlesCount} Article{$selectedArticlesCount !== 1 ? 's' : ''}
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M5 12h14M12 5l7 7-7 7"/>
+          </svg>
+        {/if}
       </button>
     </div>
 
@@ -370,11 +482,21 @@
         </svg>
         Back
       </button>
-      <button class="primary-btn" disabled={totalSelectedCount === 0} on:click={handleContinue}>
-        Continue with {totalSelectedCount} item{totalSelectedCount !== 1 ? 's' : ''}
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M5 12h14M12 5l7 7-7 7"/>
-        </svg>
+      <button class="primary-btn" disabled={totalSelectedCount === 0 || isCreatingMigration} on:click={handleContinue}>
+        {#if isCreatingMigration}
+          <div class="btn-spinner"></div>
+          Creating migration...
+        {:else if $wizard.authMode === 'nip46'}
+          Continue with {totalSelectedCount} item{totalSelectedCount !== 1 ? 's' : ''}
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M5 12h14M12 5l7 7-7 7"/>
+          </svg>
+        {:else}
+          Claim My {totalSelectedCount} Post{totalSelectedCount !== 1 ? 's' : ''}
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M5 12h14M12 5l7 7-7 7"/>
+          </svg>
+        {/if}
       </button>
     </div>
   {/if}
@@ -726,6 +848,19 @@
     opacity: 0.5;
     cursor: not-allowed;
     transform: none;
+  }
+
+  .btn-spinner {
+    width: 1rem;
+    height: 1rem;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: btn-spin 0.8s linear infinite;
+  }
+
+  @keyframes btn-spin {
+    to { transform: rotate(360deg); }
   }
 
   @media (max-width: 500px) {

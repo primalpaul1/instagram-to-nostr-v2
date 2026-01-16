@@ -226,8 +226,8 @@
                     throw new Error('No articles found in this feed');
                   }
 
-                  wizard.clearNIP46();  // Reset authMode to 'generate' for password-based flow
                   wizard.setContentType('articles');
+                  wizard.setSourceType('rss');
                   wizard.setHandle(feedUrl.trim());
                   const mappedArticles = (data.articles || []).map((a: any) => ({ ...a, selected: true }));
                   wizard.setArticles(mappedArticles);
@@ -243,7 +243,8 @@
                       });
                     }
                   }
-                  wizard.setStep('keys');
+                  // Skip KeysStep for generate mode, go directly to videos
+                  wizard.setStep($wizard.authMode === 'nip46' ? 'keys' : 'videos');
                   await tick();
                   return;
                 } else {
@@ -253,6 +254,7 @@
 
                   const cleanHandle = handle.replace('@', '').trim();
                   wizard.setContentType('posts');
+                  wizard.setSourceType(platform === 'tiktok' ? 'tiktok' : 'instagram');
                   wizard.setHandle(cleanHandle);
                   wizard.setVideos((data.videos || []).map((v: any) => ({ ...v, selected: false })));
                   wizard.setPosts((data.posts || []).map((p: any) => ({ ...p, selected: false })));
@@ -260,7 +262,8 @@
                     wizard.setProfile(data.profile);
                   }
                 }
-                wizard.setStep('keys');
+                // Skip KeysStep for generate mode, go directly to videos
+                wizard.setStep($wizard.authMode === 'nip46' ? 'keys' : 'videos');
                 return;
               }
             } catch (parseErr) {
@@ -292,8 +295,8 @@
       if (articleCount === 0 && fetchedArticles.length === 0) return;
 
       abortController.abort();
-      wizard.clearNIP46();  // Reset authMode to 'generate' for password-based flow
       wizard.setContentType('articles');
+      wizard.setSourceType('rss');
       wizard.setHandle(feedUrl.trim());
       const articles = fetchedArticles.length > 0 ? fetchedArticles : [];
       wizard.setArticles(articles.map((a: any) => ({ ...a, selected: true })));
@@ -316,6 +319,7 @@
       abortController.abort();
 
       wizard.setContentType('posts');
+      wizard.setSourceType(platform === 'tiktok' ? 'tiktok' : 'instagram');
       wizard.setHandle(cleanHandle);
       wizard.setVideos(fetchedVideos.map((v: any) => ({ ...v, selected: false })));
       wizard.setPosts(fetchedPosts.map((p: any) => ({ ...p, selected: false })));
@@ -323,7 +327,8 @@
         wizard.setProfile(fetchedProfile);
       }
     }
-    wizard.setStep('keys');
+    // Skip KeysStep for generate mode, go directly to videos
+    wizard.setStep($wizard.authMode === 'nip46' ? 'keys' : 'videos');
   }
 </script>
 

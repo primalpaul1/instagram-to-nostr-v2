@@ -56,6 +56,18 @@ from db import (
     increment_gift_article_attempts,
     cleanup_expired_gifts,
     reset_stale_processing_gifts,
+    # Migration functions (client-side signing flow)
+    claim_next_pending_migration,
+    get_migration_posts,
+    get_migration_articles,
+    update_migration_status,
+    update_migration_profile_data,
+    update_migration_post_status,
+    update_migration_article_images,
+    update_migration_article_status,
+    increment_migration_article_attempts,
+    reset_stale_processing_migrations,
+    cleanup_completed_migrations,
 )
 
 # Configuration
@@ -1151,6 +1163,260 @@ async def process_gift(gift: dict) -> None:
         update_gift_status(gift_id, "pending")
 
 
+async def process_migration_articles(
+    migration_id: str,
+    client: httpx.AsyncClient,
+    temp_public_key: str,
+    temp_secret_key: str,
+) -> bool:
+    """Process all articles for a migration - upload header and inline images to Blossom.
+
+    Returns True if ALL articles were processed successfully, False if any failed.
+    """
+    articles = get_migration_articles(migration_id)
+
+    if not articles:
+        return True  # No articles = success
+
+    print(f"Processing {len(articles)} articles for migration {migration_id}")
+    all_succeeded = True
+
+    MAX_UPLOAD_ATTEMPTS = 5
+
+    for article in articles:
+        article_id = article["id"]
+        url_mapping = {}
+        blossom_header = None
+        upload_failed = False
+
+        # Increment attempt counter at start
+        attempts = increment_migration_article_attempts(article_id)
+        print(f"Processing migration article {article_id} (attempt {attempts})")
+
+        try:
+            # 1. Upload header image if exists and not already on Blossom
+            image_url = article.get("image_url")
+            existing_blossom = article.get("blossom_image_url")
+
+            if image_url and not existing_blossom:
+                try:
+                    print(f"Uploading header image for article {article_id}")
+                    result = await upload_media_to_blossom(
+                        client=client,
+                        media_url=image_url,
+                        media_type="image",
+                        public_key_hex=temp_public_key,
+                        secret_key_hex=temp_secret_key,
+                    )
+                    blossom_header = result["url"]
+                    print(f"Header image uploaded: {blossom_header}")
+                except Exception as e:
+                    print(f"Failed to upload header image for article {article_id}: {e}")
+                    upload_failed = True
+            else:
+                blossom_header = existing_blossom
+
+            # 2. Extract inline images from markdown
+            content = article.get("content_markdown", "")
+            inline_urls = extract_markdown_images(content)
+
+            if inline_urls:
+                print(f"Found {len(inline_urls)} inline images in article {article_id}")
+
+            # 3. Upload each inline image
+            for url in inline_urls:
+                # Skip data URIs and already-uploaded Blossom URLs
+                if url.startswith("data:") or "blossom" in url.lower():
+                    continue
+
+                try:
+                    print(f"Uploading inline image: {url[:60]}...")
+                    result = await upload_media_to_blossom(
+                        client=client,
+                        media_url=url,
+                        media_type="image",
+                        public_key_hex=temp_public_key,
+                        secret_key_hex=temp_secret_key,
+                    )
+                    url_mapping[url] = result["url"]
+                    print(f"Inline image uploaded: {result['url']}")
+                except Exception as e:
+                    print(f"Failed to upload inline image {url[:60]}: {e}")
+                    upload_failed = True
+
+            # 4. Replace URLs in markdown (use Blossom URLs where available)
+            updated_content = content
+            if url_mapping:
+                updated_content = replace_markdown_images(content, url_mapping)
+                print(f"Replaced {len(url_mapping)} image URLs in article {article_id}")
+
+            # If any upload failed, check if we've hit max attempts
+            if upload_failed:
+                if attempts >= MAX_UPLOAD_ATTEMPTS:
+                    # Max retries reached - mark as ready with CDN fallback for failed images
+                    print(f"Migration article {article_id} hit max retries ({MAX_UPLOAD_ATTEMPTS}), marking ready with CDN fallback")
+                    update_migration_article_images(
+                        article_id=article_id,
+                        blossom_image_url=blossom_header,  # May be None if header failed
+                        content_markdown=updated_content,  # Has Blossom URLs for successful uploads
+                        inline_image_urls=json.dumps(url_mapping) if url_mapping else None,
+                    )
+                    update_migration_article_status(article_id, "ready")
+                else:
+                    print(f"Migration article {article_id} has failed uploads, will retry (attempt {attempts}/{MAX_UPLOAD_ATTEMPTS})")
+                    all_succeeded = False
+                continue
+
+            # 5. Update database with processed content
+            update_migration_article_images(
+                article_id=article_id,
+                blossom_image_url=blossom_header,
+                content_markdown=updated_content,
+                inline_image_urls=json.dumps(url_mapping) if url_mapping else None,
+            )
+
+            # 6. Mark article as ready
+            update_migration_article_status(article_id, "ready")
+            print(f"Migration article {article_id} processed successfully")
+
+        except Exception as e:
+            print(f"Failed to process migration article {article_id}: {e}")
+            all_succeeded = False
+
+    return all_succeeded
+
+
+async def process_migration(migration: dict) -> None:
+    """
+    Process a migration - download media and upload to Blossom.
+    Used for client-side signing flow (user's keys never touch server).
+    Uses a temporary keypair for Blossom auth (content-addressed, so same URL for same content).
+    """
+    migration_id = migration["id"]
+    source_type = migration["source_type"]
+    source_handle = migration["source_handle"]
+    print(f"Processing migration {migration_id} ({source_type}): {source_handle}")
+
+    try:
+        # Mark as processing
+        update_migration_status(migration_id, "processing")
+
+        # Generate temp keypair for Blossom uploads
+        temp_public_key, temp_secret_key = generate_temp_keypair()
+
+        async with httpx.AsyncClient(timeout=300.0) as client:
+            # Upload profile picture if present
+            profile_data = migration.get("profile_data")
+            if profile_data:
+                try:
+                    profile = json.loads(profile_data)
+                    profile_picture_url = profile.get("picture_url") or profile.get("profile_picture_url")
+
+                    if profile_picture_url and not profile_picture_url.startswith("https://blossom"):
+                        print(f"Uploading profile picture for migration {migration_id}")
+                        try:
+                            # Download profile picture
+                            pic_response = await client.get(profile_picture_url, follow_redirects=True)
+                            pic_response.raise_for_status()
+                            pic_content = pic_response.content
+                            pic_hash = hashlib.sha256(pic_content).hexdigest()
+
+                            # Determine content type
+                            content_type = pic_response.headers.get("content-type", "image/jpeg")
+                            if "image" not in content_type:
+                                content_type = "image/jpeg"
+
+                            # Create Blossom auth for upload
+                            auth_header = create_blossom_auth_event(temp_public_key, temp_secret_key, pic_hash)
+
+                            # Upload to Blossom
+                            upload_response = await client.put(
+                                f"{BLOSSOM_SERVER}/upload",
+                                content=pic_content,
+                                headers={
+                                    "Authorization": auth_header,
+                                    "Content-Type": content_type,
+                                    "X-SHA-256": pic_hash,
+                                },
+                            )
+
+                            if upload_response.status_code in (200, 201):
+                                upload_data = upload_response.json()
+                                blossom_pic_url = upload_data.get("url") or f"{BLOSSOM_SERVER}/{pic_hash}"
+
+                                # Update profile with blossom URL
+                                profile["blossom_picture_url"] = blossom_pic_url
+                                update_migration_profile_data(migration_id, json.dumps(profile))
+                                print(f"Profile picture uploaded to {blossom_pic_url}")
+                            else:
+                                print(f"Failed to upload profile picture: {upload_response.text}")
+                        except Exception as e:
+                            print(f"Error uploading profile picture: {e}")
+                            # Continue without the profile picture
+                except json.JSONDecodeError:
+                    print(f"Failed to parse profile_data for migration {migration_id}")
+
+            # Process posts (Instagram/TikTok)
+            if source_type in ("instagram", "tiktok"):
+                posts = get_migration_posts(migration_id)
+                print(f"Processing {len(posts)} posts for migration {migration_id}")
+
+                for post in posts:
+                    post_id = post["id"]
+                    post_type = post["post_type"]
+
+                    try:
+                        update_migration_post_status(post_id, "uploading")
+
+                        # Parse media items
+                        media_items = json.loads(post["media_items"])
+
+                        # Upload each media item
+                        blossom_urls = []
+                        for item in media_items:
+                            print(f"Uploading {item['media_type']} for migration post {post_id}")
+                            upload_result = await upload_media_to_blossom(
+                                client=client,
+                                media_url=item["url"],
+                                media_type=item["media_type"],
+                                public_key_hex=temp_public_key,
+                                secret_key_hex=temp_secret_key,
+                                width=item.get("width"),
+                                height=item.get("height"),
+                            )
+                            blossom_urls.append(upload_result["url"])
+
+                        # Update post with blossom URLs
+                        update_migration_post_status(
+                            post_id,
+                            "ready",
+                            blossom_urls=json.dumps(blossom_urls),
+                        )
+                        print(f"Migration post {post_id} uploaded: {len(blossom_urls)} files")
+
+                    except Exception as e:
+                        print(f"Failed to process migration post {post_id}: {e}")
+                        # Continue with other posts
+                        continue
+
+            # Process articles (RSS/Substack)
+            elif source_type == "rss":
+                articles_ok = await process_migration_articles(migration_id, client, temp_public_key, temp_secret_key)
+                if not articles_ok:
+                    print(f"Migration {migration_id} has failed article uploads, will retry")
+                    update_migration_status(migration_id, "pending")
+                    return
+
+        # Mark migration as ready
+        update_migration_status(migration_id, "ready")
+        print(f"Migration {migration_id} is ready for client-side signing")
+
+    except Exception as e:
+        print(f"Failed to process migration {migration_id}: {e}")
+        # Reset to pending for retry
+        update_migration_status(migration_id, "pending")
+
+
 async def worker_loop():
     """Main worker loop - polls for tasks and processes them."""
     print(f"Worker started with concurrency={CONCURRENCY}, max_retries={MAX_RETRIES}")
@@ -1170,6 +1436,11 @@ async def worker_loop():
     gift_reset_count = reset_stale_processing_gifts()
     if gift_reset_count > 0:
         print(f"Reset {gift_reset_count} stale processing gifts")
+
+    # Reset any migrations that were stuck in 'processing' from previous runs
+    migration_reset_count = reset_stale_processing_migrations()
+    if migration_reset_count > 0:
+        print(f"Reset {migration_reset_count} stale processing migrations")
 
     # Semaphore for concurrency limiting
     semaphore = asyncio.Semaphore(CONCURRENCY)
@@ -1231,7 +1502,13 @@ async def worker_loop():
                 # Reset stale processing items (crashed workers)
                 reset_stale_processing_proposals()
                 reset_stale_processing_gifts()
+                reset_stale_processing_migrations()
                 reset_stale_processing_profiles()
+
+                # Clean up old completed migrations
+                deleted_migrations = cleanup_completed_migrations()
+                if deleted_migrations > 0:
+                    print(f"Cleaned up {deleted_migrations} old completed migrations")
 
                 last_cleanup = now
 
@@ -1258,6 +1535,13 @@ async def worker_loop():
             if gift:
                 print(f"Claimed gift {gift['id']} for @{gift.get('ig_handle', 'unknown')}")
                 await process_gift(gift)
+                processed_any = True
+
+            # Process migrations (claim one at a time)
+            migration = claim_next_pending_migration()
+            if migration:
+                print(f"Claimed migration {migration['id']} ({migration['source_type']}): {migration.get('source_handle', 'unknown')}")
+                await process_migration(migration)
                 processed_any = True
 
             # Process tasks concurrently (claim multiple, up to CONCURRENCY)

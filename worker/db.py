@@ -776,3 +776,277 @@ def increment_gift_article_attempts(article_id: int) -> int:
         )
         row = cursor.fetchone()
         return row[0] if row else 0
+
+
+# ============================================
+# Migration functions for client-side signing flow
+# ============================================
+
+
+def claim_next_pending_migration() -> Optional[dict]:
+    """Atomically claim one pending migration for processing.
+
+    Returns the claimed migration or None if none available.
+    Safe for concurrent workers - only one worker can claim each migration.
+    """
+    with get_connection() as conn:
+        while True:
+            # Find a candidate
+            cursor = conn.execute(
+                """
+                SELECT * FROM migrations
+                WHERE status = 'pending'
+                ORDER BY created_at ASC
+                LIMIT 1
+                """
+            )
+            row = cursor.fetchone()
+
+            if not row:
+                return None  # No pending migrations
+
+            migration = dict(row)
+
+            # Try to claim it atomically (also set updated_at for stale detection)
+            cursor = conn.execute(
+                """
+                UPDATE migrations
+                SET status = 'processing', updated_at = CURRENT_TIMESTAMP
+                WHERE id = ? AND status = 'pending'
+                """,
+                (migration['id'],),
+            )
+
+            if cursor.rowcount > 0:
+                # We successfully claimed it
+                return migration
+
+            # Someone else claimed it, try again
+
+
+def get_migration_posts(migration_id: str) -> list[dict]:
+    """Get all posts for a migration."""
+    with get_connection() as conn:
+        cursor = conn.execute(
+            """
+            SELECT * FROM migration_posts
+            WHERE migration_id = ?
+            ORDER BY id ASC
+            """,
+            (migration_id,),
+        )
+        return [dict(row) for row in cursor.fetchall()]
+
+
+def get_migration_articles(migration_id: str) -> list[dict]:
+    """Get all articles for a migration."""
+    with get_connection() as conn:
+        cursor = conn.execute(
+            """
+            SELECT * FROM migration_articles
+            WHERE migration_id = ?
+            ORDER BY id ASC
+            """,
+            (migration_id,),
+        )
+        return [dict(row) for row in cursor.fetchall()]
+
+
+def update_migration_status(migration_id: str, status: str):
+    """Update a migration's status."""
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE migrations SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (status, migration_id),
+        )
+
+
+def update_migration_profile_data(migration_id: str, profile_data: str):
+    """Update a migration's profile_data JSON."""
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE migrations SET profile_data = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (profile_data, migration_id),
+        )
+
+
+def update_migration_post_status(
+    post_id: int,
+    status: str,
+    blossom_urls: Optional[str] = None,
+):
+    """Update a migration post's status and optionally blossom URLs."""
+    with get_connection() as conn:
+        if blossom_urls:
+            conn.execute(
+                """
+                UPDATE migration_posts
+                SET status = ?, blossom_urls = ?
+                WHERE id = ?
+                """,
+                (status, blossom_urls, post_id),
+            )
+        else:
+            conn.execute(
+                "UPDATE migration_posts SET status = ? WHERE id = ?",
+                (status, post_id),
+            )
+
+
+def update_migration_article_images(
+    article_id: int,
+    blossom_image_url: Optional[str],
+    content_markdown: str,
+    inline_image_urls: Optional[str] = None,
+):
+    """Update article after image processing."""
+    with get_connection() as conn:
+        conn.execute(
+            """
+            UPDATE migration_articles
+            SET blossom_image_url = ?,
+                content_markdown = ?,
+                inline_image_urls = ?
+            WHERE id = ?
+            """,
+            (blossom_image_url, content_markdown, inline_image_urls, article_id),
+        )
+
+
+def update_migration_article_status(article_id: int, status: str):
+    """Update a migration article's status."""
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE migration_articles SET status = ? WHERE id = ?",
+            (status, article_id),
+        )
+
+
+def increment_migration_article_attempts(article_id: int) -> int:
+    """Increment upload_attempts for a migration article and return the new value."""
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE migration_articles SET upload_attempts = COALESCE(upload_attempts, 0) + 1 WHERE id = ?",
+            (article_id,),
+        )
+        cursor = conn.execute(
+            "SELECT upload_attempts FROM migration_articles WHERE id = ?",
+            (article_id,),
+        )
+        row = cursor.fetchone()
+        return row[0] if row else 0
+
+
+def reset_stale_processing_migrations(older_than_minutes: int = 30) -> int:
+    """
+    Reset migrations stuck in 'processing' status back to 'pending'.
+    Only resets migrations that have been processing for longer than older_than_minutes.
+    This handles crashed workers without disrupting active processing.
+    """
+    with get_connection() as conn:
+        # Count truly stale migrations (processing for > N minutes)
+        cursor = conn.execute(
+            """
+            SELECT COUNT(*) as count FROM migrations
+            WHERE status = 'processing'
+            AND updated_at < datetime('now', ? || ' minutes')
+            """,
+            (f"-{older_than_minutes}",)
+        )
+        count = cursor.fetchone()["count"]
+
+        if count > 0:
+            # Reset migration_posts that were uploading for stale migrations only
+            conn.execute(
+                """
+                UPDATE migration_posts
+                SET status = 'pending'
+                WHERE status = 'uploading'
+                AND migration_id IN (
+                    SELECT id FROM migrations
+                    WHERE status = 'processing'
+                    AND updated_at < datetime('now', ? || ' minutes')
+                )
+                """,
+                (f"-{older_than_minutes}",)
+            )
+            # Reset migration_articles that were uploading for stale migrations only
+            conn.execute(
+                """
+                UPDATE migration_articles
+                SET status = 'pending'
+                WHERE status = 'uploading'
+                AND migration_id IN (
+                    SELECT id FROM migrations
+                    WHERE status = 'processing'
+                    AND updated_at < datetime('now', ? || ' minutes')
+                )
+                """,
+                (f"-{older_than_minutes}",)
+            )
+            # Reset only stale migrations
+            conn.execute(
+                """
+                UPDATE migrations
+                SET status = 'pending'
+                WHERE status = 'processing'
+                AND updated_at < datetime('now', ? || ' minutes')
+                """,
+                (f"-{older_than_minutes}",)
+            )
+
+        return count
+
+
+def cleanup_completed_migrations(older_than_days: int = 7) -> int:
+    """
+    Delete migrations that have been complete for more than N days.
+    """
+    with get_connection() as conn:
+        # Get count first
+        cursor = conn.execute(
+            """
+            SELECT COUNT(*) as count FROM migrations
+            WHERE status = 'complete'
+            AND updated_at < datetime('now', ? || ' days')
+            """,
+            (f"-{older_than_days}",)
+        )
+        count = cursor.fetchone()["count"]
+
+        if count > 0:
+            # Delete migration posts first (foreign key)
+            conn.execute(
+                """
+                DELETE FROM migration_posts
+                WHERE migration_id IN (
+                    SELECT id FROM migrations
+                    WHERE status = 'complete'
+                    AND updated_at < datetime('now', ? || ' days')
+                )
+                """,
+                (f"-{older_than_days}",)
+            )
+            # Delete migration articles
+            conn.execute(
+                """
+                DELETE FROM migration_articles
+                WHERE migration_id IN (
+                    SELECT id FROM migrations
+                    WHERE status = 'complete'
+                    AND updated_at < datetime('now', ? || ' days')
+                )
+                """,
+                (f"-{older_than_days}",)
+            )
+            # Delete migrations
+            conn.execute(
+                """
+                DELETE FROM migrations
+                WHERE status = 'complete'
+                AND updated_at < datetime('now', ? || ' days')
+                """,
+                (f"-{older_than_days}",)
+            )
+
+        return count

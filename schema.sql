@@ -153,3 +153,53 @@ CREATE INDEX IF NOT EXISTS idx_gifts_status ON gifts(status);
 CREATE INDEX IF NOT EXISTS idx_gifts_expires_at ON gifts(expires_at);
 CREATE INDEX IF NOT EXISTS idx_gift_posts_gift_id ON gift_posts(gift_id);
 CREATE INDEX IF NOT EXISTS idx_gift_articles_gift_id ON gift_articles(gift_id);
+
+-- Self-service migrations (client-side signing, no key custody)
+CREATE TABLE IF NOT EXISTS migrations (
+  id TEXT PRIMARY KEY,
+  source_handle TEXT NOT NULL,      -- Instagram handle, TikTok handle, or RSS URL
+  source_type TEXT NOT NULL CHECK (source_type IN ('instagram', 'tiktok', 'rss')),
+  profile_data TEXT,                -- JSON: {name, bio, picture_url, blossom_picture_url}
+  status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'ready', 'complete')),
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Posts within a migration (Instagram/TikTok)
+CREATE TABLE IF NOT EXISTS migration_posts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  migration_id TEXT NOT NULL,
+  post_type TEXT NOT NULL CHECK (post_type IN ('reel', 'image', 'carousel', 'video')),
+  caption TEXT,
+  original_date TEXT,
+  media_items TEXT NOT NULL,        -- JSON array of {url, media_type, width, height}
+  blossom_urls TEXT,                -- JSON array of uploaded Blossom URLs
+  thumbnail_url TEXT,
+  status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'uploading', 'ready', 'published')),
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (migration_id) REFERENCES migrations(id) ON DELETE CASCADE
+);
+
+-- Articles within a migration (RSS/Substack)
+CREATE TABLE IF NOT EXISTS migration_articles (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  migration_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  summary TEXT,
+  content_markdown TEXT NOT NULL,
+  published_at TEXT,
+  link TEXT,
+  image_url TEXT,                   -- Original header image URL
+  blossom_image_url TEXT,           -- Uploaded header image URL
+  hashtags TEXT,                    -- JSON array
+  inline_image_urls TEXT,           -- JSON mapping: {"original_url": "blossom_url"}
+  upload_attempts INTEGER DEFAULT 0,
+  status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'uploading', 'ready', 'published')),
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (migration_id) REFERENCES migrations(id) ON DELETE CASCADE
+);
+
+-- Indexes for migrations
+CREATE INDEX IF NOT EXISTS idx_migrations_status ON migrations(status);
+CREATE INDEX IF NOT EXISTS idx_migration_posts_migration_id ON migration_posts(migration_id);
+CREATE INDEX IF NOT EXISTS idx_migration_articles_migration_id ON migration_articles(migration_id);

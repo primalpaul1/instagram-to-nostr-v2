@@ -11,6 +11,56 @@
     ? `https://primal.net/p/${displayNpub}`
     : 'https://primal.net';
 
+  // Key save state for generate mode
+  let keySaved = false;
+  let keyCopied = false;
+
+  function copyKeyToClipboard() {
+    if ($wizard.keyPair?.nsec) {
+      navigator.clipboard.writeText($wizard.keyPair.nsec);
+      keyCopied = true;
+      keySaved = true;
+      setTimeout(() => {
+        keyCopied = false;
+      }, 3000);
+    }
+  }
+
+  function downloadKey() {
+    if (!$wizard.keyPair?.nsec) return;
+
+    const content = `Your Primal Key (keep this secret!)
+=====================================
+
+${$wizard.keyPair.nsec}
+
+This is your private key for accessing your Nostr identity.
+Do NOT share this with anyone.
+
+To use:
+1. Download Primal from primal.net/downloads
+2. Open the app and tap "Login"
+3. Tap "Use login key"
+4. Paste this key
+
+Your public profile:
+${$wizard.keyPair.npub}
+${primalUrl}
+`;
+
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'primal-key.txt';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    keySaved = true;
+  }
+
   function handleStartOver() {
     wizard.reset();
   }
@@ -38,11 +88,57 @@
     <div class="whats-next-section">
       <h3 class="section-title">What's next?</h3>
 
-      <div class="step-card">
-        <div class="step-number">1</div>
+      <!-- Step 1: Save your key (most important) -->
+      <div class="step-card key-step" class:completed={keySaved}>
+        <div class="step-number">{keySaved ? '✓' : '1'}</div>
         <div class="step-content">
-          <h4>Download Primal on your phone</h4>
-          <p>Get the app to access your content anywhere</p>
+          <h4>Save your Primal Key</h4>
+          <p class="key-warning">This is your <strong>only chance</strong> to save your key. Without it, you can't access your posts.</p>
+
+          {#if $wizard.keyPair?.nsec}
+            <div class="key-actions">
+              <button class="key-btn copy-btn" class:success={keyCopied} on:click={copyKeyToClipboard}>
+                {#if keyCopied}
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M20 6L9 17l-5-5"/>
+                  </svg>
+                  Copied!
+                {:else}
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                    <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+                  </svg>
+                  Copy Key
+                {/if}
+              </button>
+              <button class="key-btn download-btn" on:click={downloadKey}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                  <polyline points="7 10 12 15 17 10"/>
+                  <line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+                Download Key
+              </button>
+            </div>
+            {#if keySaved}
+              <div class="key-saved-notice">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M22 11.08V12a10 10 0 11-5.93-9.14"/>
+                  <polyline points="22 4 12 14.01 9 11.01"/>
+                </svg>
+                Key saved! Store it somewhere safe.
+              </div>
+            {/if}
+          {/if}
+        </div>
+      </div>
+
+      <!-- Step 2: Get Primal -->
+      <div class="step-card" class:disabled={!keySaved}>
+        <div class="step-number">2</div>
+        <div class="step-content">
+          <h4>Get Primal on your phone</h4>
+          <p>Download the app to access your content anywhere</p>
 
           <div class="download-row">
             <div class="qr-wrapper">
@@ -54,7 +150,7 @@
               />
             </div>
             <div class="store-buttons">
-              <a href="https://apps.apple.com/us/app/primal/id1673134518" target="_blank" rel="noopener noreferrer" class="store-btn">
+              <a href="https://apps.apple.com/us/app/primal/id1673134518" target="_blank" rel="noopener noreferrer" class="store-btn" class:disabled={!keySaved}>
                 <svg width="20" height="24" viewBox="0 0 20 24" fill="currentColor">
                   <path d="M16.52 12.46c-.03-2.59 2.11-3.84 2.21-3.9-1.21-1.76-3.08-2-3.75-2.03-1.58-.17-3.11.94-3.91.94-.82 0-2.06-.92-3.39-.9-1.72.03-3.33 1.02-4.22 2.57-1.82 3.14-.46 7.76 1.28 10.3.87 1.24 1.89 2.62 3.23 2.57 1.3-.05 1.79-.83 3.36-.83 1.56 0 2.01.83 3.37.8 1.4-.02 2.28-1.25 3.12-2.5 1-1.43 1.41-2.83 1.43-2.9-.03-.01-2.73-1.05-2.76-4.12h.03zM13.89 4.43c.7-.87 1.18-2.05 1.05-3.25-1.01.04-2.27.69-3 1.54-.64.76-1.22 2-1.07 3.17 1.14.08 2.31-.57 3.02-1.46z"/>
                 </svg>
@@ -63,7 +159,7 @@
                   <span class="store-name">App Store</span>
                 </div>
               </a>
-              <a href="https://play.google.com/store/apps/details?id=net.primal.android" target="_blank" rel="noopener noreferrer" class="store-btn">
+              <a href="https://play.google.com/store/apps/details?id=net.primal.android" target="_blank" rel="noopener noreferrer" class="store-btn" class:disabled={!keySaved}>
                 <svg width="20" height="22" viewBox="0 0 20 22" fill="currentColor">
                   <path d="M1 1.16v19.68c0 .67.74 1.07 1.32.71l16.36-9.84c.58-.35.58-1.17 0-1.51L2.32.36C1.74 0 1 .4 1 1.07v.09z"/>
                 </svg>
@@ -77,8 +173,9 @@
         </div>
       </div>
 
-      <div class="step-card">
-        <div class="step-number">2</div>
+      <!-- Step 3: Login -->
+      <div class="step-card" class:disabled={!keySaved}>
+        <div class="step-number">3</div>
         <div class="step-content">
           <h4>Log in with your Primal Key</h4>
           <p>Open Primal, tap "Login", then "Use login key" and paste your Primal Key</p>
@@ -91,11 +188,17 @@
         </div>
       </div>
 
-      <div class="step-card">
-        <div class="step-number">3</div>
-        <div class="step-content">
-          <h4>Tell your friends!</h4>
-          <p>Help others own their content forever</p>
+      <!-- Tell friends -->
+      <div class="share-card">
+        <div class="share-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8"/>
+            <polyline points="16 6 12 2 8 6"/>
+            <line x1="12" y1="2" x2="12" y2="15"/>
+          </svg>
+        </div>
+        <div class="share-content">
+          <h4>Help others own their content</h4>
           <a href="https://ownyourposts.com" class="share-link" target="_blank" rel="noopener noreferrer">
             <span>ownyourposts.com</span>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
@@ -253,6 +356,22 @@
     border-radius: 0.875rem;
     margin-bottom: 1rem;
     animation: cardSlideIn 0.5s ease-out backwards;
+    transition: opacity 0.3s ease;
+  }
+
+  .step-card.disabled {
+    opacity: 0.5;
+    pointer-events: none;
+  }
+
+  .step-card.key-step {
+    border-color: var(--accent);
+    background: rgba(var(--accent-rgb), 0.05);
+  }
+
+  .step-card.key-step.completed {
+    border-color: var(--success);
+    background: rgba(var(--success-rgb), 0.05);
   }
 
   .step-card:nth-child(2) { animation-delay: 0.1s; }
@@ -273,6 +392,10 @@
     font-weight: 700;
   }
 
+  .step-card.key-step.completed .step-number {
+    background: var(--success);
+  }
+
   .step-content {
     flex: 1;
   }
@@ -289,6 +412,74 @@
     color: var(--text-secondary);
     line-height: 1.4;
     margin: 0;
+  }
+
+  .key-warning {
+    color: var(--text-primary) !important;
+    margin-bottom: 1rem !important;
+  }
+
+  .key-warning strong {
+    color: var(--error);
+  }
+
+  .key-actions {
+    display: flex;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .key-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.625rem 1rem;
+    border-radius: 0.5rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .copy-btn {
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+  }
+
+  .copy-btn:hover {
+    border-color: var(--accent);
+    background: rgba(var(--accent-rgb), 0.1);
+  }
+
+  .copy-btn.success {
+    background: rgba(var(--success-rgb), 0.15);
+    border-color: var(--success);
+    color: var(--success);
+  }
+
+  .download-btn {
+    background: var(--accent-gradient);
+    border: none;
+    color: white;
+  }
+
+  .download-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(var(--accent-rgb), 0.3);
+  }
+
+  .key-saved-notice {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.625rem 0.875rem;
+    background: rgba(var(--success-rgb), 0.1);
+    border: 1px solid rgba(var(--success-rgb), 0.3);
+    border-radius: 0.5rem;
+    color: var(--success);
+    font-size: 0.8125rem;
+    font-weight: 500;
   }
 
   .download-row {
@@ -329,9 +520,14 @@
     transition: all 0.2s ease;
   }
 
-  .store-btn:hover {
+  .store-btn:hover:not(.disabled) {
     border-color: var(--accent);
     background: rgba(var(--accent-rgb), 0.05);
+  }
+
+  .store-btn.disabled {
+    opacity: 0.5;
+    pointer-events: none;
   }
 
   .store-text {
@@ -374,15 +570,44 @@
     font-weight: 600;
   }
 
+  .share-card {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1rem 1.25rem;
+    background: rgba(var(--success-rgb), 0.08);
+    border: 1px solid rgba(var(--success-rgb), 0.2);
+    border-radius: 0.875rem;
+    margin-top: 1.5rem;
+  }
+
+  .share-icon {
+    flex-shrink: 0;
+    width: 2.5rem;
+    height: 2.5rem;
+    background: var(--success);
+    border-radius: 0.625rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+  }
+
+  .share-content {
+    flex: 1;
+  }
+
+  .share-content h4 {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 0.25rem;
+  }
+
   .share-link {
     display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
-    margin-top: 0.75rem;
-    padding: 0.625rem 1rem;
-    background: rgba(var(--success-rgb), 0.12);
-    border: 1px solid rgba(var(--success-rgb), 0.25);
-    border-radius: 0.625rem;
+    gap: 0.375rem;
     color: var(--success);
     font-size: 0.875rem;
     font-weight: 600;
@@ -391,9 +616,7 @@
   }
 
   .share-link:hover {
-    background: rgba(var(--success-rgb), 0.2);
-    border-color: var(--success);
-    transform: translateY(-1px);
+    text-decoration: underline;
   }
 
   .share-link svg {
@@ -418,6 +641,15 @@
 
     .store-btn {
       width: 100%;
+    }
+
+    .key-actions {
+      flex-direction: column;
+    }
+
+    .key-btn {
+      width: 100%;
+      justify-content: center;
     }
   }
 

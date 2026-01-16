@@ -1332,3 +1332,252 @@ export async function getRssGiftByTokenWithArticles(claimToken: string): Promise
   const articles = await getRssGiftArticles(gift.id);
   return { gift, articles };
 }
+
+// ============================================
+// Migration functions for client-side signing flow
+// ============================================
+
+export interface Migration {
+  id: string;
+  source_handle: string;
+  source_type: 'instagram' | 'tiktok' | 'rss';
+  profile_data: string | null;  // JSON string
+  status: 'pending' | 'processing' | 'ready' | 'complete';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MigrationPost {
+  id: number;
+  migration_id: string;
+  post_type: 'reel' | 'image' | 'carousel' | 'video';
+  caption: string | null;
+  original_date: string | null;
+  media_items: string;  // JSON string
+  blossom_urls: string | null;  // JSON string
+  thumbnail_url: string | null;
+  status: 'pending' | 'uploading' | 'ready' | 'published';
+  created_at: string;
+}
+
+export interface MigrationArticle {
+  id: number;
+  migration_id: string;
+  title: string;
+  summary: string | null;
+  content_markdown: string;
+  published_at: string | null;
+  link: string | null;
+  image_url: string | null;
+  blossom_image_url: string | null;
+  hashtags: string | null;  // JSON string
+  inline_image_urls: string | null;  // JSON mapping
+  upload_attempts: number;
+  status: 'pending' | 'uploading' | 'ready' | 'published';
+  created_at: string;
+}
+
+export async function ensureMigrationTables(): Promise<void> {
+  const database = await getDb();
+
+  // Check if migrations table exists
+  const result = database.exec(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='migrations'"
+  );
+
+  if (result.length === 0 || result[0].values.length === 0) {
+    // Create migrations tables
+    database.run(`
+      CREATE TABLE IF NOT EXISTS migrations (
+        id TEXT PRIMARY KEY,
+        source_handle TEXT NOT NULL,
+        source_type TEXT NOT NULL CHECK (source_type IN ('instagram', 'tiktok', 'rss')),
+        profile_data TEXT,
+        status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'ready', 'complete')),
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    database.run(`
+      CREATE TABLE IF NOT EXISTS migration_posts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        migration_id TEXT NOT NULL,
+        post_type TEXT NOT NULL CHECK (post_type IN ('reel', 'image', 'carousel', 'video')),
+        caption TEXT,
+        original_date TEXT,
+        media_items TEXT NOT NULL,
+        blossom_urls TEXT,
+        thumbnail_url TEXT,
+        status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'uploading', 'ready', 'published')),
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (migration_id) REFERENCES migrations(id) ON DELETE CASCADE
+      )
+    `);
+
+    database.run(`
+      CREATE TABLE IF NOT EXISTS migration_articles (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        migration_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        summary TEXT,
+        content_markdown TEXT NOT NULL,
+        published_at TEXT,
+        link TEXT,
+        image_url TEXT,
+        blossom_image_url TEXT,
+        hashtags TEXT,
+        inline_image_urls TEXT,
+        upload_attempts INTEGER DEFAULT 0,
+        status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'uploading', 'ready', 'published')),
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (migration_id) REFERENCES migrations(id) ON DELETE CASCADE
+      )
+    `);
+
+    database.run('CREATE INDEX IF NOT EXISTS idx_migrations_status ON migrations(status)');
+    database.run('CREATE INDEX IF NOT EXISTS idx_migration_posts_migration_id ON migration_posts(migration_id)');
+    database.run('CREATE INDEX IF NOT EXISTS idx_migration_articles_migration_id ON migration_articles(migration_id)');
+
+    saveDb(database);
+  }
+}
+
+export interface MigrationPostInput {
+  postType: 'reel' | 'image' | 'carousel' | 'video';
+  mediaItems: string;  // JSON string
+  caption?: string;
+  originalDate?: string;
+  thumbnailUrl?: string;
+}
+
+export interface MigrationArticleInput {
+  title: string;
+  contentMarkdown: string;
+  summary?: string;
+  publishedAt?: string;
+  link?: string;
+  imageUrl?: string;
+  hashtags?: string[];
+}
+
+export async function createMigrationWithContent(
+  id: string,
+  sourceHandle: string,
+  sourceType: 'instagram' | 'tiktok' | 'rss',
+  profileData: string | undefined,
+  posts: MigrationPostInput[],
+  articles: MigrationArticleInput[]
+): Promise<Migration> {
+  await ensureMigrationTables();
+
+  return withDb(async (database) => {
+    // Create the migration
+    database.run(
+      `INSERT INTO migrations (id, source_handle, source_type, profile_data)
+       VALUES (?, ?, ?, ?)`,
+      [id, sourceHandle, sourceType, profileData || null]
+    );
+
+    // Create all posts
+    for (const post of posts) {
+      database.run(
+        `INSERT INTO migration_posts (migration_id, post_type, media_items, caption, original_date, thumbnail_url)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [id, post.postType, post.mediaItems, post.caption || null, post.originalDate || null, post.thumbnailUrl || null]
+      );
+    }
+
+    // Create all articles
+    for (const article of articles) {
+      database.run(
+        `INSERT INTO migration_articles (migration_id, title, summary, content_markdown, published_at, link, image_url, hashtags, status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
+        [
+          id,
+          article.title,
+          article.summary || null,
+          article.contentMarkdown,
+          article.publishedAt || null,
+          article.link || null,
+          article.imageUrl || null,
+          article.hashtags ? JSON.stringify(article.hashtags) : null
+        ]
+      );
+    }
+
+    // Return the migration we just created
+    const result = database.exec('SELECT * FROM migrations WHERE id = ?', [id]);
+    return rowToObject<Migration>(result[0].columns, result[0].values[0]);
+  });
+}
+
+export async function getMigration(id: string): Promise<Migration | undefined> {
+  await ensureMigrationTables();
+  const database = await getDb();
+  const result = database.exec('SELECT * FROM migrations WHERE id = ?', [id]);
+  if (result.length === 0 || result[0].values.length === 0) return undefined;
+  return rowToObject<Migration>(result[0].columns, result[0].values[0]);
+}
+
+export async function getMigrationPosts(migrationId: string): Promise<MigrationPost[]> {
+  await ensureMigrationTables();
+  const database = await getDb();
+  const result = database.exec(
+    'SELECT * FROM migration_posts WHERE migration_id = ? ORDER BY id',
+    [migrationId]
+  );
+  if (result.length === 0) return [];
+  return result[0].values.map(row => rowToObject<MigrationPost>(result[0].columns, row));
+}
+
+export async function getMigrationArticles(migrationId: string): Promise<MigrationArticle[]> {
+  await ensureMigrationTables();
+  const database = await getDb();
+  const result = database.exec(
+    'SELECT * FROM migration_articles WHERE migration_id = ? ORDER BY id',
+    [migrationId]
+  );
+  if (result.length === 0) return [];
+  return result[0].values.map(row => rowToObject<MigrationArticle>(result[0].columns, row));
+}
+
+export async function getMigrationWithContent(migrationId: string): Promise<{
+  migration: Migration;
+  posts: MigrationPost[];
+  articles: MigrationArticle[];
+} | null> {
+  const migration = await getMigration(migrationId);
+  if (!migration) return null;
+
+  const posts = await getMigrationPosts(migrationId);
+  const articles = await getMigrationArticles(migrationId);
+  return { migration, posts, articles };
+}
+
+export async function updateMigrationStatus(id: string, status: Migration['status']): Promise<void> {
+  return withDb(async (database) => {
+    database.run(
+      "UPDATE migrations SET status = ?, updated_at = datetime('now') WHERE id = ?",
+      [status, id]
+    );
+  });
+}
+
+export async function updateMigrationPostStatus(
+  postId: number,
+  status: MigrationPost['status']
+): Promise<void> {
+  return withDb(async (database) => {
+    database.run('UPDATE migration_posts SET status = ? WHERE id = ?', [status, postId]);
+  });
+}
+
+export async function updateMigrationArticleStatus(
+  articleId: number,
+  status: MigrationArticle['status']
+): Promise<void> {
+  return withDb(async (database) => {
+    database.run('UPDATE migration_articles SET status = ? WHERE id = ?', [status, articleId]);
+  });
+}
