@@ -332,24 +332,30 @@ export async function publishToRelays(
         await new Promise<void>((resolve, reject) => {
           const timeout = setTimeout(() => {
             ws.close();
+            console.warn(`[${relay}] Connection timeout for event ${event.id}`);
             reject(new Error('Connection timeout'));
           }, 10000);
 
           ws.onopen = () => {
+            console.log(`[${relay}] Sending event ${event.id} (kind ${event.kind})`);
             ws.send(JSON.stringify(['EVENT', event]));
           };
 
           ws.onmessage = (msg) => {
             try {
               const data = JSON.parse(msg.data);
+              console.log(`[${relay}] Response:`, data);
               if (data[0] === 'OK' && data[1] === event.id) {
                 clearTimeout(timeout);
                 ws.close();
                 if (data[2] === true) {
+                  console.log(`[${relay}] ✓ Event accepted`);
                   results.success.push(relay);
                   resolve();
                 } else {
-                  reject(new Error(data[3] || 'Relay rejected event'));
+                  const reason = data[3] || 'Relay rejected event';
+                  console.warn(`[${relay}] ✗ Event rejected: ${reason}`);
+                  reject(new Error(reason));
                 }
               }
             } catch {
@@ -357,12 +363,14 @@ export async function publishToRelays(
             }
           };
 
-          ws.onerror = () => {
+          ws.onerror = (err) => {
             clearTimeout(timeout);
+            console.warn(`[${relay}] WebSocket error:`, err);
             reject(new Error('WebSocket error'));
           };
         });
-      } catch {
+      } catch (err) {
+        console.warn(`[${relay}] Failed:`, err);
         results.failed.push(relay);
       }
     })

@@ -111,14 +111,34 @@
         };
       }
 
-      // Build feed data for RSS
-      let feedData: { url: string; title?: string; description?: string; image_url?: string } | undefined;
+      // For RSS migrations, construct profile from feed info (like gift flow)
+      if (!profileData && $wizard.feedInfo && $wizard.contentType === 'articles') {
+        profileData = {
+          name: $wizard.feedInfo.author_name || $wizard.feedInfo.title,
+          bio: $wizard.feedInfo.author_bio || $wizard.feedInfo.description,
+          picture_url: $wizard.feedInfo.author_image || $wizard.feedInfo.image_url
+        };
+      }
+
+      // Build feed data for RSS (include author fields)
+      let feedData: {
+        url: string;
+        title?: string;
+        description?: string;
+        image_url?: string;
+        author_name?: string;
+        author_bio?: string;
+        author_image?: string;
+      } | undefined;
       if ($wizard.feedInfo) {
         feedData = {
           url: $wizard.handle,
           title: $wizard.feedInfo.title,
           description: $wizard.feedInfo.description,
-          image_url: $wizard.feedInfo.image_url
+          image_url: $wizard.feedInfo.image_url,
+          author_name: $wizard.feedInfo.author_name,
+          author_bio: $wizard.feedInfo.author_bio,
+          author_image: $wizard.feedInfo.author_image
         };
       }
 

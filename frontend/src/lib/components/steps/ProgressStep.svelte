@@ -103,6 +103,21 @@
   let activePublishCount = 0;
   const MAX_CONCURRENT_PUBLISH = 3;
 
+  // Extract slug from URL for d-tag (matches backend logic)
+  function extractSlugFromUrl(url: string | null): string | null {
+    if (!url) return null;
+    try {
+      const parsed = new URL(url);
+      const path = parsed.pathname.replace(/\/$/, ''); // Remove trailing slash
+      const slug = path.split('/').pop() || '';
+      // Clean up: only alphanumeric and hyphens
+      const clean = slug.replace(/[^a-zA-Z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+      return clean.toLowerCase() || null;
+    } catch {
+      return null;
+    }
+  }
+
   // Key state (for immediate display)
   let nsecCopied = false;
   let keyDownloaded = false;
@@ -232,9 +247,19 @@
 
     // Main loop: poll and publish as posts become ready
     await pollAndPublish(secretKeyBytes, publicKeyHex, () => {
+      console.log('onFirstData callback triggered');
+      console.log('profilePublished:', profilePublished);
+      console.log('profile_data exists:', !!migrationData?.migration.profile_data);
+      console.log('profile_data value:', migrationData?.migration.profile_data);
+
       if (!profilePublished && migrationData?.migration.profile_data) {
         profilePublished = true;
+        console.log('Calling publishProfile...');
         publishProfile(secretKeyBytes, publicKeyHex);
+      } else if (profilePublished) {
+        console.log('Profile already published, skipping');
+      } else {
+        console.log('No profile_data found in migration');
       }
     });
 
@@ -415,13 +440,40 @@
   }
 
   async function publishProfile(secretKeyBytes: Uint8Array, publicKeyHex: string) {
-    if (!migrationData?.migration.profile_data) return;
+    console.log('publishProfile called, profile_data:', migrationData?.migration.profile_data);
+
+    if (!migrationData?.migration.profile_data) {
+      console.log('No profile_data found, skipping profile publish');
+      return;
+    }
 
     try {
       const profileData = JSON.parse(migrationData.migration.profile_data);
-      const name = profileData.name || profileData.profile?.display_name || profileData.profile?.username;
-      const bio = profileData.bio || profileData.profile?.bio;
-      let picture = profileData.blossom_picture_url || profileData.picture_url || profileData.profile?.profile_picture_url;
+      console.log('Parsed profile data:', profileData);
+
+      // RSS migrations store profile in { feed: {...}, profile: {...} } structure
+      const feedData = profileData.feed || {};
+      const profileInfo = profileData.profile || {};
+
+      // Try multiple paths to find profile info
+      const name = profileData.name
+        || feedData.author_name
+        || profileInfo.display_name
+        || profileInfo.username
+        || profileData.author_name;
+
+      const bio = profileData.bio
+        || feedData.author_bio
+        || profileInfo.bio
+        || profileData.author_bio;
+
+      let picture = profileData.blossom_picture_url
+        || feedData.author_image
+        || profileData.picture_url
+        || profileInfo.profile_picture_url
+        || profileData.author_image;
+
+      console.log('Extracted profile fields:', { name, bio: bio?.substring(0, 50), picture: picture?.substring(0, 80) });
 
       // If picture isn't a blossom URL, try to upload it
       if (picture && !picture.includes('blossom')) {
@@ -434,17 +486,26 @@
       }
 
       if (name) {
+        console.log('Publishing profile:', { name, bio: bio?.substring(0, 50), picture: picture?.substring(0, 80) });
+
         const profileEvent = createProfileEvent(publicKeyHex, name, bio, picture);
         const signed = finalizeEvent(profileEvent as EventTemplate, secretKeyBytes);
 
-        // Primal cache first for immediate visibility
-        await importSingleToPrimalCache(signed);
-        publishedEvents.push(signed);
+        console.log('Profile event ID:', signed.id);
 
-        // Fire relay publishing in background
-        publishToRelays(signed, NOSTR_RELAYS).catch(err => {
-          console.warn('Profile relay publish failed:', err);
-        });
+        // Publish to relays first
+        const relayResult = await publishToRelays(signed, NOSTR_RELAYS);
+        console.log('Profile relay result:', relayResult);
+
+        if (relayResult.success.length === 0) {
+          console.error('Profile failed to publish to any relay');
+        }
+
+        // Also import to Primal cache
+        const cacheResult = await importSingleToPrimalCache(signed);
+        console.log('Profile Primal cache result:', cacheResult);
+
+        publishedEvents.push(signed);
       }
     } catch (err) {
       console.warn('Failed to publish profile:', err);
@@ -523,36 +584,60 @@
       let content = article.content_markdown;
       let headerImageUrl = article.blossom_image_url || article.image_url;
 
+      console.log('Article image state:', {
+        blossom_image_url: article.blossom_image_url,
+        image_url: article.image_url,
+        headerImageUrl
+      });
+
       // If header image isn't on Blossom yet, upload it
       if (headerImageUrl && !headerImageUrl.includes('blossom')) {
+        console.log('Header image not on Blossom, uploading:', headerImageUrl.substring(0, 80));
         try {
           headerImageUrl = await uploadImage(headerImageUrl, secretKeyBytes, publicKeyHex);
+          console.log('Header image uploaded:', headerImageUrl);
         } catch (err) {
           console.warn('Failed to upload header image:', err);
         }
+      } else if (headerImageUrl) {
+        console.log('Header image already on Blossom:', headerImageUrl);
+      } else {
+        console.log('No header image for this article');
       }
 
       // Process any remaining inline images not yet on Blossom
-      const imageRegex = /!\[([^\]]*)\]\(([^)]+)\)/g;
+      // Regex matches URL up to space (for title attribute) or closing paren
+      // Handles both ![alt](url) and ![alt](url "title") formats
+      const imageRegex = /!\[[^\]]*\]\(([^\s)]+)/g;
       let match;
       const imagesToUpload: string[] = [];
 
+      console.log('Scanning for inline images in article content...');
+      console.log('Content preview (first 500 chars):', article.content_markdown?.substring(0, 500));
+
       while ((match = imageRegex.exec(article.content_markdown)) !== null) {
-        const imageUrl = match[2];
+        const imageUrl = match[1];  // Group 1 is the URL
+        console.log('Found image:', imageUrl.substring(0, 80));
         if (!imageUrl.includes('blossom') && !imagesToUpload.includes(imageUrl)) {
           imagesToUpload.push(imageUrl);
+        } else if (imageUrl.includes('blossom')) {
+          console.log('Skipping - already on Blossom');
         }
       }
+      console.log(`Found ${imagesToUpload.length} images to upload (not on Blossom)`);
 
       const imageReplacements: { original: string; blossom: string }[] = [];
       for (const imageUrl of imagesToUpload) {
         try {
+          console.log('Uploading inline image:', imageUrl.substring(0, 80));
           const blossomUrl = await uploadImage(imageUrl, secretKeyBytes, publicKeyHex);
+          console.log('Inline image uploaded:', blossomUrl);
           imageReplacements.push({ original: imageUrl, blossom: blossomUrl });
         } catch (err) {
-          console.warn('Failed to upload inline image:', err);
+          console.warn('Failed to upload inline image:', imageUrl.substring(0, 60), err);
         }
       }
+      console.log(`Successfully uploaded ${imageReplacements.length}/${imagesToUpload.length} inline images`);
 
       for (const { original, blossom } of imageReplacements) {
         content = content.split(original).join(blossom);
@@ -561,8 +646,11 @@
       // Create event
       const hashtags: string[] = article.hashtags ? JSON.parse(article.hashtags) : [];
 
+      // Use URL slug for identifier (d-tag), fallback to article ID
+      const identifier = extractSlugFromUrl(article.link) || `article-${article.id}`;
+
       const articleData: ArticleMetadata = {
-        identifier: `article-${article.id}`,
+        identifier,
         title: article.title,
         summary: article.summary || undefined,
         imageUrl: headerImageUrl || undefined,
@@ -574,14 +662,23 @@
       const eventTemplate = createLongFormContentEvent(publicKeyHex, articleData);
       const signed = finalizeEvent(eventTemplate as EventTemplate, secretKeyBytes);
 
-      // 1. Import to Primal cache first - immediate visibility
-      await importSingleToPrimalCache(signed);
-      publishedEvents.push(signed);
+      console.log('Publishing article:', article.title, 'd-tag:', identifier, 'Event ID:', signed.id);
 
-      // 2. Fire relay publishing in background (best effort)
-      publishToRelays(signed, NOSTR_RELAYS).catch(err => {
-        console.warn('Article relay publish failed:', err);
-      });
+      // 1. Publish to relays first - critical for kind 30023 (long-form content)
+      // Primal cache may not fully support kind 30023, so relays are the priority
+      const relayResult = await publishToRelays(signed, NOSTR_RELAYS);
+      console.log('Article relay result:', relayResult);
+
+      if (relayResult.success.length === 0) {
+        console.error('Article failed to publish to any relay:', article.title);
+        // Still try Primal cache as fallback
+      }
+
+      // 2. Also import to Primal cache (may help with Primal visibility)
+      const cacheResult = await importSingleToPrimalCache(signed);
+      console.log('Article Primal cache result:', cacheResult);
+
+      publishedEvents.push(signed);
 
       // 3. Checkpoint to database
       await fetch(`/api/migrations/${$wizard.migrationId}`, {
