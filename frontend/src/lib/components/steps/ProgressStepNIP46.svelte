@@ -120,18 +120,27 @@
   $: allDone = completedCount + errorCount === totalCount && totalCount > 0;
 
   onMount(() => {
+    console.log('[NIP46] onMount - contentType:', $wizard.contentType);
+    console.log('[NIP46] onMount - isArticlesMode:', isArticlesMode);
+    console.log('[NIP46] onMount - selectedArticles:', $selectedArticles);
+    console.log('[NIP46] onMount - selectedArticles.length:', $selectedArticles.length);
+    console.log('[NIP46] onMount - selectedPosts:', $selectedPosts);
+    console.log('[NIP46] onMount - selectedPosts.length:', $selectedPosts.length);
+
     if (isArticlesMode) {
       tasks = $selectedArticles.map(article => ({
         article,
         type: 'article' as const,
         status: 'pending'
       }));
+      console.log('[NIP46] Created article tasks:', tasks.length);
     } else {
       tasks = $selectedPosts.map(post => ({
         post,
         type: 'post' as const,
         status: 'pending'
       }));
+      console.log('[NIP46] Created post tasks:', tasks.length);
     }
     startMigration();
   });
