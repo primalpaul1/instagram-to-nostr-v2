@@ -1,16 +1,20 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { wizard, selectedPosts, type PostInfo, type MediaItemInfo, getMediaCache, clearMediaCache } from '$lib/stores/wizard';
+  import { wizard, selectedPosts, selectedArticles, type PostInfo, type ArticleInfo, type MediaItemInfo, getMediaCache, clearMediaCache } from '$lib/stores/wizard';
   import {
     createBlossomAuthEvent,
     createMultiMediaPostEvent,
+    createLongFormContentEvent,
+    createProfileEvent,
     signWithNIP46,
     createBlossomAuthHeader,
     calculateSHA256,
     publishToRelays,
     importToPrimalCache,
+    importSingleToPrimalCache,
     NOSTR_RELAYS,
-    type MediaUpload
+    type MediaUpload,
+    type ArticleMetadata
   } from '$lib/signing';
   import { closeConnection } from '$lib/nip46';
   import { generateSecretKey, getPublicKey, finalizeEvent, type EventTemplate, type Event } from 'nostr-tools';
@@ -34,8 +38,9 @@
     return finalizeEvent(event as EventTemplate, secretKey);
   }
 
-  interface TaskStatus {
+  interface PostTaskStatus {
     post: PostInfo;
+    type: 'post';
     status: 'pending' | 'downloading' | 'signing' | 'uploading' | 'publishing' | 'complete' | 'error';
     blossomUrls?: string[];
     nostrEventId?: string;
@@ -43,7 +48,18 @@
     mediaProgress?: { current: number; total: number };
   }
 
+  interface ArticleTaskStatus {
+    article: ArticleInfo;
+    type: 'article';
+    status: 'pending' | 'downloading' | 'signing' | 'uploading' | 'publishing' | 'complete' | 'error';
+    nostrEventId?: string;
+    error?: string;
+  }
+
+  type TaskStatus = PostTaskStatus | ArticleTaskStatus;
+
   let tasks: TaskStatus[] = [];
+  $: isArticlesMode = $wizard.contentType === 'articles';
   let isProcessing = false;
   let activeIndices: Set<number> = new Set();
 
@@ -104,10 +120,19 @@
   $: allDone = completedCount + errorCount === totalCount && totalCount > 0;
 
   onMount(() => {
-    tasks = $selectedPosts.map(post => ({
-      post,
-      status: 'pending'
-    }));
+    if (isArticlesMode) {
+      tasks = $selectedArticles.map(article => ({
+        article,
+        type: 'article' as const,
+        status: 'pending'
+      }));
+    } else {
+      tasks = $selectedPosts.map(post => ({
+        post,
+        type: 'post' as const,
+        status: 'pending'
+      }));
+    }
     startMigration();
   });
 
@@ -130,6 +155,11 @@
       // Create a queue of task indices
       const queue: number[] = [...Array(tasks.length).keys()];
 
+      // Publish profile first if available (for RSS migrations)
+      if (isArticlesMode && $wizard.feedInfo) {
+        await publishProfile(tempKeypair);
+      }
+
       // Process queue with worker functions
       async function processQueue() {
         while (queue.length > 0) {
@@ -137,7 +167,12 @@
           if (index !== undefined) {
             activeIndices.add(index);
             activeIndices = activeIndices; // Trigger reactivity
-            await processPost(index, tempKeypair);
+            const task = tasks[index];
+            if (task.type === 'article') {
+              await processArticle(index, tempKeypair);
+            } else {
+              await processPost(index, tempKeypair);
+            }
             activeIndices.delete(index);
             activeIndices = activeIndices;
           }
@@ -310,11 +345,212 @@
     }
   }
 
+  async function publishProfile(tempKeypair: TempKeypair) {
+    if (!$wizard.nip46Connection || !$wizard.nip46Pubkey || !$wizard.feedInfo) return;
+
+    try {
+      const feedInfo = $wizard.feedInfo;
+      const name = feedInfo.author_name || feedInfo.title;
+      const bio = feedInfo.author_bio || feedInfo.description;
+      let picture = feedInfo.author_image || feedInfo.image_url;
+
+      // Upload profile picture to Blossom if needed
+      if (picture && !picture.includes('blossom')) {
+        try {
+          picture = await uploadImageToBlossom(picture, tempKeypair);
+        } catch (err) {
+          console.warn('Failed to upload profile picture:', err);
+        }
+      }
+
+      if (name) {
+        const profileEvent = createProfileEvent($wizard.nip46Pubkey, name, bio, picture);
+
+        // Sign with NIP-46
+        const signedProfile = await withSigningQueue(() =>
+          signWithRetry($wizard.nip46Connection, profileEvent)
+        );
+
+        // Publish to relays
+        const relayResult = await publishToRelays(signedProfile, NOSTR_RELAYS);
+        console.log('Profile relay result:', relayResult);
+
+        // Import to Primal cache
+        await importSingleToPrimalCache(signedProfile).catch(err => {
+          console.warn('Failed to import profile to Primal cache:', err);
+        });
+      }
+    } catch (err) {
+      console.warn('Failed to publish profile:', err);
+    }
+  }
+
+  async function uploadImageToBlossom(imageUrl: string, tempKeypair: TempKeypair): Promise<string> {
+    const response = await fetch('/api/proxy-video', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: imageUrl })
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to fetch image');
+    }
+
+    const imageData = await response.arrayBuffer();
+    const sha256 = await calculateSHA256(imageData);
+    const contentType = response.headers.get('content-type') || 'image/jpeg';
+
+    // Use temp keypair for Blossom auth (fast, local signing)
+    const authEvent = createBlossomAuthEvent(tempKeypair.publicKey, sha256, imageData.byteLength);
+    const signedAuth = signBlossomAuthLocally(authEvent, tempKeypair.secretKey);
+    const authHeader = createBlossomAuthHeader(signedAuth);
+
+    const uploadResponse = await fetch(`${BLOSSOM_SERVER}/upload`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': authHeader,
+        'Content-Type': contentType,
+        'X-SHA-256': sha256
+      },
+      body: imageData
+    });
+
+    if (!uploadResponse.ok) {
+      throw new Error('Blossom upload failed');
+    }
+
+    const result = await uploadResponse.json();
+    return result.url || `${BLOSSOM_SERVER}/${sha256}`;
+  }
+
+  // Extract slug from URL for d-tag
+  function extractSlugFromUrl(url: string | null | undefined): string | null {
+    if (!url) return null;
+    try {
+      const parsed = new URL(url);
+      const path = parsed.pathname.replace(/\/$/, '');
+      const slug = path.split('/').pop() || '';
+      const clean = slug.replace(/[^a-zA-Z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+      return clean.toLowerCase() || null;
+    } catch {
+      return null;
+    }
+  }
+
+  async function processArticle(index: number, tempKeypair: TempKeypair) {
+    const task = tasks[index] as ArticleTaskStatus;
+    if (!$wizard.nip46Connection || !$wizard.nip46Pubkey) {
+      tasks[index] = { ...task, status: 'error', error: 'No NIP-46 connection' };
+      return;
+    }
+
+    try {
+      const article = task.article;
+
+      // Update status to uploading (for images)
+      tasks[index] = { ...task, status: 'uploading' };
+      tasks = [...tasks];
+
+      // Upload header image if needed
+      let headerImageUrl = article.image_url;
+      if (headerImageUrl && !headerImageUrl.includes('blossom')) {
+        try {
+          headerImageUrl = await uploadImageToBlossom(headerImageUrl, tempKeypair);
+        } catch (err) {
+          console.warn('Failed to upload header image:', err);
+        }
+      }
+
+      // Process inline images
+      let content = article.content_markdown;
+      const imageRegex = /!\[[^\]]*\]\(([^\s)]+)/g;
+      let match;
+      const imagesToUpload: string[] = [];
+
+      while ((match = imageRegex.exec(article.content_markdown)) !== null) {
+        const imageUrl = match[1];
+        if (!imageUrl.includes('blossom') && !imagesToUpload.includes(imageUrl)) {
+          imagesToUpload.push(imageUrl);
+        }
+      }
+
+      const imageReplacements: { original: string; blossom: string }[] = [];
+      for (const imageUrl of imagesToUpload) {
+        try {
+          const blossomUrl = await uploadImageToBlossom(imageUrl, tempKeypair);
+          imageReplacements.push({ original: imageUrl, blossom: blossomUrl });
+        } catch (err) {
+          console.warn('Failed to upload inline image:', err);
+        }
+      }
+
+      for (const { original, blossom } of imageReplacements) {
+        content = content.split(original).join(blossom);
+      }
+
+      // Update status to signing
+      tasks[index] = { ...task, status: 'signing' };
+      tasks = [...tasks];
+
+      // Create article event
+      const identifier = extractSlugFromUrl(article.link) || `article-${article.id}`;
+      const articleData: ArticleMetadata = {
+        identifier,
+        title: article.title,
+        summary: article.summary,
+        imageUrl: headerImageUrl,
+        publishedAt: article.published_at,
+        hashtags: article.hashtags || [],
+        content
+      };
+
+      const articleEvent = createLongFormContentEvent($wizard.nip46Pubkey, articleData);
+
+      // Sign with NIP-46
+      const signedArticle = await withSigningQueue(() =>
+        signWithRetry($wizard.nip46Connection, articleEvent)
+      );
+
+      // Update status to publishing
+      tasks[index] = { ...task, status: 'publishing' };
+      tasks = [...tasks];
+
+      // Publish to relays first (priority for kind 30023)
+      const relayResult = await publishToRelays(signedArticle, NOSTR_RELAYS);
+      console.log('Article relay result:', relayResult);
+
+      if (relayResult.success.length === 0) {
+        throw new Error('Failed to publish to any relay');
+      }
+
+      // Also import to Primal cache
+      await importSingleToPrimalCache(signedArticle).catch(err => {
+        console.warn('Failed to import article to Primal cache:', err);
+      });
+
+      tasks[index] = {
+        ...task,
+        status: 'complete',
+        nostrEventId: signedArticle.id
+      };
+      tasks = [...tasks];
+
+    } catch (err) {
+      console.error(`Error processing article ${index}:`, err);
+      tasks[index] = {
+        ...tasks[index],
+        status: 'error',
+        error: err instanceof Error ? err.message : 'Unknown error'
+      };
+      tasks = [...tasks];
+    }
+  }
+
   function getStatusLabel(task: TaskStatus): string {
     switch (task.status) {
       case 'pending': return 'Waiting';
       case 'downloading':
-        if (task.mediaProgress && task.mediaProgress.total > 1) {
+        if (task.type === 'post' && task.mediaProgress && task.mediaProgress.total > 1) {
           return `Downloading ${task.mediaProgress.current}/${task.mediaProgress.total}`;
         }
         return 'Downloading';
@@ -346,7 +582,7 @@
         <path d="M21 13v1a4 4 0 01-4 4H3"/>
       </svg>
     </div>
-    <h2>Claiming your posts</h2>
+    <h2>Claiming your {isArticlesMode ? 'articles' : 'posts'}</h2>
     <p class="subtitle">Your content is being published to Primal</p>
   </div>
 
@@ -356,7 +592,7 @@
         <span class="current">{completedCount}</span>
         <span class="divider">/</span>
         <span class="total">{totalCount}</span>
-        <span class="label">posts</span>
+        <span class="label">{isArticlesMode ? 'articles' : 'posts'}</span>
       </div>
       <span class="progress-percent">{Math.round(progressPercent)}%</span>
     </div>
@@ -391,8 +627,18 @@
         </div>
         <div class="task-info">
           <div class="task-caption-row">
-            <span class="task-type-icon" class:reel={task.post.post_type === 'reel'}>{getPostTypeIcon(task.post.post_type)}</span>
-            <span class="task-caption">{task.post.caption?.slice(0, 30) || 'Untitled'}{(task.post.caption?.length ?? 0) > 30 ? '...' : ''}</span>
+            {#if task.type === 'article'}
+              <span class="task-type-icon article">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                  <polyline points="14 2 14 8 20 8"/>
+                </svg>
+              </span>
+              <span class="task-caption">{task.article.title?.slice(0, 30) || 'Untitled'}{(task.article.title?.length ?? 0) > 30 ? '...' : ''}</span>
+            {:else}
+              <span class="task-type-icon" class:reel={task.post.post_type === 'reel'}>{getPostTypeIcon(task.post.post_type)}</span>
+              <span class="task-caption">{task.post.caption?.slice(0, 30) || 'Untitled'}{(task.post.caption?.length ?? 0) > 30 ? '...' : ''}</span>
+            {/if}
           </div>
           <span class="task-label">{getStatusLabel(task)}</span>
         </div>
@@ -410,7 +656,7 @@
         <line x1="12" y1="8" x2="12" y2="12"/>
         <line x1="12" y1="16" x2="12.01" y2="16"/>
       </svg>
-      <span>{errorCount} post{errorCount !== 1 ? 's' : ''} failed. They will be skipped.</span>
+      <span>{errorCount} {isArticlesMode ? 'article' : 'post'}{errorCount !== 1 ? 's' : ''} failed. They will be skipped.</span>
     </div>
   {/if}
 
@@ -635,6 +881,12 @@
 
   .task-type-icon.reel {
     color: var(--accent);
+  }
+
+  .task-type-icon.article {
+    color: var(--accent);
+    display: flex;
+    align-items: center;
   }
 
   .task-caption {
