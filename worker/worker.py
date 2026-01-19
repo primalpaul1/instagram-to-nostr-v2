@@ -73,7 +73,7 @@ from db import (
 # Configuration
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 BLOSSOM_SERVER = os.getenv("BLOSSOM_SERVER", "https://blossom.primal.net")
-CONCURRENCY = int(os.getenv("CONCURRENCY", "3"))
+CONCURRENCY = int(os.getenv("CONCURRENCY", "6"))
 MAX_RETRIES = int(os.getenv("MAX_RETRIES", "3"))
 POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "5"))
 NOSTR_RELAYS = os.getenv(

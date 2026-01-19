@@ -29,6 +29,7 @@ app.add_middleware(
 
 BLOSSOM_SERVER = os.getenv("BLOSSOM_SERVER", "https://blossom.primal.net")
 RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY", "")
+MAX_INSTAGRAM_POSTS = int(os.getenv("MAX_INSTAGRAM_POSTS", "100"))
 
 
 class MediaItem(BaseModel):
@@ -302,6 +303,10 @@ async def fetch_videos_stream(handle: str):
                     # Send progress update with all content
                     yield f"data: {json.dumps({'progress': True, 'count': len(posts), 'videos': videos, 'posts': posts, 'profile': profile})}\n\n"
 
+                    # Stop if we've hit the post limit
+                    if len(posts) >= MAX_INSTAGRAM_POSTS:
+                        break
+
                     # Check for next page
                     page_info = result.get("page_info", {})
                     has_next = page_info.get("has_next_page", False)
@@ -451,6 +456,10 @@ async def fetch_videos(request: FetchVideosRequest):
                         duration=node.get("video_duration"),
                         thumbnail_url=thumbnail_url,
                     ))
+
+                # Stop if we've hit the post limit
+                if len(videos) >= MAX_INSTAGRAM_POSTS:
+                    break
 
                 # Check for next page
                 page_info = result.get("page_info", {})
