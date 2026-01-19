@@ -48,7 +48,7 @@
   let activeIndices: Set<number> = new Set();
 
   const BLOSSOM_SERVER = 'https://blossom.primal.net';
-  const CONCURRENCY = 2; // Parallel downloads/uploads, signing is serialized via queue
+  const CONCURRENCY = 4; // Parallel downloads/uploads, signing is serialized via queue
   const SIGN_TIMEOUT = 30000; // 30 second timeout for signing
   const SIGN_RETRIES = 2; // Retry failed signs
 
