@@ -155,6 +155,10 @@
     error = '';
     tasks = [];
     publishedEvents = [];
+    // Clear any pending connection state
+    if (typeof window !== 'undefined') {
+      sessionStorage.removeItem('nip46_pending_rss');
+    }
   }
 
   async function fetchFeed() {
@@ -266,8 +270,25 @@
 
   function proceedToConnect() {
     if (selectedCount === 0) return;
+
+    // If already connected to Primal, skip connect step and go directly to publishing
+    if (connectionStatus === 'connected' && nip46Connection && nip46Pubkey) {
+      startPublishing();
+      return;
+    }
+
     step = 'connect';
-    initNIP46Connection();
+    // Connection is already initialized on page load, just update sessionStorage with articles
+    if (typeof window !== 'undefined' && localKeypair) {
+      sessionStorage.setItem('nip46_pending_rss', JSON.stringify({
+        localSecretKey: localKeypair.secretKey,
+        localPublicKey: localKeypair.publicKey,
+        secret: connectionSecret,
+        articles: articles,
+        feedMeta: feedMeta,
+        feedUrl: feedUrl
+      }));
+    }
   }
 
   async function initNIP46Connection() {
@@ -281,11 +302,15 @@
       const callbackUrl = typeof window !== 'undefined' ? window.location.href : undefined;
       mobileConnectionURI = createConnectionURI(localKeypair.publicKey, connectionSecret, true, callbackUrl);
 
+      // Save connection state for redirect recovery (articles saved separately in proceedToConnect)
       if (typeof window !== 'undefined') {
         sessionStorage.setItem('nip46_pending_rss', JSON.stringify({
           localSecretKey: localKeypair.secretKey,
           localPublicKey: localKeypair.publicKey,
-          secret: connectionSecret
+          secret: connectionSecret,
+          articles: articles,
+          feedMeta: feedMeta,
+          feedUrl: feedUrl
         }));
       }
 
@@ -532,9 +557,20 @@
   onMount(async () => {
     // Check for pending NIP-46 connection from redirect
     const pending = sessionStorage.getItem('nip46_pending_rss');
-    if (pending && step === 'connect') {
+    if (pending) {
       try {
-        const { localSecretKey, localPublicKey, secret } = JSON.parse(pending);
+        const data = JSON.parse(pending);
+        const { localSecretKey, localPublicKey, secret } = data;
+
+        // Restore page state
+        if (data.articles && data.articles.length > 0) {
+          articles = data.articles;
+          feedMeta = data.feedMeta || null;
+          feedUrl = data.feedUrl || '';
+          step = 'select';
+        }
+
+        // Restore connection state and resume waiting
         localKeypair = { secretKey: localSecretKey, publicKey: localPublicKey };
         connectionSecret = secret;
         connectionURI = createConnectionURI(localPublicKey, secret, false);
@@ -545,7 +581,12 @@
       } catch (err) {
         console.error('Failed to restore NIP-46 connection:', err);
         sessionStorage.removeItem('nip46_pending_rss');
+        // Initialize fresh connection
+        await initNIP46Connection();
       }
+    } else {
+      // Initialize NIP-46 connection on page load (like HandleStep)
+      await initNIP46Connection();
     }
   });
 
@@ -604,6 +645,55 @@
             <li><code>yourblog.com/feed</code></li>
             <li><code>medium.com/feed/@username</code></li>
           </ul>
+        </div>
+
+        <div class="divider">
+          <span>or connect your Nostr identity</span>
+        </div>
+
+        <div class="primal-section">
+          <div class="qr-container">
+            {#if connectionStatus === 'connected'}
+              <div class="connected-state">
+                <div class="success-ring">
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                    <path d="M20 6L9 17l-5-5"/>
+                  </svg>
+                </div>
+                <span class="connected-label">Connected</span>
+                <code class="pubkey">{hexToNpub(nip46Pubkey || '').slice(0, 24)}...</code>
+              </div>
+            {:else if connectionStatus === 'error'}
+              <div class="error-state">
+                <p class="error-text">{connectionError}</p>
+                <button class="retry-btn" on:click={retryConnection}>Try Again</button>
+              </div>
+            {:else if qrCodeDataUrl}
+              <a href={mobileConnectionURI} class="primal-login-btn">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
+                </svg>
+                Log in with Primal
+              </a>
+
+              <div class="qr-divider">
+                <span>or scan QR code</span>
+              </div>
+
+              <div class="qr-wrapper">
+                <img src={qrCodeDataUrl} alt="Scan with Primal" class="qr-code" />
+              </div>
+              <div class="waiting-indicator">
+                <div class="pulse-dot"></div>
+                <span>Waiting for connection...</span>
+              </div>
+            {:else}
+              <div class="loading-state">
+                <div class="qr-spinner"></div>
+                <span>Generating QR code...</span>
+              </div>
+            {/if}
+          </div>
         </div>
       </div>
 
@@ -681,11 +771,30 @@
         </div>
 
         <div class="actions">
-          <div class="total-selected">
-            <strong>{selectedCount}</strong> articles selected
+          <div class="action-info">
+            <div class="total-selected">
+              <strong>{selectedCount}</strong> articles selected
+            </div>
+            {#if connectionStatus === 'connected'}
+              <div class="connection-badge connected">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M20 6L9 17l-5-5"/>
+                </svg>
+                Connected to Primal
+              </div>
+            {:else if connectionStatus === 'waiting'}
+              <div class="connection-badge waiting">
+                <div class="mini-spinner"></div>
+                Connecting...
+              </div>
+            {/if}
           </div>
           <button class="primary-btn" disabled={selectedCount === 0} on:click={proceedToConnect}>
-            Continue
+            {#if connectionStatus === 'connected'}
+              Publish Articles
+            {:else}
+              Continue
+            {/if}
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M5 12h14M12 5l7 7-7 7"/>
             </svg>
@@ -1007,6 +1116,209 @@
     font-family: monospace;
   }
 
+  .divider {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin: 2rem 0;
+  }
+
+  .divider::before,
+  .divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  .divider span {
+    color: var(--text-muted);
+    font-size: 0.8125rem;
+    white-space: nowrap;
+  }
+
+  .primal-section {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 0.875rem;
+    padding: 1.5rem;
+  }
+
+  .qr-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 280px;
+    justify-content: center;
+  }
+
+  .qr-wrapper {
+    padding: 1rem;
+    background: white;
+    border-radius: 1rem;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2);
+  }
+
+  .qr-code {
+    display: block;
+    width: 180px;
+    height: 180px;
+    border-radius: 0.5rem;
+  }
+
+  .waiting-indicator {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 1rem;
+    color: var(--text-secondary);
+    font-size: 0.8125rem;
+  }
+
+  .pulse-dot {
+    width: 8px;
+    height: 8px;
+    background: var(--accent);
+    border-radius: 50%;
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(0.8); }
+  }
+
+  .loading-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+  }
+
+  .qr-spinner {
+    width: 2.5rem;
+    height: 2.5rem;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+
+  .connected-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .success-ring {
+    width: 4rem;
+    height: 4rem;
+    background: linear-gradient(135deg, var(--success), #00A855);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    animation: scaleIn 0.3s ease-out;
+  }
+
+  @keyframes scaleIn {
+    from { transform: scale(0.5); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+  }
+
+  .connected-label {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--success);
+  }
+
+  .pubkey {
+    font-size: 0.75rem;
+    background: var(--bg-primary);
+    padding: 0.5rem 1rem;
+    border-radius: 0.5rem;
+    color: var(--text-secondary);
+  }
+
+  .error-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+    text-align: center;
+  }
+
+  .error-text {
+    color: var(--error);
+    font-size: 0.875rem;
+  }
+
+  .retry-btn {
+    padding: 0.5rem 1.25rem;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .retry-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  .primal-login-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    width: 100%;
+    padding: 0.875rem 1.25rem;
+    background: linear-gradient(135deg, #8B5CF6 0%, #A855F7 50%, #D946EF 100%);
+    border: none;
+    border-radius: 0.75rem;
+    color: white;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+    transition: all 0.2s ease;
+    box-shadow: 0 4px 14px rgba(139, 92, 246, 0.4);
+  }
+
+  .primal-login-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(139, 92, 246, 0.5);
+  }
+
+  .primal-login-btn:active {
+    transform: translateY(0);
+  }
+
+  .qr-divider {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin: 1rem 0;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    width: 100%;
+  }
+
+  .qr-divider::before,
+  .qr-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
   .fetching-step, .connect-step, .publishing-step, .done-step {
     text-align: center;
     padding: 2rem 0;
@@ -1223,6 +1535,37 @@
 
   .actions .primary-btn {
     width: auto;
+  }
+
+  .action-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .connection-badge {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+  }
+
+  .connection-badge.connected {
+    color: var(--success);
+  }
+
+  .connection-badge.waiting {
+    color: var(--text-muted);
+  }
+
+  .mini-spinner {
+    width: 0.75rem;
+    height: 0.75rem;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
   }
 
   .qr-section {
