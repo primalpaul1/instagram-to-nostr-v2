@@ -21,7 +21,7 @@
   // Migration data from API
   interface MigrationPost {
     id: number;
-    post_type: 'reel' | 'image' | 'carousel' | 'video';
+    post_type: 'reel' | 'image' | 'carousel' | 'video' | 'text';
     caption: string | null;
     original_date: string | null;
     media_items: string;
@@ -520,11 +520,15 @@
       const blossomUrls: string[] = post.blossom_urls ? JSON.parse(post.blossom_urls) : [];
       const mediaItems: { url: string; media_type: string; width?: number; height?: number }[] = JSON.parse(post.media_items);
 
-      if (blossomUrls.length === 0) {
+      // For posts with media, require blossom URLs
+      // For text-only posts (no media items), proceed without media
+      const isTextOnly = post.post_type === 'text' || mediaItems.length === 0;
+
+      if (!isTextOnly && blossomUrls.length === 0) {
         throw new Error('No uploaded media URLs');
       }
 
-      // Build media uploads for event
+      // Build media uploads for event (empty for text-only posts)
       const mediaUploads: MediaUpload[] = blossomUrls.map((url, i) => {
         const item = mediaItems[i] || {};
         const sha256 = extractSha256FromBlossomUrl(url);
@@ -540,7 +544,7 @@
         };
       });
 
-      // Create and sign event
+      // Create and sign event (works for both media and text-only posts)
       const eventTemplate = createMultiMediaPostEvent(
         publicKeyHex,
         mediaUploads,
