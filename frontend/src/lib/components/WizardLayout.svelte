@@ -4,9 +4,11 @@
 
 <div class="app-container">
   <header>
-    <h1>Own Your Posts</h1>
+    <div class="header-row">
+      <h1>Own Your Posts</h1>
+      <a href="/why" class="why-link">Why Primal?</a>
+    </div>
     <p class="tagline">Bring your content to Primal. Keep it forever.</p>
-    <a href="/why" class="why-link">Why Primal?</a>
   </header>
 
   <main>
@@ -42,7 +44,15 @@
 
   header {
     text-align: center;
-    margin-bottom: 2.5rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .header-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    margin-bottom: 0.25rem;
   }
 
   h1 {
@@ -53,27 +63,24 @@
     -webkit-text-fill-color: transparent;
     background-clip: text;
     letter-spacing: -0.02em;
-    margin-bottom: 0.5rem;
   }
 
   .tagline {
     color: var(--text-secondary);
-    font-size: 1rem;
+    font-size: 0.9375rem;
   }
 
   .why-link {
-    display: inline-block;
-    margin-top: 0.75rem;
-    color: var(--accent);
-    font-size: 0.875rem;
+    color: var(--text-muted);
+    font-size: 0.8125rem;
     font-weight: 500;
     text-decoration: none;
-    transition: opacity 0.2s;
+    transition: color 0.2s;
+    white-space: nowrap;
   }
 
   .why-link:hover {
-    opacity: 0.8;
-    text-decoration: underline;
+    color: var(--accent);
   }
 
   main {
@@ -171,12 +178,24 @@
       padding: 1rem;
     }
 
+    header {
+      margin-bottom: 1rem;
+    }
+
+    .header-row {
+      gap: 0.75rem;
+    }
+
     h1 {
-      font-size: 1.5rem;
+      font-size: 1.375rem;
+    }
+
+    .tagline {
+      font-size: 0.875rem;
     }
 
     .content-card {
-      padding: 1.5rem;
+      padding: 1.25rem;
       border-radius: 0.75rem;
     }
   }

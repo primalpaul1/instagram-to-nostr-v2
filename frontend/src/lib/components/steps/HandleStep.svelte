@@ -582,19 +582,19 @@
 
   .hero-section {
     text-align: center;
-    margin-bottom: 2rem;
+    margin-bottom: 1.25rem;
   }
 
   h2 {
-    font-size: 1.5rem;
+    font-size: 1.25rem;
     font-weight: 600;
-    margin-bottom: 0.5rem;
+    margin-bottom: 0.375rem;
     letter-spacing: -0.02em;
   }
 
   .subtitle {
     color: var(--text-secondary);
-    font-size: 0.9375rem;
+    font-size: 0.875rem;
   }
 
   .platform-selector {
@@ -607,16 +607,20 @@
   .platform-btn {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.625rem 1rem;
+    gap: 0.375rem;
+    padding: 0.5rem 0.75rem;
     border: 1px solid var(--border-light);
     border-radius: 0.5rem;
     background: transparent;
     color: var(--text-secondary);
-    font-size: 0.875rem;
+    font-size: 0.8125rem;
     font-weight: 500;
     cursor: pointer;
     transition: all 0.15s ease;
+  }
+
+  .platform-btn svg {
+    flex-shrink: 0;
   }
 
   .platform-btn:hover:not(:disabled) {
@@ -634,15 +638,33 @@
     cursor: not-allowed;
   }
 
-  /* Mobile responsive styles for platform selector */
-  @media (max-width: 400px) {
+  /* Mobile responsive styles - keep all 4 buttons on one line */
+  @media (max-width: 480px) {
+    .platform-btn {
+      padding: 0.5rem 0.5rem;
+      font-size: 0.75rem;
+      gap: 0.25rem;
+    }
+
+    .platform-btn svg {
+      width: 16px;
+      height: 16px;
+    }
+  }
+
+  @media (max-width: 380px) {
     .platform-selector {
-      flex-wrap: wrap;
+      gap: 0.25rem;
     }
 
     .platform-btn {
-      padding: 0.5rem 0.75rem;
-      font-size: 0.8125rem;
+      padding: 0.4rem 0.4rem;
+      font-size: 0.6875rem;
+    }
+
+    .platform-btn svg {
+      width: 14px;
+      height: 14px;
     }
   }
 
@@ -781,7 +803,7 @@
     display: flex;
     align-items: center;
     gap: 1rem;
-    margin: 2rem 0;
+    margin: 1.5rem 0;
   }
 
   .divider::before,
@@ -802,7 +824,7 @@
     background: var(--bg-tertiary);
     border: 1px solid var(--border);
     border-radius: 0.875rem;
-    padding: 1.5rem;
+    padding: 1.25rem;
   }
 
   .primal-header {
@@ -823,22 +845,22 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    min-height: 280px;
+    min-height: 240px;
     justify-content: center;
   }
 
   .qr-wrapper {
-    padding: 1rem;
+    padding: 0.75rem;
     background: white;
-    border-radius: 1rem;
+    border-radius: 0.75rem;
     box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2);
   }
 
   .qr-code {
     display: block;
-    width: 200px;
-    height: 200px;
-    border-radius: 0.5rem;
+    width: 160px;
+    height: 160px;
+    border-radius: 0.375rem;
   }
 
   .waiting-indicator {
@@ -949,32 +971,32 @@
   }
 
   .how-it-works {
-    margin-top: 2rem;
-    padding-top: 1.5rem;
+    margin-top: 1.5rem;
+    padding-top: 1rem;
     border-top: 1px solid var(--border);
   }
 
   .how-it-works h3 {
-    font-size: 0.8125rem;
+    font-size: 0.75rem;
     font-weight: 600;
     color: var(--text-muted);
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    margin-bottom: 1rem;
+    margin-bottom: 0.75rem;
   }
 
   .steps-list {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: 0.5rem;
   }
 
   .step-item {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
+    gap: 0.625rem;
     color: var(--text-secondary);
-    font-size: 0.875rem;
+    font-size: 0.8125rem;
   }
 
   .step-icon {
@@ -1044,31 +1066,31 @@
   }
 
   .other-options {
-    margin-top: 2rem;
-    padding-top: 1.5rem;
+    margin-top: 1.5rem;
+    padding-top: 1rem;
     border-top: 1px solid var(--border);
   }
 
   .other-options h3 {
-    font-size: 0.8125rem;
+    font-size: 0.75rem;
     font-weight: 600;
     color: var(--text-muted);
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    margin-bottom: 1rem;
+    margin-bottom: 0.75rem;
   }
 
   .option-buttons {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: 0.5rem;
   }
 
   .option-btn {
     display: flex;
     align-items: center;
-    gap: 1rem;
-    padding: 1rem 1.25rem;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
     background: var(--bg-tertiary);
     border: 1px solid var(--border-light);
     border-radius: 0.75rem;
