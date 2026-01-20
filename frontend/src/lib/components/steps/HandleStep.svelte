@@ -358,7 +358,7 @@
       <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
         <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/>
       </svg>
-      Instagram
+      Insta
     </button>
     <button
       type="button"
@@ -382,7 +382,7 @@
       <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
         <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
       </svg>
-      Twitter/X
+      Twitter
     </button>
     <button
       type="button"
@@ -392,9 +392,9 @@
       disabled={loading}
     >
       <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M6.18 15.64a2.18 2.18 0 0 1 2.18 2.18C8.36 19 7.38 20 6.18 20C5 20 4 19 4 17.82a2.18 2.18 0 0 1 2.18-2.18M4 4.44A15.56 15.56 0 0 1 19.56 20h-2.83A12.73 12.73 0 0 0 4 7.27V4.44m0 5.66a9.9 9.9 0 0 1 9.9 9.9h-2.83A7.07 7.07 0 0 0 4 12.93V10.1Z"/>
+        <path d="M22.539 8.242H1.46V5.406h21.08v2.836zM1.46 10.812V24L12 18.11 22.54 24V10.812H1.46zM22.54 0H1.46v2.836h21.08V0z"/>
       </svg>
-      RSS
+      Blog
     </button>
   </div>
 
@@ -527,28 +527,6 @@
     </div>
   </div>
 
-  <div class="how-it-works">
-    <h3>How it works</h3>
-    <div class="steps-list">
-      <div class="step-item">
-        <div class="step-icon">1</div>
-        <span>We find your public posts</span>
-      </div>
-      <div class="step-item">
-        <div class="step-icon">2</div>
-        <span>You choose which ones to keep</span>
-      </div>
-      <div class="step-item">
-        <div class="step-icon">3</div>
-        <span>Your media is stored permanently</span>
-      </div>
-      <div class="step-item">
-        <div class="step-icon">4</div>
-        <span>You own your posts on Primal</span>
-      </div>
-    </div>
-  </div>
-
   <div class="other-options">
     <h3>Other options</h3>
     <div class="option-buttons">
@@ -570,6 +548,28 @@
           <span class="option-desc">Create a nostr profile for someone else</span>
         </div>
       </a>
+    </div>
+  </div>
+
+  <div class="how-it-works">
+    <h3>How it works</h3>
+    <div class="steps-list">
+      <div class="step-item">
+        <div class="step-icon">1</div>
+        <span>We find your public posts</span>
+      </div>
+      <div class="step-item">
+        <div class="step-icon">2</div>
+        <span>You choose which ones to keep</span>
+      </div>
+      <div class="step-item">
+        <div class="step-icon">3</div>
+        <span>Your media is stored permanently</span>
+      </div>
+      <div class="step-item">
+        <div class="step-icon">4</div>
+        <span>You own your posts on Primal</span>
+      </div>
     </div>
   </div>
 </div>
