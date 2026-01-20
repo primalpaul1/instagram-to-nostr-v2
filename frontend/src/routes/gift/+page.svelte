@@ -88,6 +88,17 @@
   let fetchedPostsAddon: any[] = [];
   let addedPostsPlatform: 'instagram' | 'tiktok' | 'twitter' | null = null; // Track which platform posts came from
 
+  // Add more posts section (for posts-first flow - e.g., add Instagram after Twitter)
+  let showMorePostsSection = false;
+  let morePostsHandle = '';
+  let morePostsPlatform: 'instagram' | 'tiktok' | 'twitter' = 'instagram';
+  let morePostsFetching = false;
+  let morePostsError = '';
+  let morePostsFetchCount = 0;
+  let morePostsAbortController: AbortController | null = null;
+  let fetchedMorePosts: any[] = [];
+  let additionalPostSources: Array<{ platform: 'instagram' | 'tiktok' | 'twitter'; handle: string }> = [];
+
   // Manual post adding
   let showAddModal = false;
   let manualVideoUrl = '';
@@ -554,6 +565,103 @@
     handle = '';
     addedPostsPlatform = null;
     showPostsSection = false;
+  }
+
+  // Fetch more posts to add to existing posts (for posts-first flow)
+  async function fetchMorePosts() {
+    if (!morePostsHandle.trim()) return;
+
+    morePostsFetching = true;
+    morePostsError = '';
+    fetchedMorePosts = [];
+    morePostsFetchCount = 0;
+    morePostsAbortController = new AbortController();
+
+    try {
+      const cleanHandle = morePostsHandle.replace('@', '').trim();
+      let endpoint: string;
+      if (morePostsPlatform === 'tiktok') {
+        endpoint = `/api/tiktok-stream/${encodeURIComponent(cleanHandle)}`;
+      } else if (morePostsPlatform === 'twitter') {
+        endpoint = `/api/twitter-stream/${encodeURIComponent(cleanHandle)}`;
+      } else {
+        endpoint = `/api/videos-stream/${encodeURIComponent(cleanHandle)}`;
+      }
+
+      const response = await fetch(endpoint, {
+        signal: morePostsAbortController.signal
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch content');
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error('Streaming not supported');
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+
+              if (data.error) {
+                morePostsError = data.error;
+                break;
+              }
+
+              if (data.posts) {
+                fetchedMorePosts = data.posts.map((p: any, i: number) => ({
+                  id: `more_${morePostsPlatform}_${p.id || i}`,
+                  post_type: p.post_type || 'image',
+                  caption: p.caption || '',
+                  original_date: p.original_date,
+                  thumbnail_url: p.thumbnail_url,
+                  media_items: p.media_items || [],
+                  selected: true
+                }));
+                morePostsFetchCount = fetchedMorePosts.length;
+              }
+            } catch {
+              // Ignore JSON parse errors
+            }
+          }
+        }
+      }
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') {
+        morePostsFetching = false;
+        return;
+      }
+      morePostsError = err instanceof Error ? err.message : 'An error occurred';
+    } finally {
+      morePostsFetching = false;
+      morePostsAbortController = null;
+    }
+  }
+
+  function pauseMorePostsFetch() {
+    if (!morePostsAbortController || fetchedMorePosts.length === 0) return;
+    morePostsAbortController.abort();
+    // Merge with existing posts
+    posts = [...posts, ...fetchedMorePosts.map((p: any) => ({ ...p, selected: true }))];
+    additionalPostSources = [...additionalPostSources, { platform: morePostsPlatform, handle: morePostsHandle.replace('@', '').trim() }];
+    morePostsFetching = false;
+    showMorePostsSection = false;
+    morePostsHandle = '';
+    fetchedMorePosts = [];
   }
 
   function toggleArticle(id: string) {
@@ -1323,6 +1431,96 @@
               <div class="empty-state">No {activeTab === 'reels' ? 'reels' : 'posts'} found</div>
             {/each}
           </div>
+        {/if}
+
+        <!-- Optional Add More Posts Section (only when posts are primary) -->
+        {#if primaryContentType === 'posts'}
+        <div class="more-posts-section">
+          {#if !showMorePostsSection}
+            <button class="add-more-posts-btn" on:click={() => showMorePostsSection = true}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 5v14M5 12h14"/>
+              </svg>
+              Add More Posts (Optional)
+            </button>
+          {:else}
+            <div class="more-posts-input-section">
+              <div class="more-posts-header">
+                <h3>Add More Posts</h3>
+                <button class="text-btn" on:click={() => { showMorePostsSection = false; morePostsHandle = ''; }}>Cancel</button>
+              </div>
+
+              {#if morePostsError}
+                <div class="error-banner">{morePostsError}</div>
+              {/if}
+
+              {#if morePostsFetching}
+                <div class="more-posts-fetching">
+                  <div class="spinner-small"></div>
+                  <span>Fetching posts... ({morePostsFetchCount} found)</span>
+                  {#if fetchedMorePosts.length > 0}
+                    <button class="text-btn" on:click={pauseMorePostsFetch}>
+                      Add {fetchedMorePosts.length} posts
+                    </button>
+                  {/if}
+                </div>
+              {:else}
+                <div class="more-posts-platform-toggle">
+                  <button
+                    type="button"
+                    class="platform-btn-small"
+                    class:active={morePostsPlatform === 'instagram'}
+                    on:click={() => morePostsPlatform = 'instagram'}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069z"/>
+                    </svg>
+                    Instagram
+                  </button>
+                  <button
+                    type="button"
+                    class="platform-btn-small"
+                    class:active={morePostsPlatform === 'tiktok'}
+                    on:click={() => morePostsPlatform = 'tiktok'}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-5.2 1.74 2.89 2.89 0 0 1 2.31-4.64 2.93 2.93 0 0 1 .88.13V9.4a6.84 6.84 0 0 0-1-.05A6.33 6.33 0 0 0 5 20.1a6.34 6.34 0 0 0 10.86-4.43v-7a8.16 8.16 0 0 0 4.77 1.52v-3.4a4.85 4.85 0 0 1-1-.1z"/>
+                    </svg>
+                    TikTok
+                  </button>
+                  <button
+                    type="button"
+                    class="platform-btn-small"
+                    class:active={morePostsPlatform === 'twitter'}
+                    on:click={() => morePostsPlatform = 'twitter'}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+                    </svg>
+                    X
+                  </button>
+                </div>
+                <div class="input-group">
+                  <label for="more-posts-handle">{morePostsPlatform === 'tiktok' ? 'TikTok' : morePostsPlatform === 'twitter' ? 'X' : 'Instagram'} Handle</label>
+                  <div class="input-wrapper">
+                    <span class="at-symbol">@</span>
+                    <input
+                      id="more-posts-handle"
+                      type="text"
+                      bind:value={morePostsHandle}
+                      placeholder="username"
+                      autocomplete="off"
+                      autocapitalize="off"
+                    />
+                  </div>
+                </div>
+                <button class="secondary-btn" disabled={!morePostsHandle.trim()} on:click={fetchMorePosts}>
+                  Fetch Posts
+                </button>
+              {/if}
+            </div>
+          {/if}
+        </div>
         {/if}
 
         <!-- Optional Articles Section (only when posts are primary) -->
@@ -3117,5 +3315,76 @@
       font-size: 0.625rem;
       padding: 0.0625rem 0.25rem;
     }
+  }
+
+  /* More Posts Section (for posts-first flow) */
+  .more-posts-section {
+    margin-top: 1.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border);
+  }
+
+  .add-more-posts-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 1rem;
+    background: transparent;
+    border: 2px dashed var(--border-light);
+    border-radius: 0.75rem;
+    color: var(--text-secondary);
+    font-size: 0.9375rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .add-more-posts-btn:hover {
+    border-color: #a855f7;
+    color: #a855f7;
+    background: rgba(168, 85, 247, 0.05);
+  }
+
+  .more-posts-input-section {
+    padding: 1rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 0.75rem;
+  }
+
+  .more-posts-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+  }
+
+  .more-posts-header h3 {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 1rem;
+    font-weight: 600;
+    margin: 0;
+    color: var(--text-primary);
+  }
+
+  .more-posts-fetching {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    background: var(--bg-primary);
+    border-radius: 0.5rem;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+  }
+
+  .more-posts-platform-toggle {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
   }
 </style>
