@@ -12,11 +12,17 @@
     type NIP46Connection
   } from '$lib/nip46';
 
-  export let defaultPlatform: 'instagram' | 'tiktok' | 'rss' = 'instagram';
+  export let defaultPlatform: 'instagram' | 'tiktok' | 'twitter' | 'rss' = 'instagram';
 
   let handle = '';
   let feedUrl = '';
-  let platform: 'instagram' | 'tiktok' | 'rss' = defaultPlatform;
+  let platform: 'instagram' | 'tiktok' | 'twitter' | 'rss' = defaultPlatform;
+
+  // Twitter-specific state
+  let cookieFiles: FileList | null = null;
+  let twitterSessionId: string | null = null;
+  let cookiesUploaded = false;
+  let cookieUploadError = '';
   let loading = false;
   let videoCount = 0;
   let articleCount = 0;
@@ -38,6 +44,9 @@
   let pendingConnection: NIP46Connection | null = null;
 
   onMount(async () => {
+    // Generate a session ID for Twitter cookies
+    twitterSessionId = crypto.randomUUID();
+
     // Check for pending NIP-46 connection from redirect
     const pendingConnection = sessionStorage.getItem('nip46_pending_main');
     if (pendingConnection) {
@@ -63,6 +72,10 @@
   onDestroy(() => {
     if (pendingConnection && $wizard.authMode !== 'nip46') {
       closeConnection(pendingConnection);
+    }
+    // Clean up Twitter cookies on component destroy
+    if (twitterSessionId && cookiesUploaded) {
+      fetch(`/api/twitter-cookies?session_id=${twitterSessionId}`, { method: 'DELETE' }).catch(() => {});
     }
   });
 
@@ -131,12 +144,53 @@
     await initNIP46Connection();
   }
 
+  async function uploadTwitterCookies(): Promise<boolean> {
+    if (!cookieFiles || cookieFiles.length === 0 || !twitterSessionId) {
+      cookieUploadError = 'Please select a cookies.txt file';
+      return false;
+    }
+
+    cookieUploadError = '';
+
+    try {
+      const formData = new FormData();
+      formData.append('cookies', cookieFiles[0]);
+
+      const response = await fetch(`/api/twitter-cookies?session_id=${twitterSessionId}`, {
+        method: 'POST',
+        body: formData
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        cookieUploadError = data.error || 'Failed to upload cookies';
+        return false;
+      }
+
+      cookiesUploaded = true;
+      return true;
+    } catch (err) {
+      cookieUploadError = err instanceof Error ? err.message : 'Failed to upload cookies';
+      return false;
+    }
+  }
+
   async function handleSubmit() {
     // Validate input based on platform
     if (platform === 'rss') {
       if (!feedUrl.trim()) return;
     } else {
       if (!handle.trim()) return;
+    }
+
+    // For Twitter, upload cookies first
+    if (platform === 'twitter') {
+      if (!cookieFiles || cookieFiles.length === 0) {
+        cookieUploadError = 'Please upload your Twitter cookies.txt file';
+        return;
+      }
+      const uploaded = await uploadTwitterCookies();
+      if (!uploaded) return;
     }
 
     loading = true;
@@ -158,6 +212,9 @@
       } else if (platform === 'tiktok') {
         const cleanHandle = handle.replace('@', '').trim();
         endpoint = `/api/tiktok-stream/${encodeURIComponent(cleanHandle)}`;
+      } else if (platform === 'twitter') {
+        const cleanHandle = handle.replace('@', '').trim();
+        endpoint = `/api/twitter-stream/${encodeURIComponent(cleanHandle)}?session_id=${twitterSessionId}`;
       } else {
         const cleanHandle = handle.replace('@', '').trim();
         endpoint = `/api/videos-stream/${encodeURIComponent(cleanHandle)}`;
@@ -254,7 +311,7 @@
 
                   const cleanHandle = handle.replace('@', '').trim();
                   wizard.setContentType('posts');
-                  wizard.setSourceType(platform === 'tiktok' ? 'tiktok' : 'instagram');
+                  wizard.setSourceType(platform === 'tiktok' ? 'tiktok' : platform === 'twitter' ? 'twitter' : 'instagram');
                   wizard.setHandle(cleanHandle);
                   wizard.setVideos((data.videos || []).map((v: any) => ({ ...v, selected: false })));
                   wizard.setPosts((data.posts || []).map((p: any) => ({ ...p, selected: false })));
@@ -319,7 +376,7 @@
       abortController.abort();
 
       wizard.setContentType('posts');
-      wizard.setSourceType(platform === 'tiktok' ? 'tiktok' : 'instagram');
+      wizard.setSourceType(platform === 'tiktok' ? 'tiktok' : platform === 'twitter' ? 'twitter' : 'instagram');
       wizard.setHandle(cleanHandle);
       wizard.setVideos(fetchedVideos.map((v: any) => ({ ...v, selected: false })));
       wizard.setPosts(fetchedPosts.map((p: any) => ({ ...p, selected: false })));
@@ -338,7 +395,7 @@
       <h2>Enter your RSS feed URL</h2>
       <p class="subtitle">We'll import your articles so you can own them forever on Primal</p>
     {:else}
-      <h2>Enter your {platform === 'tiktok' ? 'TikTok' : 'Instagram'} handle</h2>
+      <h2>Enter your {platform === 'tiktok' ? 'TikTok' : platform === 'twitter' ? 'Twitter/X' : 'Instagram'} handle</h2>
       <p class="subtitle">We'll find your posts so you can own them forever on Primal</p>
     {/if}
   </div>
@@ -367,6 +424,18 @@
         <path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-5.2 1.74 2.89 2.89 0 0 1 2.31-4.64 2.93 2.93 0 0 1 .88.13V9.4a6.84 6.84 0 0 0-1-.05A6.33 6.33 0 0 0 5 20.1a6.34 6.34 0 0 0 10.86-4.43v-7a8.16 8.16 0 0 0 4.77 1.52v-3.4a4.85 4.85 0 0 1-1-.1z"/>
       </svg>
       TikTok
+    </button>
+    <button
+      type="button"
+      class="platform-btn"
+      class:active={platform === 'twitter'}
+      on:click={() => platform = 'twitter'}
+      disabled={loading}
+    >
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+      </svg>
+      Twitter/X
     </button>
     <button
       type="button"
@@ -416,6 +485,39 @@
         />
         {#if loading}
           <div class="input-spinner"></div>
+        {/if}
+      </div>
+    {/if}
+
+    {#if platform === 'twitter'}
+      <div class="cookie-upload">
+        <div class="cookie-instructions">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+            <path d="M12 16v-4M12 8h.01"/>
+          </svg>
+          <span>Export cookies.txt from your browser while logged into Twitter/X</span>
+        </div>
+        <label class="cookie-input" class:has-file={cookieFiles && cookieFiles.length > 0}>
+          <input
+            type="file"
+            accept=".txt"
+            bind:files={cookieFiles}
+            disabled={loading}
+          />
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="17 8 12 3 7 8"/>
+            <line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+          {#if cookieFiles && cookieFiles.length > 0}
+            <span class="file-name">{cookieFiles[0].name}</span>
+          {:else}
+            <span>Choose cookies.txt file</span>
+          {/if}
+        </label>
+        {#if cookieUploadError}
+          <p class="cookie-error">{cookieUploadError}</p>
         {/if}
       </div>
     {/if}
@@ -1098,5 +1200,80 @@
 
   .rss-gift-btn:hover svg {
     color: #8B5CF6;
+  }
+
+  /* Cookie upload styles */
+  .cookie-upload {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 1rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-light);
+    border-radius: 0.75rem;
+  }
+
+  .cookie-instructions {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    line-height: 1.4;
+  }
+
+  .cookie-instructions svg {
+    flex-shrink: 0;
+    margin-top: 0.125rem;
+    color: var(--accent);
+  }
+
+  .cookie-input {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    background: var(--bg-primary);
+    border: 1px dashed var(--border);
+    border-radius: 0.5rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+  }
+
+  .cookie-input:hover {
+    border-color: var(--accent);
+    border-style: solid;
+  }
+
+  .cookie-input.has-file {
+    border-color: var(--success);
+    border-style: solid;
+    background: rgba(16, 185, 129, 0.05);
+  }
+
+  .cookie-input input[type="file"] {
+    display: none;
+  }
+
+  .cookie-input svg {
+    flex-shrink: 0;
+    color: var(--accent);
+  }
+
+  .cookie-input.has-file svg {
+    color: var(--success);
+  }
+
+  .cookie-input .file-name {
+    color: var(--text-primary);
+    font-weight: 500;
+  }
+
+  .cookie-error {
+    color: var(--error);
+    font-size: 0.8125rem;
+    margin: 0;
   }
 </style>

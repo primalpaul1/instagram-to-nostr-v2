@@ -95,7 +95,7 @@ export interface WizardState {
   articles: ArticleInfo[];  // RSS articles
   feedInfo: FeedInfo | null;  // RSS feed metadata
   contentType: ContentType;  // 'posts' or 'articles'
-  sourceType: 'instagram' | 'tiktok' | 'rss' | null;  // Source platform
+  sourceType: 'instagram' | 'tiktok' | 'twitter' | 'rss' | null;  // Source platform
   profile: ProfileInfo | null;
   jobId: string | null;
   migrationId: string | null;  // For client-side signing flow
@@ -155,7 +155,7 @@ function createWizardStore() {
     setArticles: (articles: ArticleInfo[]) => update(s => ({ ...s, articles })),
     setFeedInfo: (feedInfo: FeedInfo | null) => update(s => ({ ...s, feedInfo })),
     setContentType: (contentType: ContentType) => update(s => ({ ...s, contentType })),
-    setSourceType: (sourceType: 'instagram' | 'tiktok' | 'rss' | null) => update(s => ({ ...s, sourceType })),
+    setSourceType: (sourceType: 'instagram' | 'tiktok' | 'twitter' | 'rss' | null) => update(s => ({ ...s, sourceType })),
     setProfile: (profile: ProfileInfo | null) => update(s => ({ ...s, profile })),
     setMigrationId: (migrationId: string | null) => update(s => ({ ...s, migrationId })),
     // Toggle video (backwards compatibility)

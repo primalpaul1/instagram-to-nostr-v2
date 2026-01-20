@@ -157,8 +157,8 @@ CREATE INDEX IF NOT EXISTS idx_gift_articles_gift_id ON gift_articles(gift_id);
 -- Self-service migrations (client-side signing, no key custody)
 CREATE TABLE IF NOT EXISTS migrations (
   id TEXT PRIMARY KEY,
-  source_handle TEXT NOT NULL,      -- Instagram handle, TikTok handle, or RSS URL
-  source_type TEXT NOT NULL CHECK (source_type IN ('instagram', 'tiktok', 'rss')),
+  source_handle TEXT NOT NULL,      -- Instagram handle, TikTok handle, Twitter handle, or RSS URL
+  source_type TEXT NOT NULL CHECK (source_type IN ('instagram', 'tiktok', 'twitter', 'rss')),
   profile_data TEXT,                -- JSON: {name, bio, picture_url, blossom_picture_url}
   status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'ready', 'complete')),
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
