@@ -62,7 +62,7 @@ CREATE TABLE IF NOT EXISTS proposals (
 CREATE TABLE IF NOT EXISTS proposal_posts (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   proposal_id TEXT NOT NULL,
-  post_type TEXT NOT NULL CHECK (post_type IN ('reel', 'image', 'carousel')),
+  post_type TEXT NOT NULL CHECK (post_type IN ('reel', 'image', 'carousel', 'video', 'text')),
   caption TEXT,
   original_date TEXT,
   media_items TEXT NOT NULL,  -- JSON array of original media URLs
@@ -117,7 +117,7 @@ CREATE TABLE IF NOT EXISTS gifts (
 CREATE TABLE IF NOT EXISTS gift_posts (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   gift_id TEXT NOT NULL,
-  post_type TEXT NOT NULL CHECK (post_type IN ('reel', 'image', 'carousel')),
+  post_type TEXT NOT NULL CHECK (post_type IN ('reel', 'image', 'carousel', 'video', 'text')),
   caption TEXT,
   original_date TEXT,
   media_items TEXT NOT NULL,  -- JSON array of original media URLs
