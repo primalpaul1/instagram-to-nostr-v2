@@ -3,9 +3,8 @@ import type { RequestHandler } from './$types';
 
 const BACKEND_URL = env.BACKEND_URL || 'http://localhost:8000';
 
-export const GET: RequestHandler = async ({ params, url }) => {
+export const GET: RequestHandler = async ({ params }) => {
   const { handle } = params;
-  const sessionId = url.searchParams.get('session_id');
 
   if (!handle) {
     return new Response(
@@ -17,18 +16,8 @@ export const GET: RequestHandler = async ({ params, url }) => {
     );
   }
 
-  if (!sessionId) {
-    return new Response(
-      `data: ${JSON.stringify({ error: 'Session ID is required for Twitter authentication' })}\n\n`,
-      {
-        status: 400,
-        headers: { 'Content-Type': 'text/event-stream' }
-      }
-    );
-  }
-
   try {
-    const backendUrl = `${BACKEND_URL}/twitter-stream/${encodeURIComponent(handle)}?session_id=${encodeURIComponent(sessionId)}`;
+    const backendUrl = `${BACKEND_URL}/twitter-stream/${encodeURIComponent(handle)}`;
     const response = await fetch(backendUrl);
 
     if (!response.ok) {

@@ -1,6 +1,6 @@
 <script lang="ts">
   type Step = 'input' | 'fetching' | 'select' | 'creating' | 'done';
-  type PostType = 'reel' | 'image' | 'carousel';
+  type PostType = 'reel' | 'image' | 'carousel' | 'text';
 
   interface MediaItem {
     url: string;
@@ -54,7 +54,7 @@
   let step: Step = 'input';
   let handle = '';
   let feedUrl = '';
-  let platform: 'instagram' | 'tiktok' | 'rss' = 'instagram';
+  let platform: 'instagram' | 'tiktok' | 'twitter' | 'rss' = 'instagram';
   let posts: Post[] = [];
   let articles: Article[] = [];
   let fetchedPosts: any[] = [];
@@ -127,9 +127,14 @@
 
     try {
       const cleanHandle = handle.replace('@', '').trim();
-      const endpoint = platform === 'tiktok'
-        ? `/api/tiktok-stream/${encodeURIComponent(cleanHandle)}`
-        : `/api/videos-stream/${encodeURIComponent(cleanHandle)}`;
+      let endpoint: string;
+      if (platform === 'tiktok') {
+        endpoint = `/api/tiktok-stream/${encodeURIComponent(cleanHandle)}`;
+      } else if (platform === 'twitter') {
+        endpoint = `/api/twitter-stream/${encodeURIComponent(cleanHandle)}`;
+      } else {
+        endpoint = `/api/videos-stream/${encodeURIComponent(cleanHandle)}`;
+      }
 
       const response = await fetch(endpoint, {
         signal: abortController.signal
@@ -833,6 +838,17 @@
             <button
               type="button"
               class="platform-btn"
+              class:active={platform === 'twitter'}
+              on:click={() => platform = 'twitter'}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+              </svg>
+              X
+            </button>
+            <button
+              type="button"
+              class="platform-btn"
               class:active={platform === 'rss'}
               on:click={() => platform = 'rss'}
             >
@@ -865,7 +881,7 @@
             </div>
           {:else}
             <div class="input-group">
-              <label for="handle">{platform === 'tiktok' ? 'TikTok' : 'Instagram'} Handle</label>
+              <label for="handle">{platform === 'tiktok' ? 'TikTok' : platform === 'twitter' ? 'X' : 'Instagram'} Handle</label>
               <div class="input-wrapper">
                 <span class="at-symbol">@</span>
                 <input

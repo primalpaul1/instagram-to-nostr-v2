@@ -753,205 +753,202 @@ async def fetch_tiktok_stream(handle: str):
 MAX_TWITTER_POSTS = 100  # Limit Twitter posts
 
 
-@app.post("/twitter-cookies")
-async def upload_twitter_cookies(session_id: str, cookies: UploadFile):
-    """
-    Upload cookies.txt for Twitter authentication.
-    Stores cookies in /data/twitter-cookies/{session_id}.txt
-    """
-    cookie_dir = "/data/twitter-cookies"
-    os.makedirs(cookie_dir, exist_ok=True)
-
-    cookie_path = os.path.join(cookie_dir, f"{session_id}.txt")
-
-    content = await cookies.read()
-    with open(cookie_path, "wb") as f:
-        f.write(content)
-
-    return {"status": "ok", "session_id": session_id}
-
-
-@app.delete("/twitter-cookies/{session_id}")
-async def delete_twitter_cookies(session_id: str):
-    """
-    Delete stored Twitter cookies for a session.
-    """
-    cookie_path = f"/data/twitter-cookies/{session_id}.txt"
-
-    if os.path.exists(cookie_path):
-        os.remove(cookie_path)
-        return {"status": "ok", "deleted": True}
-
-    return {"status": "ok", "deleted": False}
-
-
-def map_gallery_dl_to_post(item: dict) -> dict:
-    """Map gallery-dl JSON output to our PostMetadata format."""
-    from datetime import datetime
-
-    tweet_id = str(item.get("tweet_id", item.get("id", "")))
-    content = item.get("content", "")
-
-    # Determine if video or image
-    duration = item.get("duration")
-    is_video = duration is not None and duration > 0
-
-    # Get timestamp
-    original_date = None
-    date_val = item.get("date")
-    if date_val:
-        try:
-            if isinstance(date_val, (int, float)):
-                original_date = datetime.fromtimestamp(date_val).isoformat()
-            elif isinstance(date_val, str):
-                original_date = date_val
-        except (ValueError, TypeError):
-            pass
-
-    # Build media item
-    media_item = {
-        "url": item.get("url", ""),
-        "media_type": "video" if is_video else "image",
-        "width": item.get("width"),
-        "height": item.get("height"),
-    }
-    if is_video:
-        media_item["duration"] = duration
-
-    # Get thumbnail for videos
-    thumbnail_url = item.get("thumbnail", item.get("thumb"))
-
-    return {
-        "id": tweet_id,
-        "post_type": "reel" if is_video else "image",
-        "caption": content,
-        "original_date": original_date,
-        "thumbnail_url": thumbnail_url,
-        "media_items": [media_item]
-    }
-
-
 @app.get("/twitter-stream/{handle}")
-async def fetch_twitter_stream(handle: str, session_id: str = None):
+async def fetch_twitter_stream(handle: str):
     """
-    Stream Twitter media fetch progress using Server-Sent Events.
-    Uses gallery-dl to enumerate the user's media timeline.
-    Requires cookies.txt for authentication.
+    Stream Twitter timeline fetch progress using Server-Sent Events.
+    Uses RapidAPI Twitter API45 to enumerate the user's timeline.
+    Includes text-only tweets, photos, and videos.
     """
     handle = handle.lstrip("@")
 
     async def generate():
-        cookie_path = f"/data/twitter-cookies/{session_id}.txt" if session_id else None
-
-        # Check if cookies exist
-        if not cookie_path or not os.path.exists(cookie_path):
-            yield f"data: {json.dumps({'error': 'Twitter cookies not uploaded. Please upload cookies.txt first.'})}\n\n"
+        if not RAPIDAPI_KEY:
+            yield f"data: {json.dumps({'error': 'RAPIDAPI_KEY not configured'})}\n\n"
             return
 
         try:
-            yield f"data: {json.dumps({'progress': 'Fetching Twitter media timeline...'})}\n\n"
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                profile = None
+                posts = []
+                cursor = None
 
-            # Use gallery-dl --dump-json to get metadata
-            # Filter: original posts only (no replies, retweets, or quotes)
-            cmd = [
-                "gallery-dl", "--dump-json", "--no-download",
-                "--filter", "not retweet and not reply and not quote",
-                f"https://x.com/{handle}/media"
-            ]
-            cmd.extend(["--cookies", cookie_path])
+                yield f"data: {json.dumps({'progress': 'Fetching Twitter timeline...'})}\n\n"
 
-            proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
+                # Fetch user timeline with pagination
+                while len(posts) < MAX_TWITTER_POSTS:
+                    # Using Twitter API45 timeline endpoint (includes all tweets)
+                    params = {"screenname": handle, "count": "40"}
+                    if cursor:
+                        params["cursor"] = cursor
 
-            posts = []
-            profile = {"username": handle}
-            buffer = b""
+                    response = await client.get(
+                        "https://twitter-api45.p.rapidapi.com/timeline.php",
+                        params=params,
+                        headers={
+                            "x-rapidapi-key": RAPIDAPI_KEY,
+                            "x-rapidapi-host": "twitter-api45.p.rapidapi.com"
+                        }
+                    )
 
-            # Read stdout line by line
-            while True:
-                chunk = await proc.stdout.read(8192)
-                if not chunk:
-                    break
+                    if response.status_code == 404:
+                        yield f"data: {json.dumps({'error': f'Twitter user @{handle} not found'})}\n\n"
+                        return
 
-                buffer += chunk
+                    if response.status_code != 200:
+                        yield f"data: {json.dumps({'error': f'API error: {response.text}'})}\n\n"
+                        return
 
-                # Process complete lines
-                while b"\n" in buffer:
-                    line, buffer = buffer.split(b"\n", 1)
-                    if not line.strip():
-                        continue
+                    data = response.json()
 
-                    try:
-                        # gallery-dl outputs one JSON array per line
-                        data = json.loads(line.decode("utf-8"))
+                    # Check for API error status
+                    if data.get("status") != "ok":
+                        yield f"data: {json.dumps({'error': f'Twitter user @{handle} not found or is private'})}\n\n"
+                        return
 
-                        # gallery-dl returns [extractor_info, item_data]
-                        if isinstance(data, list) and len(data) >= 2:
-                            item = data[1] if isinstance(data[1], dict) else data[0]
-                        elif isinstance(data, dict):
-                            item = data
+                    # Extract profile on first page (from top-level 'user' object or first tweet author)
+                    if profile is None:
+                        user_data = data.get("user", {})
+                        if user_data:
+                            avatar_url = user_data.get("avatar", "")
+                            if avatar_url:
+                                avatar_url = avatar_url.replace("_normal", "_400x400")
+                            profile = {
+                                "username": handle,
+                                "display_name": user_data.get("name"),
+                                "profile_picture_url": avatar_url,
+                            }
                         else:
-                            continue
-
-                        # Skip if no media URL
-                        if not item.get("url"):
-                            continue
-
-                        # Extract profile info from first item
-                        if len(posts) == 0:
-                            user_info = item.get("user", {})
-                            if user_info:
+                            # Try to get from first tweet's author
+                            timeline = data.get("timeline", [])
+                            if timeline:
+                                author = timeline[0].get("author", {})
+                                avatar_url = author.get("avatar", "")
+                                if avatar_url:
+                                    avatar_url = avatar_url.replace("_normal", "_400x400")
                                 profile = {
-                                    "username": user_info.get("name", handle),
-                                    "display_name": user_info.get("nick", user_info.get("name")),
-                                    "profile_picture_url": user_info.get("profile_image"),
+                                    "username": author.get("screen_name", handle),
+                                    "display_name": author.get("name"),
+                                    "profile_picture_url": avatar_url,
                                 }
 
-                        post = map_gallery_dl_to_post(item)
-                        if post and post.get("media_items"):
-                            posts.append(post)
+                    # Process timeline entries
+                    timeline = data.get("timeline", [])
+                    if not timeline:
+                        break
 
-                            # Send progress update
-                            yield f"data: {json.dumps({'progress': True, 'count': len(posts), 'posts': posts, 'profile': profile})}\n\n"
+                    for tweet in timeline:
+                        text = tweet.get("text", "")
 
-                        # Stop if we've hit the limit
-                        if len(posts) >= MAX_TWITTER_POSTS:
-                            proc.terminate()
-                            break
+                        # Skip retweets (start with "RT @")
+                        if text.startswith("RT @"):
+                            continue
 
-                    except json.JSONDecodeError:
-                        continue
+                        # Skip quote tweets (have a "quoted" object)
+                        if tweet.get("quoted"):
+                            continue
 
-                if len(posts) >= MAX_TWITTER_POSTS:
-                    break
+                        # Skip replies
+                        if tweet.get("in_reply_to_status_id") or tweet.get("in_reply_to_user_id"):
+                            continue
 
-            # Wait for process to finish
-            await proc.wait()
+                        tweet_id = str(tweet.get("tweet_id", ""))
 
-            # Check for errors
-            if proc.returncode != 0 and len(posts) == 0:
-                stderr = await proc.stderr.read()
-                error_msg = stderr.decode("utf-8") if stderr else "Unknown error"
+                        # Get original date
+                        original_date = None
+                        created_at = tweet.get("created_at")
+                        if created_at:
+                            from datetime import datetime
+                            try:
+                                dt = datetime.strptime(created_at, "%a %b %d %H:%M:%S %z %Y")
+                                original_date = dt.isoformat()
+                            except (ValueError, TypeError):
+                                pass
 
-                if "401" in error_msg or "unauthorized" in error_msg.lower():
-                    yield f"data: {json.dumps({'error': 'Twitter authentication failed. Please re-upload cookies.txt'})}\n\n"
-                elif "404" in error_msg or "not found" in error_msg.lower():
-                    yield f"data: {json.dumps({'error': f'Twitter user @{handle} not found'})}\n\n"
-                elif "429" in error_msg or "rate limit" in error_msg.lower():
-                    yield f"data: {json.dumps({'error': 'Twitter rate limit exceeded. Please try again later.'})}\n\n"
-                else:
-                    yield f"data: {json.dumps({'error': f'Failed to fetch Twitter media: {error_msg[:200]}'})}\n\n"
-                return
+                        # Extract media from 'media' object (has 'photo' and 'video' arrays)
+                        media_obj = tweet.get("media", {}) or {}
+                        media_items = []
+                        thumbnail_url = None
 
-            if len(posts) == 0:
-                yield f"data: {json.dumps({'error': f'No media posts found for @{handle}'})}\n\n"
-                return
+                        # Process photos
+                        photos = media_obj.get("photo", []) if isinstance(media_obj, dict) else []
+                        for photo in photos:
+                            photo_url = photo.get("media_url_https", "")
+                            if photo_url:
+                                media_items.append({
+                                    "url": photo_url,
+                                    "media_type": "image",
+                                })
+                                if not thumbnail_url:
+                                    thumbnail_url = photo_url
 
-            # Send final result
-            yield f"data: {json.dumps({'done': True, 'posts': posts, 'profile': profile, 'source': 'twitter'})}\n\n"
+                        # Process videos
+                        videos = media_obj.get("video", []) if isinstance(media_obj, dict) else []
+                        for video in videos:
+                            video_thumb = video.get("media_url_https", "")
+                            if video_thumb and not thumbnail_url:
+                                thumbnail_url = video_thumb
+
+                            variants = video.get("variants", [])
+                            best_variant = None
+                            best_bitrate = -1
+
+                            for v in variants:
+                                if v.get("content_type") == "video/mp4":
+                                    bitrate = v.get("bitrate", 0) or 0
+                                    if bitrate > best_bitrate:
+                                        best_bitrate = bitrate
+                                        best_variant = v
+
+                            if best_variant:
+                                item = {
+                                    "url": best_variant.get("url"),
+                                    "media_type": "video",
+                                }
+                                original_info = video.get("original_info", {})
+                                if original_info:
+                                    item["width"] = original_info.get("width")
+                                    item["height"] = original_info.get("height")
+
+                                duration_ms = video.get("duration", 0)
+                                if duration_ms:
+                                    item["duration"] = duration_ms / 1000
+
+                                media_items.append(item)
+
+                        # Determine post type
+                        if media_items:
+                            has_video = any(m["media_type"] == "video" for m in media_items)
+                            post_type = "reel" if has_video else ("carousel" if len(media_items) > 1 else "image")
+                        else:
+                            # Text-only tweet
+                            post_type = "text"
+
+                        posts.append({
+                            "id": tweet_id,
+                            "post_type": post_type,
+                            "caption": text,
+                            "original_date": original_date,
+                            "thumbnail_url": thumbnail_url,
+                            "media_items": media_items
+                        })
+
+                    # Send progress
+                    yield f"data: {json.dumps({'progress': True, 'count': len(posts), 'posts': posts, 'profile': profile})}\n\n"
+
+                    # Check for more pages
+                    cursor = data.get("next_cursor")
+                    if not cursor:
+                        break
+
+                if not posts:
+                    yield f"data: {json.dumps({'error': f'No tweets found for @{handle}'})}\n\n"
+                    return
+
+                if not profile:
+                    profile = {"username": handle}
+
+                yield f"data: {json.dumps({'done': True, 'posts': posts, 'profile': profile, 'source': 'twitter'})}\n\n"
 
         except Exception as e:
             yield f"data: {json.dumps({'error': str(e)})}\n\n"

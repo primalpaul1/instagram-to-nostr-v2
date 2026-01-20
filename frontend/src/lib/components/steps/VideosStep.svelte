@@ -368,8 +368,115 @@
       </button>
     </div>
 
+  {:else if $wizard.sourceType === 'twitter'}
+    <!-- Twitter Tweets Selection UI -->
+    <div class="header">
+      <h2>Choose tweets to own forever</h2>
+      <p class="subtitle">Select the tweets you want to bring to Primal</p>
+    </div>
+
+    <div class="toolbar">
+      <div class="selection-badge" class:has-selection={totalSelectedCount > 0}>
+        <span class="count">{totalSelectedCount}</span>
+        <span class="label">of {$wizard.posts.length} selected</span>
+      </div>
+      <div class="toolbar-actions">
+        <button class="text-btn" on:click={() => wizard.selectAllPosts()}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="18" height="18" rx="2"/>
+            <path d="M9 12l2 2 4-4"/>
+          </svg>
+          Select All
+        </button>
+        <button class="text-btn" on:click={() => wizard.deselectAllPosts()}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="18" height="18" rx="2"/>
+          </svg>
+          Clear
+        </button>
+      </div>
+    </div>
+
+    <div class="tweets-list">
+      {#each $wizard.posts as post (post.id)}
+        <button class="tweet-card" class:selected={post.selected} on:click={() => wizard.togglePost(post.id)}>
+          {#if post.thumbnail_url}
+            <div class="tweet-media">
+              <img src={post.thumbnail_url} alt="" loading="lazy" />
+              {#if post.post_type === 'reel'}
+                <span class="media-badge video">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                    <polygon points="5 3 19 12 5 21 5 3"/>
+                  </svg>
+                </span>
+              {:else if post.media_items.length > 1}
+                <span class="media-badge carousel">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="2" y="2" width="16" height="16" rx="2"/>
+                    <rect x="6" y="6" width="16" height="16" rx="2"/>
+                  </svg>
+                  {post.media_items.length}
+                </span>
+              {/if}
+            </div>
+          {/if}
+          <div class="tweet-content">
+            <p class="tweet-text">{post.caption || ''}</p>
+            <div class="tweet-meta">
+              {#if post.original_date}
+                <span class="date">{formatDate(post.original_date)}</span>
+              {/if}
+              {#if post.post_type === 'text'}
+                <span class="type-badge text">Text</span>
+              {:else if post.post_type === 'reel'}
+                <span class="type-badge video">Video</span>
+              {:else}
+                <span class="type-badge photo">Photo</span>
+              {/if}
+            </div>
+          </div>
+          <div class="select-indicator" class:checked={post.selected}>
+            {#if post.selected}
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                <path d="M20 6L9 17l-5-5"/>
+              </svg>
+            {/if}
+          </div>
+        </button>
+      {:else}
+        <div class="empty-state">
+          <p>No tweets found</p>
+        </div>
+      {/each}
+    </div>
+
+    <div class="actions">
+      <button class="secondary-btn" on:click={handleBack}>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M19 12H5M12 19l-7-7 7-7"/>
+        </svg>
+        Back
+      </button>
+      <button class="primary-btn" disabled={totalSelectedCount === 0 || isCreatingMigration} on:click={handleContinue}>
+        {#if isCreatingMigration}
+          <div class="btn-spinner"></div>
+          Creating migration...
+        {:else if $wizard.authMode === 'nip46'}
+          Continue with {totalSelectedCount} tweet{totalSelectedCount !== 1 ? 's' : ''}
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M5 12h14M12 5l7 7-7 7"/>
+          </svg>
+        {:else}
+          Claim My {totalSelectedCount} Tweet{totalSelectedCount !== 1 ? 's' : ''}
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M5 12h14M12 5l7 7-7 7"/>
+          </svg>
+        {/if}
+      </button>
+    </div>
+
   {:else}
-    <!-- Posts Selection UI -->
+    <!-- Posts Selection UI (Instagram/TikTok) -->
     <div class="header">
       <h2>Choose posts to own forever</h2>
       <p class="subtitle">Select the content you want to bring to Primal</p>
@@ -1041,6 +1148,194 @@
     .article-image {
       width: 100%;
       height: 120px;
+    }
+  }
+
+  /* Twitter Tweets list styles */
+  .tweets-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    max-height: 420px;
+    overflow-y: auto;
+    margin-bottom: 1.5rem;
+    padding: 0.25rem;
+  }
+
+  .tweets-list::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .tweets-list::-webkit-scrollbar-track {
+    background: var(--bg-tertiary);
+    border-radius: 3px;
+  }
+
+  .tweets-list::-webkit-scrollbar-thumb {
+    background: var(--border-light);
+    border-radius: 3px;
+  }
+
+  .tweet-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 0.875rem;
+    background: var(--bg-tertiary);
+    border: 2px solid transparent;
+    border-radius: 0.75rem;
+    cursor: pointer;
+    text-align: left;
+    transition: all 0.2s ease;
+    width: 100%;
+  }
+
+  .tweet-card:hover {
+    border-color: var(--border-light);
+  }
+
+  .tweet-card.selected {
+    border-color: var(--accent);
+    background: rgba(var(--accent-rgb), 0.05);
+  }
+
+  .tweet-media {
+    position: relative;
+    width: 64px;
+    height: 64px;
+    border-radius: 0.5rem;
+    overflow: hidden;
+    flex-shrink: 0;
+    background: var(--bg-primary);
+  }
+
+  .tweet-media img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .media-badge {
+    position: absolute;
+    bottom: 0.25rem;
+    right: 0.25rem;
+    display: flex;
+    align-items: center;
+    gap: 0.125rem;
+    padding: 0.125rem 0.25rem;
+    background: rgba(0, 0, 0, 0.75);
+    backdrop-filter: blur(4px);
+    border-radius: 0.25rem;
+    font-size: 0.625rem;
+    font-weight: 600;
+    color: white;
+  }
+
+  .tweet-content {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .tweet-text {
+    font-size: 0.875rem;
+    line-height: 1.5;
+    color: var(--text-primary);
+    margin-bottom: 0.5rem;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    word-break: break-word;
+  }
+
+  .tweet-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+
+  .type-badge {
+    padding: 0.125rem 0.375rem;
+    border-radius: 0.25rem;
+    font-size: 0.6875rem;
+    font-weight: 500;
+  }
+
+  .type-badge.text {
+    background: rgba(var(--accent-rgb), 0.15);
+    color: var(--accent);
+  }
+
+  .type-badge.video {
+    background: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+  }
+
+  .type-badge.photo {
+    background: rgba(34, 197, 94, 0.15);
+    color: #22c55e;
+  }
+
+  .tweet-card .select-indicator {
+    position: relative;
+    top: auto;
+    right: auto;
+    width: 1.5rem;
+    height: 1.5rem;
+    border: 2px solid var(--border);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: all 0.2s ease;
+    background: transparent;
+  }
+
+  .tweet-card .select-indicator.checked {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: white;
+  }
+
+  @media (max-width: 500px) {
+    .tweets-list {
+      max-height: 50vh;
+      gap: 0.375rem;
+    }
+
+    .tweet-card {
+      padding: 0.75rem;
+      gap: 0.625rem;
+    }
+
+    .tweet-media {
+      width: 48px;
+      height: 48px;
+    }
+
+    .tweet-text {
+      font-size: 0.8125rem;
+      -webkit-line-clamp: 2;
+      margin-bottom: 0.375rem;
+    }
+
+    .tweet-meta {
+      gap: 0.375rem;
+      font-size: 0.6875rem;
+    }
+
+    .tweet-card .select-indicator {
+      width: 1.25rem;
+      height: 1.25rem;
+    }
+
+    .type-badge {
+      font-size: 0.625rem;
+      padding: 0.0625rem 0.25rem;
     }
   }
 </style>

@@ -11,7 +11,7 @@ export type WizardStep =
   | 'complete';
 
 export type AuthMode = 'generate' | 'nip46';
-export type PostType = 'reel' | 'image' | 'carousel';
+export type PostType = 'reel' | 'image' | 'carousel' | 'text';
 
 export interface MediaItemInfo {
   url: string;
