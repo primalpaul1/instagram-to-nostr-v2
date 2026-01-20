@@ -164,10 +164,9 @@
       // Create a queue of task indices
       const queue: number[] = [...Array(tasks.length).keys()];
 
-      // Publish profile first if available (for RSS migrations)
-      if (isArticlesMode && $wizard.feedInfo) {
-        await publishProfile(tempKeypair);
-      }
+      // NOTE: We intentionally do NOT publish profile for NIP-46 flows
+      // Users logging in with Primal already have their Nostr identity
+      // and we should not overwrite their existing profile data
 
       // Process queue with worker functions
       async function processQueue() {
