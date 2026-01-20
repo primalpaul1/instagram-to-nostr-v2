@@ -1357,7 +1357,7 @@ async def process_migration(migration: dict) -> None:
                     print(f"Failed to parse profile_data for migration {migration_id}")
 
             # Process posts (Instagram/TikTok)
-            if source_type in ("instagram", "tiktok"):
+            if source_type in ("instagram", "tiktok", "twitter"):
                 posts = get_migration_posts(migration_id)
                 print(f"Processing {len(posts)} posts for migration {migration_id}")
 
