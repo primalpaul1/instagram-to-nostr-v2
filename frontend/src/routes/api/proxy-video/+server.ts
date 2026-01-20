@@ -38,6 +38,11 @@ export const POST: RequestHandler = async ({ request }) => {
       'substackcdn.com',
       'substack-post-media.s3.amazonaws.com',
       'bucketeer-',
+      // Twitter/X CDN
+      'twimg.com',
+      'pbs.twimg.com',
+      'video.twimg.com',
+      'abs.twimg.com',
     ];
 
     const isAllowed = allowedHosts.some(
