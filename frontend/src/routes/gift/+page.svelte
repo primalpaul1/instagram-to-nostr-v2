@@ -97,7 +97,11 @@
   let morePostsFetchCount = 0;
   let morePostsAbortController: AbortController | null = null;
   let fetchedMorePosts: any[] = [];
-  let additionalPostSources: Array<{ platform: 'instagram' | 'tiktok' | 'twitter'; handle: string }> = [];
+
+  // Separate array for additional posts (kept separate from main posts)
+  let additionalPosts: Post[] = [];
+  let additionalPostsPlatform: 'instagram' | 'tiktok' | 'twitter' | null = null;
+  let additionalPostsHandle = '';
 
   // Manual post adding
   let showAddModal = false;
@@ -112,10 +116,12 @@
   $: reelPosts = posts.filter(p => p.post_type === 'reel');
   $: imagePosts = posts.filter(p => p.post_type === 'image' || p.post_type === 'carousel' || p.post_type === 'text');
   $: selectedPosts = posts.filter(p => p.selected);
+  $: selectedAdditionalPosts = additionalPosts.filter(p => p.selected);
   $: selectedArticles = articles.filter(a => a.selected);
   $: selectedPostCount = selectedPosts.length;
+  $: selectedAdditionalPostCount = selectedAdditionalPosts.length;
   $: selectedArticleCount = selectedArticles.length;
-  $: totalSelectedCount = selectedPostCount + selectedArticleCount;
+  $: totalSelectedCount = selectedPostCount + selectedAdditionalPostCount + selectedArticleCount;
 
   let activeTab: 'reels' | 'posts' = 'reels';
   $: currentPosts = activeTab === 'reels' ? reelPosts : imagePosts;
@@ -655,13 +661,24 @@
   function pauseMorePostsFetch() {
     if (!morePostsAbortController || fetchedMorePosts.length === 0) return;
     morePostsAbortController.abort();
-    // Merge with existing posts
-    posts = [...posts, ...fetchedMorePosts.map((p: any) => ({ ...p, selected: true }))];
-    additionalPostSources = [...additionalPostSources, { platform: morePostsPlatform, handle: morePostsHandle.replace('@', '').trim() }];
+    // Keep additional posts in separate array
+    additionalPosts = fetchedMorePosts.map((p: any) => ({ ...p, selected: true }));
+    additionalPostsPlatform = morePostsPlatform;
+    additionalPostsHandle = morePostsHandle.replace('@', '').trim();
     morePostsFetching = false;
     showMorePostsSection = false;
     morePostsHandle = '';
     fetchedMorePosts = [];
+  }
+
+  function toggleAdditionalPost(id: string) {
+    additionalPosts = additionalPosts.map(p => p.id === id ? { ...p, selected: !p.selected } : p);
+  }
+
+  function removeAdditionalPosts() {
+    additionalPosts = [];
+    additionalPostsPlatform = null;
+    additionalPostsHandle = '';
   }
 
   function toggleArticle(id: string) {
@@ -697,7 +714,7 @@
   }
 
   async function createGift() {
-    const hasPosts = selectedPostCount > 0;
+    const hasPosts = selectedPostCount > 0 || selectedAdditionalPostCount > 0;
     const hasArticles = selectedArticleCount > 0;
 
     // Must have at least one type of content
@@ -725,16 +742,27 @@
         handle: giftHandle
       };
 
-      // Add posts if we have them
+      // Add posts if we have them (combine main posts and additional posts)
       if (hasPosts) {
-        body.posts = selectedPosts.map(p => ({
-          id: p.id,
-          post_type: p.post_type,
-          caption: p.caption,
-          original_date: p.original_date,
-          thumbnail_url: p.thumbnail_url,
-          media_items: p.media_items
-        }));
+        const allSelectedPosts = [
+          ...selectedPosts.map(p => ({
+            id: p.id,
+            post_type: p.post_type,
+            caption: p.caption,
+            original_date: p.original_date,
+            thumbnail_url: p.thumbnail_url,
+            media_items: p.media_items
+          })),
+          ...selectedAdditionalPosts.map(p => ({
+            id: p.id,
+            post_type: p.post_type,
+            caption: p.caption,
+            original_date: p.original_date,
+            thumbnail_url: p.thumbnail_url,
+            media_items: p.media_items
+          }))
+        ];
+        body.posts = allSelectedPosts;
         body.profile = profile;
       }
 
@@ -1436,7 +1464,113 @@
         <!-- Optional Add More Posts Section (only when posts are primary) -->
         {#if primaryContentType === 'posts'}
         <div class="more-posts-section">
-          {#if !showMorePostsSection}
+          {#if additionalPosts.length > 0}
+            <!-- Display added posts in their own section -->
+            <div class="additional-posts-display">
+              <div class="additional-posts-header">
+                <h3>
+                  {#if additionalPostsPlatform === 'twitter'}
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+                    </svg>
+                    Tweets from @{additionalPostsHandle}
+                  {:else if additionalPostsPlatform === 'tiktok'}
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-5.2 1.74 2.89 2.89 0 0 1 2.31-4.64 2.93 2.93 0 0 1 .88.13V9.4a6.84 6.84 0 0 0-1-.05A6.33 6.33 0 0 0 5 20.1a6.34 6.34 0 0 0 10.86-4.43v-7a8.16 8.16 0 0 0 4.77 1.52v-3.4a4.85 4.85 0 0 1-1-.1z"/>
+                    </svg>
+                    TikToks from @{additionalPostsHandle}
+                  {:else}
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069z"/>
+                    </svg>
+                    Posts from @{additionalPostsHandle}
+                  {/if}
+                </h3>
+                <button class="text-btn danger" on:click={removeAdditionalPosts}>Remove</button>
+              </div>
+
+              <div class="posts-toolbar">
+                <div class="selection-badge" class:has-selection={selectedAdditionalPostCount > 0}>
+                  <span class="count">{selectedAdditionalPostCount}</span>
+                  <span class="label">of {additionalPosts.length} selected</span>
+                </div>
+                <div class="toolbar-actions">
+                  <button class="text-btn" on:click={() => additionalPosts = additionalPosts.map(p => ({ ...p, selected: true }))}>Select All</button>
+                  <button class="text-btn" on:click={() => additionalPosts = additionalPosts.map(p => ({ ...p, selected: false }))}>Clear</button>
+                </div>
+              </div>
+
+              {#if additionalPostsPlatform === 'twitter'}
+                <!-- Twitter Tweets List -->
+                <div class="tweets-list compact">
+                  {#each additionalPosts as post (post.id)}
+                    <button type="button" class="tweet-card" class:selected={post.selected} on:click|preventDefault={() => toggleAdditionalPost(post.id)}>
+                      {#if post.thumbnail_url}
+                        <div class="tweet-media">
+                          <img src={post.thumbnail_url} alt="" loading="lazy" />
+                          {#if post.post_type === 'reel'}
+                            <span class="media-badge video">
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                                <polygon points="5 3 19 12 5 21 5 3"/>
+                              </svg>
+                            </span>
+                          {/if}
+                        </div>
+                      {/if}
+                      <div class="tweet-content">
+                        <p class="tweet-text">{post.caption || ''}</p>
+                        <div class="tweet-meta">
+                          {#if post.original_date}
+                            <span class="date">{formatDate(post.original_date)}</span>
+                          {/if}
+                          {#if post.post_type === 'text'}
+                            <span class="type-badge text">Text</span>
+                          {:else if post.post_type === 'reel'}
+                            <span class="type-badge video">Video</span>
+                          {:else}
+                            <span class="type-badge photo">Photo</span>
+                          {/if}
+                        </div>
+                      </div>
+                      <div class="select-indicator" class:checked={post.selected}>
+                        {#if post.selected}
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                            <path d="M20 6L9 17l-5-5"/>
+                          </svg>
+                        {/if}
+                      </div>
+                    </button>
+                  {/each}
+                </div>
+              {:else}
+                <!-- Instagram/TikTok Grid -->
+                <div class="posts-grid compact">
+                  {#each additionalPosts as post (post.id)}
+                    <button class="post-card compact" class:selected={post.selected} on:click={() => toggleAdditionalPost(post.id)}>
+                      <div class="thumbnail-wrapper">
+                        {#if post.thumbnail_url}
+                          <img src={post.thumbnail_url} alt="" loading="lazy" />
+                        {:else}
+                          <div class="placeholder">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                            </svg>
+                          </div>
+                        {/if}
+                        <div class="select-indicator" class:checked={post.selected}>
+                          {#if post.selected}
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                              <path d="M20 6L9 17l-5-5"/>
+                            </svg>
+                          {/if}
+                        </div>
+                      </div>
+                    </button>
+                  {/each}
+                </div>
+              {/if}
+            </div>
+          {:else if !showMorePostsSection}
             <button class="add-more-posts-btn" on:click={() => showMorePostsSection = true}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M12 5v14M5 12h14"/>
@@ -3386,5 +3520,30 @@
     display: flex;
     gap: 0.5rem;
     margin-bottom: 1rem;
+  }
+
+  /* Additional Posts Display */
+  .additional-posts-display {
+    padding: 1rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 0.75rem;
+  }
+
+  .additional-posts-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+  }
+
+  .additional-posts-header h3 {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 1rem;
+    font-weight: 600;
+    margin: 0;
+    color: var(--text-primary);
   }
 </style>
