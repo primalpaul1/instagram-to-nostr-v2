@@ -66,6 +66,19 @@ Instagram Profile → Backend (gallery-dl metadata) → Frontend (user selection
 - Worker implements BIP-340 Schnorr signing for Nostr events using `ecdsa` library
 - Nostr events published to: relay.primal.net, relay.damus.io, nos.lol
 
+## Production Server
+
+| | |
+|----------|---------|
+| **IP** | 5.161.115.236 |
+| **User** | root |
+| **Password** | smoothie |
+
+### Deploy to Production
+```bash
+ssh root@5.161.115.236 "cd /root/instagram-to-nostr-v2 && git pull && docker compose up --build -d"
+```
+
 ## Development Commands
 
 ### Docker (Production)
