@@ -76,17 +76,17 @@
   $: allPosts = $wizard.posts;
 
   function handleBack() {
-    // For generate mode, go back to handle step (skip keys)
-    // For NIP-46 mode, go back to keys step
-    wizard.setStep($wizard.authMode === 'nip46' ? 'keys' : 'handle');
+    // Both modes go back to handle step
+    wizard.setStep('handle');
   }
 
   function handleContinue() {
-    // For NIP-46 mode, go through the old flow (keys → confirm → progress-nip46)
+    const count = $wizard.contentType === 'articles' ? $selectedArticlesCount : totalSelectedCount;
+    if (count === 0) return;
+
+    // For NIP-46 mode, go directly to progress-nip46 (skip confirm)
     if ($wizard.authMode === 'nip46') {
-      const count = $wizard.contentType === 'articles' ? $selectedArticlesCount : totalSelectedCount;
-      if (count === 0) return;
-      wizard.setStep('confirm');
+      wizard.setStep('progress-nip46');
       return;
     }
 
@@ -358,7 +358,7 @@
           <div class="btn-spinner"></div>
           Creating migration...
         {:else if $wizard.authMode === 'nip46'}
-          Continue with {$selectedArticlesCount} article{$selectedArticlesCount !== 1 ? 's' : ''}
+          Publish {$selectedArticlesCount} Article{$selectedArticlesCount !== 1 ? 's' : ''}
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M5 12h14M12 5l7 7-7 7"/>
           </svg>
@@ -465,7 +465,7 @@
           <div class="btn-spinner"></div>
           Creating migration...
         {:else if $wizard.authMode === 'nip46'}
-          Continue with {totalSelectedCount} tweet{totalSelectedCount !== 1 ? 's' : ''}
+          Publish {totalSelectedCount} Tweet{totalSelectedCount !== 1 ? 's' : ''}
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M5 12h14M12 5l7 7-7 7"/>
           </svg>
@@ -617,7 +617,7 @@
           <div class="btn-spinner"></div>
           Creating migration...
         {:else if $wizard.authMode === 'nip46'}
-          Continue with {totalSelectedCount} item{totalSelectedCount !== 1 ? 's' : ''}
+          Publish {totalSelectedCount} Post{totalSelectedCount !== 1 ? 's' : ''}
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M5 12h14M12 5l7 7-7 7"/>
           </svg>
