@@ -80,7 +80,7 @@
   // Add posts section (for RSS-first flow)
   let showPostsSection = false;
   let postsHandle = '';
-  let postsPlatform: 'instagram' | 'tiktok' = 'instagram';
+  let postsPlatform: 'instagram' | 'tiktok' | 'twitter' = 'instagram';
   let postsFetching = false;
   let postsError = '';
   let postsFetchCount = 0;
@@ -98,7 +98,7 @@
   let fileInput: HTMLInputElement;
 
   $: reelPosts = posts.filter(p => p.post_type === 'reel');
-  $: imagePosts = posts.filter(p => p.post_type === 'image' || p.post_type === 'carousel');
+  $: imagePosts = posts.filter(p => p.post_type === 'image' || p.post_type === 'carousel' || p.post_type === 'text');
   $: selectedPosts = posts.filter(p => p.selected);
   $: selectedArticles = articles.filter(a => a.selected);
   $: selectedPostCount = selectedPosts.length;
@@ -452,9 +452,14 @@
 
     try {
       const cleanHandle = postsHandle.replace('@', '').trim();
-      const endpoint = postsPlatform === 'tiktok'
-        ? `/api/tiktok-stream/${encodeURIComponent(cleanHandle)}`
-        : `/api/videos-stream/${encodeURIComponent(cleanHandle)}`;
+      let endpoint: string;
+      if (postsPlatform === 'tiktok') {
+        endpoint = `/api/tiktok-stream/${encodeURIComponent(cleanHandle)}`;
+      } else if (postsPlatform === 'twitter') {
+        endpoint = `/api/twitter-stream/${encodeURIComponent(cleanHandle)}`;
+      } else {
+        endpoint = `/api/videos-stream/${encodeURIComponent(cleanHandle)}`;
+      }
 
       const response = await fetch(endpoint, {
         signal: postsAbortController.signal
@@ -1049,9 +1054,20 @@
                       </svg>
                       TikTok
                     </button>
+                    <button
+                      type="button"
+                      class="platform-btn-small"
+                      class:active={postsPlatform === 'twitter'}
+                      on:click={() => postsPlatform = 'twitter'}
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+                      </svg>
+                      X
+                    </button>
                   </div>
                   <div class="input-group">
-                    <label for="posts-handle">{postsPlatform === 'tiktok' ? 'TikTok' : 'Instagram'} Handle</label>
+                    <label for="posts-handle">{postsPlatform === 'tiktok' ? 'TikTok' : postsPlatform === 'twitter' ? 'X' : 'Instagram'} Handle</label>
                     <div class="input-wrapper">
                       <span class="at-symbol">@</span>
                       <input

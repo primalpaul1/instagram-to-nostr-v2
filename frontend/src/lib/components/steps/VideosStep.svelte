@@ -72,6 +72,9 @@
   $: currentSelectedCount = currentPosts.filter(p => p.selected).length;
   $: totalSelectedCount = $selectedPostsCount;
 
+  // For Twitter, we need all posts including text-only
+  $: allPosts = $wizard.posts;
+
   function handleBack() {
     // For generate mode, go back to handle step (skip keys)
     // For NIP-46 mode, go back to keys step
@@ -378,7 +381,7 @@
     <div class="toolbar">
       <div class="selection-badge" class:has-selection={totalSelectedCount > 0}>
         <span class="count">{totalSelectedCount}</span>
-        <span class="label">of {$wizard.posts.length} selected</span>
+        <span class="label">of {allPosts.length} selected</span>
       </div>
       <div class="toolbar-actions">
         <button class="text-btn" on:click={() => wizard.selectAllPosts()}>
@@ -398,8 +401,8 @@
     </div>
 
     <div class="tweets-list">
-      {#each $wizard.posts as post (post.id)}
-        <button class="tweet-card" class:selected={post.selected} on:click={() => wizard.togglePost(post.id)}>
+      {#each allPosts as post (post.id)}
+        <button type="button" class="tweet-card" class:selected={post.selected} on:click|preventDefault={() => wizard.togglePost(post.id)}>
           {#if post.thumbnail_url}
             <div class="tweet-media">
               <img src={post.thumbnail_url} alt="" loading="lazy" />
