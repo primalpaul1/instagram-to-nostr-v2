@@ -297,17 +297,22 @@ def update_job_profile_published(
 
 def get_pending_proposals(limit: int = 10) -> list[dict]:
     """Get pending proposals that need media processing."""
-    with get_connection() as conn:
-        cursor = conn.execute(
-            """
-            SELECT * FROM proposals
-            WHERE status = 'pending'
-            ORDER BY created_at ASC
-            LIMIT ?
-            """,
-            (limit,),
-        )
-        return [dict(row) for row in cursor.fetchall()]
+    try:
+        with get_connection() as conn:
+            cursor = conn.execute(
+                """
+                SELECT * FROM proposals
+                WHERE status = 'pending'
+                ORDER BY created_at ASC
+                LIMIT ?
+                """,
+                (limit,),
+            )
+            return [dict(row) for row in cursor.fetchall()]
+    except Exception as e:
+        if "no such table" in str(e):
+            return []  # Table doesn't exist yet
+        raise
 
 
 def claim_next_pending_proposal() -> Optional[dict]:
@@ -549,17 +554,22 @@ def reset_stale_processing_proposals() -> int:
 
 def get_pending_gifts(limit: int = 10) -> list[dict]:
     """Get pending gifts that need media processing."""
-    with get_connection() as conn:
-        cursor = conn.execute(
-            """
-            SELECT * FROM gifts
-            WHERE status = 'pending'
-            ORDER BY created_at ASC
-            LIMIT ?
-            """,
-            (limit,),
-        )
-        return [dict(row) for row in cursor.fetchall()]
+    try:
+        with get_connection() as conn:
+            cursor = conn.execute(
+                """
+                SELECT * FROM gifts
+                WHERE status = 'pending'
+                ORDER BY created_at ASC
+                LIMIT ?
+                """,
+                (limit,),
+            )
+            return [dict(row) for row in cursor.fetchall()]
+    except Exception as e:
+        if "no such table" in str(e):
+            return []  # Table doesn't exist yet
+        raise
 
 
 def claim_next_pending_gift() -> Optional[dict]:
