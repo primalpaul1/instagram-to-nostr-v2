@@ -1,6 +1,7 @@
 <script lang="ts">
   import { wizard } from '$lib/stores/wizard';
   import { hexToNpub } from '$lib/nip46';
+  import FollowPacks from '$lib/components/FollowPacks.svelte';
 
   $: isNip46Mode = $wizard.authMode === 'nip46';
   $: displayNpub = isNip46Mode
@@ -187,6 +188,15 @@ ${primalUrl}
           </div>
         </div>
       </div>
+
+      <!-- Follow Packs -->
+      {#if $wizard.keyPair}
+        <FollowPacks
+          publicKeyHex={$wizard.keyPair.publicKeyHex}
+          privateKeyHex={$wizard.keyPair.privateKeyHex}
+          {keySaved}
+        />
+      {/if}
 
       <!-- Tell friends -->
       <div class="share-card">
