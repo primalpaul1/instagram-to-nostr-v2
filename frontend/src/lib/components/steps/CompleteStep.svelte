@@ -192,8 +192,8 @@ ${primalUrl}
       <!-- Follow Packs -->
       {#if $wizard.keyPair}
         <FollowPacks
-          publicKeyHex={$wizard.keyPair.publicKeyHex}
-          privateKeyHex={$wizard.keyPair.privateKeyHex}
+          publicKeyHex={$wizard.keyPair.publicKey}
+          privateKeyHex={$wizard.keyPair.secretKey}
           {keySaved}
         />
       {/if}
