@@ -17,6 +17,7 @@
   import { generateSecretKey, getPublicKey, finalizeEvent, type EventTemplate, type Event } from 'nostr-tools';
   import { bytesToHex, hexToBytes } from '@noble/hashes/utils';
   import { nip19 } from 'nostr-tools';
+  import FollowPacks from '$lib/components/FollowPacks.svelte';
 
   // Migration data from API
   interface MigrationPost {
@@ -980,6 +981,15 @@ Store it somewhere safe!
           <p>Open Primal, tap "Login", then "Use login key" and paste your key</p>
         </div>
       </div>
+
+      <!-- Follow Packs -->
+      {#if $wizard.keyPair}
+        <FollowPacks
+          publicKeyHex={$wizard.keyPair.publicKey}
+          privateKeyHex={$wizard.keyPair.secretKey}
+          {keySaved}
+        />
+      {/if}
     </div>
   {/if}
 </div>
