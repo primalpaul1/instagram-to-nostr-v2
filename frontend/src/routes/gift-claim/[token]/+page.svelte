@@ -709,8 +709,8 @@
             </svg>
             <div class="progress-percent">
               {#if allTasksComplete}
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                  <path d="M20 6L9 17l-5-5"/>
+                <svg class="checkmark-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <path class="checkmark-path" d="M20 6L9 17l-5-5"/>
                 </svg>
               {:else}
                 {Math.round(progressPercent)}%
@@ -1141,6 +1141,22 @@
     stroke: #22c55e;
   }
 
+  .progress-circle.complete {
+    animation: circle-complete 0.5s ease-out;
+  }
+
+  @keyframes circle-complete {
+    0% {
+      transform: scale(1);
+    }
+    30% {
+      transform: scale(1.1);
+    }
+    100% {
+      transform: scale(1);
+    }
+  }
+
   .progress-percent {
     position: absolute;
     top: 50%;
@@ -1158,10 +1174,42 @@
     color: #22c55e;
   }
 
+  .checkmark-icon {
+    animation: checkmark-pop 0.4s ease-out;
+  }
+
+  .checkmark-path {
+    stroke-dasharray: 24;
+    stroke-dashoffset: 24;
+    animation: checkmark-draw 0.4s ease-out 0.1s forwards;
+  }
+
+  @keyframes checkmark-pop {
+    0% {
+      transform: scale(0);
+      opacity: 0;
+    }
+    50% {
+      transform: scale(1.2);
+    }
+    100% {
+      transform: scale(1);
+      opacity: 1;
+    }
+  }
+
+  @keyframes checkmark-draw {
+    to {
+      stroke-dashoffset: 0;
+    }
+  }
+
   .progress-label {
     display: flex;
     flex-direction: column;
     text-align: left;
+    min-width: 200px;
+    flex: 1;
   }
 
   .progress-title {
