@@ -113,6 +113,42 @@
   let uploadProgress = '';
   let fileInput: HTMLInputElement;
 
+  // Suggested follows
+  let showSuggestedFollows = false;
+  let suggestedFollowsInput = '';
+  let suggestedFollows: string[] = [];
+  let suggestedFollowsError = '';
+
+  function addSuggestedFollow() {
+    suggestedFollowsError = '';
+    const input = suggestedFollowsInput.trim();
+    if (!input) return;
+
+    // Accept npub or hex format
+    if (input.startsWith('npub1')) {
+      if (input.length !== 63) {
+        suggestedFollowsError = 'Invalid npub format';
+        return;
+      }
+      if (!suggestedFollows.includes(input)) {
+        suggestedFollows = [...suggestedFollows, input];
+      }
+      suggestedFollowsInput = '';
+    } else if (/^[a-f0-9]{64}$/i.test(input)) {
+      // Hex pubkey - still store as-is for now
+      if (!suggestedFollows.includes(input)) {
+        suggestedFollows = [...suggestedFollows, input];
+      }
+      suggestedFollowsInput = '';
+    } else {
+      suggestedFollowsError = 'Enter a valid npub (npub1...)';
+    }
+  }
+
+  function removeSuggestedFollow(npub: string) {
+    suggestedFollows = suggestedFollows.filter(f => f !== npub);
+  }
+
   $: reelPosts = posts.filter(p => p.post_type === 'reel');
   $: imagePosts = posts.filter(p => p.post_type === 'image' || p.post_type === 'carousel' || p.post_type === 'text');
   $: selectedPosts = posts.filter(p => p.selected);
@@ -739,7 +775,8 @@
 
       const body: any = {
         gift_type: giftType,
-        handle: giftHandle
+        handle: giftHandle,
+        suggested_follows: suggestedFollows.length > 0 ? suggestedFollows : undefined
       };
 
       // Add posts if we have them (combine main posts and additional posts)
@@ -1751,6 +1788,59 @@
           {/if}
         </div>
         {/if}
+
+        <!-- Suggested Follows Section -->
+        <div class="suggested-follows-section">
+          {#if !showSuggestedFollows}
+            <button class="add-follows-btn" on:click={() => showSuggestedFollows = true}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/>
+                <circle cx="9" cy="7" r="4"/>
+                <path d="M19 8v6M22 11h-6"/>
+              </svg>
+              Add Suggested Follows (Optional)
+            </button>
+          {:else}
+            <div class="suggested-follows-input-section">
+              <div class="suggested-follows-header">
+                <h3>Suggested Follows</h3>
+                <button class="text-btn" on:click={() => showSuggestedFollows = false}>Hide</button>
+              </div>
+              <p class="suggested-follows-desc">Add npubs of accounts you want to recommend to the recipient</p>
+
+              {#if suggestedFollowsError}
+                <div class="field-error">{suggestedFollowsError}</div>
+              {/if}
+
+              <div class="suggested-follows-input-row">
+                <input
+                  type="text"
+                  bind:value={suggestedFollowsInput}
+                  placeholder="npub1..."
+                  class="suggested-follows-input"
+                  on:keydown={(e) => e.key === 'Enter' && addSuggestedFollow()}
+                />
+                <button class="add-follow-btn" on:click={addSuggestedFollow}>Add</button>
+              </div>
+
+              {#if suggestedFollows.length > 0}
+                <div class="suggested-follows-list">
+                  {#each suggestedFollows as npub}
+                    <div class="suggested-follow-chip">
+                      <span class="npub-display">{npub.slice(0, 12)}...{npub.slice(-6)}</span>
+                      <button class="remove-follow-btn" on:click={() => removeSuggestedFollow(npub)}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M18 6L6 18M6 6l12 12"/>
+                        </svg>
+                      </button>
+                    </div>
+                  {/each}
+                </div>
+                <p class="suggested-follows-count">{suggestedFollows.length} suggested follow{suggestedFollows.length !== 1 ? 's' : ''}</p>
+              {/if}
+            </div>
+          {/if}
+        </div>
 
         <div class="actions">
           <div class="total-selected">
@@ -3150,6 +3240,151 @@
     border-color: #a855f7;
     color: #a855f7;
     background: rgba(168, 85, 247, 0.05);
+  }
+
+  /* Suggested Follows Section */
+  .suggested-follows-section {
+    margin-top: 1.5rem;
+    margin-bottom: 1rem;
+  }
+
+  .add-follows-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 1rem;
+    background: transparent;
+    border: 2px dashed var(--border-light);
+    border-radius: 0.75rem;
+    color: var(--text-secondary);
+    font-size: 0.9375rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .add-follows-btn:hover {
+    border-color: #a855f7;
+    color: #a855f7;
+    background: rgba(168, 85, 247, 0.05);
+  }
+
+  .suggested-follows-input-section {
+    padding: 1rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 0.75rem;
+  }
+
+  .suggested-follows-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.5rem;
+  }
+
+  .suggested-follows-header h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    margin: 0;
+    color: var(--text-primary);
+  }
+
+  .suggested-follows-desc {
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+    margin: 0 0 1rem 0;
+  }
+
+  .field-error {
+    font-size: 0.8125rem;
+    color: #ef4444;
+    margin-bottom: 0.5rem;
+  }
+
+  .suggested-follows-input-row {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .suggested-follows-input {
+    flex: 1;
+    padding: 0.625rem 0.875rem;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    font-family: monospace;
+  }
+
+  .suggested-follows-input:focus {
+    outline: none;
+    border-color: #a855f7;
+  }
+
+  .add-follow-btn {
+    padding: 0.625rem 1rem;
+    background: linear-gradient(135deg, #a855f7 0%, #8b5cf6 100%);
+    border: none;
+    border-radius: 0.5rem;
+    color: white;
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .add-follow-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 15px rgba(168, 85, 247, 0.4);
+  }
+
+  .suggested-follows-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 1rem;
+  }
+
+  .suggested-follow-chip {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.375rem 0.75rem;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 2rem;
+  }
+
+  .npub-display {
+    font-size: 0.8125rem;
+    font-family: monospace;
+    color: var(--text-secondary);
+  }
+
+  .remove-follow-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.125rem;
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: color 0.2s ease;
+  }
+
+  .remove-follow-btn:hover {
+    color: #ef4444;
+  }
+
+  .suggested-follows-count {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin: 0.75rem 0 0 0;
   }
 
   .posts-input-section {

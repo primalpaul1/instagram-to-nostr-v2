@@ -107,6 +107,7 @@ CREATE TABLE IF NOT EXISTS gifts (
   profile_data TEXT,  -- JSON: {username, display_name, bio, profile_picture_url} or {profile, feed}
   salt TEXT NOT NULL,  -- Random salt for key derivation (legacy, no longer used)
   gift_type TEXT DEFAULT 'posts' CHECK (gift_type IN ('posts', 'articles', 'combined')),
+  suggested_follows TEXT,  -- JSON array of npubs for suggested follows
   status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'ready', 'claimed', 'expired')),
   claimed_at DATETIME,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,

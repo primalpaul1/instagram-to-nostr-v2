@@ -664,6 +664,7 @@ export interface Gift {
   profile_data: string | null;  // JSON string
   salt: string | null;  // No longer used - kept for backward compatibility
   gift_type: 'posts' | 'articles' | 'combined';
+  suggested_follows: string | null;  // JSON array of npubs
   status: 'pending' | 'processing' | 'ready' | 'claimed' | 'expired';
   claimed_at: string | null;
   created_at: string;
@@ -772,6 +773,11 @@ export async function ensureGiftTables(): Promise<void> {
 
     if (!columns.includes('gift_type')) {
       database.run("ALTER TABLE gifts ADD COLUMN gift_type TEXT DEFAULT 'posts' CHECK (gift_type IN ('posts', 'articles', 'combined'))");
+      saveDb(database);
+    }
+
+    if (!columns.includes('suggested_follows')) {
+      database.run("ALTER TABLE gifts ADD COLUMN suggested_follows TEXT");
       saveDb(database);
     }
 
@@ -1084,7 +1090,8 @@ export async function createGiftWithContent(
   profileData: string | undefined,
   giftType: 'posts' | 'articles' | 'combined',
   posts: GiftPostInput[],
-  articles: GiftArticleInput[]
+  articles: GiftArticleInput[],
+  suggestedFollows?: string[]
 ): Promise<Gift> {
   await ensureGiftTables();
 
@@ -1094,9 +1101,9 @@ export async function createGiftWithContent(
 
     // Create the gift
     database.run(
-      `INSERT INTO gifts (id, claim_token, ig_handle, salt, profile_data, gift_type, expires_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [id, claimToken, igHandle, '', profileData || null, giftType, expiration]
+      `INSERT INTO gifts (id, claim_token, ig_handle, salt, profile_data, gift_type, suggested_follows, expires_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, claimToken, igHandle, '', profileData || null, giftType, suggestedFollows?.length ? JSON.stringify(suggestedFollows) : null, expiration]
     );
 
     // Create all posts

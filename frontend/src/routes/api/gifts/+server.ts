@@ -63,13 +63,14 @@ interface FeedInput {
 export const POST: RequestHandler = async ({ request, url }) => {
   try {
     const body = await request.json();
-    const { handle, posts, profile, gift_type, articles, feed } = body as {
+    const { handle, posts, profile, gift_type, articles, feed, suggested_follows } = body as {
       handle: string;
       posts?: PostInput[];
       profile?: ProfileInput;
       gift_type?: 'posts' | 'articles' | 'combined';
       articles?: ArticleInput[];
       feed?: FeedInput;
+      suggested_follows?: string[];
     };
 
     const giftType = gift_type || 'posts';
@@ -156,7 +157,8 @@ export const POST: RequestHandler = async ({ request, url }) => {
       profileData,
       giftType,
       postsInput,
-      articlesInput
+      articlesInput,
+      suggested_follows
     );
 
     // Build the claim URL

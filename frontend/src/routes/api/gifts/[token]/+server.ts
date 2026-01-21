@@ -48,6 +48,16 @@ export const GET: RequestHandler = async ({ params }) => {
       }
     }
 
+    // Parse suggested follows
+    let suggestedFollows: string[] = [];
+    if (gift.suggested_follows) {
+      try {
+        suggestedFollows = JSON.parse(gift.suggested_follows);
+      } catch {
+        // Ignore parse errors
+      }
+    }
+
     // Handle based on gift type
     if (gift.gift_type === 'combined') {
       const result = await getGiftByTokenWithBoth(token);
@@ -121,6 +131,7 @@ export const GET: RequestHandler = async ({ params }) => {
         profile,
         posts: formattedPosts,
         articles: formattedArticles,
+        suggested_follows: suggestedFollows,
         createdAt: gift.created_at,
         expiresAt: gift.expires_at
       });
@@ -164,6 +175,7 @@ export const GET: RequestHandler = async ({ params }) => {
         feed,
         profile,
         articles: formattedArticles,
+        suggested_follows: suggestedFollows,
         createdAt: gift.created_at,
         expiresAt: gift.expires_at
       });
@@ -213,6 +225,7 @@ export const GET: RequestHandler = async ({ params }) => {
         handle: gift.ig_handle,
         profile,
         posts: formattedPosts,
+        suggested_follows: suggestedFollows,
         createdAt: gift.created_at,
         expiresAt: gift.expires_at
       });

@@ -63,6 +63,15 @@
     feed: Feed | null;
     posts: GiftPost[];
     articles: GiftArticle[];
+    suggested_follows: string[];
+  }
+
+  interface SuggestedFollowProfile {
+    npub: string;
+    pubkeyHex: string;
+    name: string | null;
+    picture: string | null;
+    status: 'idle' | 'following' | 'done';
   }
 
   interface Keypair {
@@ -114,6 +123,11 @@
   // Resume state - track how many were already published
   let alreadyPublishedCount = 0;
   let isResuming = false;
+
+  // Suggested follows state
+  let suggestedFollowProfiles: SuggestedFollowProfile[] = [];
+  let suggestedFollowsLoading = false;
+  let suggestedFollowAllStatus: 'idle' | 'following' | 'done' = 'idle';
 
   // Detect if gift has partially published items (for resume UI on preview)
   $: hasPartiallyPublished = gift ? (
@@ -228,13 +242,120 @@
       gift = {
         ...data,
         posts: data.posts || [],
-        articles: data.articles || []
+        articles: data.articles || [],
+        suggested_follows: data.suggested_follows || []
       };
       step = 'preview';
+
+      // Fetch profiles for suggested follows
+      if (gift.suggested_follows.length > 0) {
+        await fetchSuggestedFollowProfiles(gift.suggested_follows);
+      }
     } catch (err) {
       error = err instanceof Error ? err.message : 'Failed to load gift';
       step = 'error';
     }
+  }
+
+  async function fetchSuggestedFollowProfiles(npubs: string[]) {
+    suggestedFollowsLoading = true;
+    try {
+      // Convert npubs to hex pubkeys
+      const pubkeyHexes: string[] = [];
+      const npubToHex: Record<string, string> = {};
+
+      for (const npub of npubs) {
+        try {
+          if (npub.startsWith('npub1')) {
+            const decoded = nip19.decode(npub);
+            if (decoded.type === 'npub') {
+              const hex = decoded.data as string;
+              pubkeyHexes.push(hex);
+              npubToHex[npub] = hex;
+            }
+          } else if (/^[a-f0-9]{64}$/i.test(npub)) {
+            // Already hex
+            pubkeyHexes.push(npub);
+            npubToHex[npub] = npub;
+          }
+        } catch {
+          // Skip invalid npubs
+        }
+      }
+
+      if (pubkeyHexes.length === 0) {
+        suggestedFollowsLoading = false;
+        return;
+      }
+
+      // Fetch profiles from Primal cache
+      const primalCacheUrl = 'wss://cache1.primal.net/v1';
+      const ws = new WebSocket(primalCacheUrl);
+
+      const profiles: Record<string, { name: string | null; picture: string | null }> = {};
+
+      await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          ws.close();
+          resolve();
+        }, 10000);
+
+        ws.onopen = () => {
+          ws.send(JSON.stringify([
+            'REQ',
+            'suggested-profiles',
+            { cache: ['user_infos', { pubkeys: pubkeyHexes }] }
+          ]));
+        };
+
+        ws.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            if (data[0] === 'EVENT' && data[2]?.kind === 0) {
+              const pubkey = data[2].pubkey;
+              try {
+                const content = JSON.parse(data[2].content);
+                profiles[pubkey] = {
+                  name: content.display_name || content.name || null,
+                  picture: content.picture || null
+                };
+              } catch {
+                // Ignore parse errors
+              }
+            } else if (data[0] === 'EOSE') {
+              clearTimeout(timeout);
+              ws.close();
+              resolve();
+            }
+          } catch {
+            // Ignore parse errors
+          }
+        };
+
+        ws.onerror = () => {
+          clearTimeout(timeout);
+          ws.close();
+          resolve();
+        };
+      });
+
+      // Build suggested follow profiles
+      suggestedFollowProfiles = npubs.map(npub => {
+        const hex = npubToHex[npub];
+        const profile = hex ? profiles[hex] : null;
+        return {
+          npub,
+          pubkeyHex: hex || '',
+          name: profile?.name || null,
+          picture: profile?.picture || null,
+          status: 'idle' as const
+        };
+      }).filter(p => p.pubkeyHex);
+
+    } catch (err) {
+      console.error('Error fetching suggested follow profiles:', err);
+    }
+    suggestedFollowsLoading = false;
   }
 
   async function claimAccount() {
@@ -469,6 +590,66 @@
       return post.blossom_urls[0];
     }
     return null;
+  }
+
+  import {
+    createContactListEvent
+  } from '$lib/signing';
+
+  async function followSuggestedAccount(index: number) {
+    if (!keypair || index >= suggestedFollowProfiles.length) return;
+
+    const profile = suggestedFollowProfiles[index];
+    if (profile.status === 'done' || profile.status === 'following') return;
+
+    suggestedFollowProfiles[index] = { ...profile, status: 'following' };
+    suggestedFollowProfiles = [...suggestedFollowProfiles];
+
+    try {
+      const contactListEvent = createContactListEvent(keypair.publicKeyHex, [profile.pubkeyHex]);
+      const signedEvent = finalizeEvent(contactListEvent as EventTemplate, hexToBytes(keypair.privateKeyHex));
+
+      await importSingleToPrimalCache(signedEvent);
+      await publishToRelays(signedEvent, NOSTR_RELAYS);
+
+      suggestedFollowProfiles[index] = { ...profile, status: 'done' };
+      suggestedFollowProfiles = [...suggestedFollowProfiles];
+    } catch (err) {
+      console.error('Error following suggested account:', err);
+      suggestedFollowProfiles[index] = { ...profile, status: 'idle' };
+      suggestedFollowProfiles = [...suggestedFollowProfiles];
+    }
+  }
+
+  async function followAllSuggestedAccounts() {
+    if (!keypair || suggestedFollowAllStatus === 'following') return;
+
+    suggestedFollowAllStatus = 'following';
+
+    try {
+      // Get all pubkeys that haven't been followed yet
+      const pubkeysToFollow = suggestedFollowProfiles
+        .filter(p => p.status !== 'done')
+        .map(p => p.pubkeyHex);
+
+      if (pubkeysToFollow.length === 0) {
+        suggestedFollowAllStatus = 'done';
+        return;
+      }
+
+      const contactListEvent = createContactListEvent(keypair.publicKeyHex, pubkeysToFollow);
+      const signedEvent = finalizeEvent(contactListEvent as EventTemplate, hexToBytes(keypair.privateKeyHex));
+
+      await importSingleToPrimalCache(signedEvent);
+      await publishToRelays(signedEvent, NOSTR_RELAYS);
+
+      // Mark all as followed
+      suggestedFollowProfiles = suggestedFollowProfiles.map(p => ({ ...p, status: 'done' as const }));
+      suggestedFollowAllStatus = 'done';
+    } catch (err) {
+      console.error('Error following all suggested accounts:', err);
+      suggestedFollowAllStatus = 'idle';
+    }
   }
 </script>
 
@@ -812,6 +993,73 @@
               </div>
             </div>
         </div>
+
+        <!-- Suggested Follows Section (from gift creator) -->
+        {#if suggestedFollowProfiles.length > 0 && keypair}
+          <div class="suggested-follows-section">
+            <h3>Suggested Follows</h3>
+            <p class="suggested-follows-desc">The person who created this gift recommends following:</p>
+
+            <div class="suggested-follows-list">
+              {#each suggestedFollowProfiles as profile, i}
+                <div class="suggested-follow-row">
+                  <div class="suggested-follow-avatar">
+                    {#if profile.picture}
+                      <img src={profile.picture} alt="" />
+                    {:else}
+                      <div class="avatar-placeholder">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/>
+                          <circle cx="12" cy="7" r="4"/>
+                        </svg>
+                      </div>
+                    {/if}
+                  </div>
+                  <span class="suggested-follow-name">
+                    {profile.name || profile.npub.slice(0, 12) + '...' + profile.npub.slice(-6)}
+                  </span>
+                  <button
+                    class="follow-btn"
+                    class:done={profile.status === 'done'}
+                    class:following={profile.status === 'following'}
+                    disabled={profile.status === 'following' || profile.status === 'done' || !keySaved}
+                    on:click={() => followSuggestedAccount(i)}
+                  >
+                    {#if profile.status === 'done'}
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M20 6L9 17l-5-5"/>
+                      </svg>
+                    {:else if profile.status === 'following'}
+                      <div class="btn-spinner-small"></div>
+                    {:else}
+                      Follow
+                    {/if}
+                  </button>
+                </div>
+              {/each}
+            </div>
+
+            <button
+              class="follow-all-suggested-btn"
+              class:done={suggestedFollowAllStatus === 'done'}
+              class:following={suggestedFollowAllStatus === 'following'}
+              disabled={suggestedFollowAllStatus === 'following' || suggestedFollowAllStatus === 'done' || !keySaved}
+              on:click={followAllSuggestedAccounts}
+            >
+              {#if suggestedFollowAllStatus === 'done'}
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M20 6L9 17l-5-5"/>
+                </svg>
+                Following All
+              {:else if suggestedFollowAllStatus === 'following'}
+                <div class="btn-spinner"></div>
+                Following...
+              {:else}
+                Follow All ({suggestedFollowProfiles.length})
+              {/if}
+            </button>
+          </div>
+        {/if}
 
         <!-- Follow Packs Section -->
         {#if keypair}
@@ -1614,5 +1862,167 @@
     background: var(--bg-secondary);
     color: var(--text-primary);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  }
+
+  /* Suggested Follows Section */
+  .suggested-follows-section {
+    margin-top: 2rem;
+    text-align: left;
+  }
+
+  .suggested-follows-section h3 {
+    font-size: 1.125rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    color: var(--text-primary);
+  }
+
+  .suggested-follows-desc {
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+    margin-bottom: 1rem;
+  }
+
+  .suggested-follows-list {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 0.75rem;
+    overflow: hidden;
+    margin-bottom: 1rem;
+  }
+
+  .suggested-follow-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .suggested-follow-row:last-child {
+    border-bottom: none;
+  }
+
+  .suggested-follow-avatar {
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: 50%;
+    overflow: hidden;
+    background: var(--bg-secondary);
+    flex-shrink: 0;
+  }
+
+  .suggested-follow-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .suggested-follow-avatar .avatar-placeholder {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+  }
+
+  .suggested-follow-name {
+    flex: 1;
+    font-size: 0.875rem;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .follow-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.25rem;
+    padding: 0.375rem 0.75rem;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 1rem;
+    color: var(--text-primary);
+    font-size: 0.75rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    min-width: 4rem;
+  }
+
+  .follow-btn:hover:not(:disabled) {
+    border-color: #a855f7;
+    color: #a855f7;
+  }
+
+  .follow-btn:disabled {
+    cursor: not-allowed;
+  }
+
+  .follow-btn.done {
+    background: #22c55e;
+    border-color: #22c55e;
+    color: white;
+  }
+
+  .follow-btn.following {
+    border-color: var(--border);
+  }
+
+  .btn-spinner-small {
+    width: 0.75rem;
+    height: 0.75rem;
+    border: 2px solid var(--border);
+    border-top-color: #a855f7;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+
+  .follow-all-suggested-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;
+    width: 100%;
+    padding: 0.625rem 1rem;
+    background: linear-gradient(135deg, #a855f7 0%, #8b5cf6 100%);
+    border: none;
+    border-radius: 0.5rem;
+    color: white;
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .follow-all-suggested-btn:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 15px rgba(168, 85, 247, 0.4);
+  }
+
+  .follow-all-suggested-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .follow-all-suggested-btn.done {
+    background: #22c55e;
+  }
+
+  .follow-all-suggested-btn.following {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+  }
+
+  .btn-spinner {
+    width: 1rem;
+    height: 1rem;
+    border: 2px solid var(--border);
+    border-top-color: #a855f7;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
   }
 </style>
