@@ -8,6 +8,7 @@
     createMultiMediaPostEvent,
     createProfileEvent,
     createLongFormContentEvent,
+    createContactListEvent,
     publishToRelays,
     importToPrimalCache,
     importSingleToPrimalCache,
@@ -73,6 +74,25 @@
     npub: string;
   }
 
+  // Featured follow packs configuration
+  const FEATURED_PACKS = [
+    { dTag: 'sleihevbfz2c', author: '805b34f708837dfb3e7f05815ac5760564628b58d5a0ce839ccbb6ef3620fac3' },
+    { dTag: 'xv7j4mgavera', author: '04c915daefee38317fa734444acee390a8269fe5810b2241e5e6dd343dfbecc9' }
+  ];
+
+  interface FollowPackMember {
+    pubkey: string;
+    picture?: string;
+    name?: string;
+  }
+
+  interface FollowPack {
+    dTag: string;
+    name: string;
+    members: FollowPackMember[];
+    followingStatus: 'idle' | 'following' | 'done' | 'error';
+  }
+
   let step: PageStep = 'loading';
   let gift: Gift | null = null;
   let error = '';
@@ -114,6 +134,10 @@
   let alreadyPublishedCount = 0;
   let isResuming = false;
 
+  // Follow packs state
+  let followPacks: FollowPack[] = [];
+  let followPacksLoading = true;
+
   // Detect if gift has partially published items (for resume UI on preview)
   $: hasPartiallyPublished = gift ? (
     (gift.posts || []).some(p => p.status === 'published') ||
@@ -144,6 +168,199 @@
 
   const token = $page.params.token;
 
+  // Fetch follow packs from relays (kind 39089)
+  async function fetchFollowPacks(): Promise<void> {
+    followPacksLoading = true;
+    const packs: FollowPack[] = [];
+
+    try {
+      // Query relays for kind 39089 events
+      const relayUrl = 'wss://relay.primal.net';
+      const ws = new WebSocket(relayUrl);
+      const subId = Math.random().toString(36).substring(2, 14);
+
+      const packEvents: Map<string, any> = new Map();
+
+      await new Promise<void>((resolve) => {
+        const timeout = setTimeout(() => {
+          ws.close();
+          resolve();
+        }, 5000);
+
+        ws.onopen = () => {
+          // Request follow pack events (kind 39089) for each featured pack
+          const filter = {
+            kinds: [39089],
+            authors: FEATURED_PACKS.map(p => p.author),
+            '#d': FEATURED_PACKS.map(p => p.dTag)
+          };
+          ws.send(JSON.stringify(['REQ', subId, filter]));
+        };
+
+        ws.onmessage = (msg) => {
+          try {
+            const data = JSON.parse(msg.data);
+            if (data[0] === 'EVENT' && data[1] === subId) {
+              const event = data[2];
+              // Get d-tag
+              const dTag = event.tags.find((t: string[]) => t[0] === 'd')?.[1];
+              if (dTag) {
+                packEvents.set(dTag, event);
+              }
+            } else if (data[0] === 'EOSE') {
+              clearTimeout(timeout);
+              ws.close();
+              resolve();
+            }
+          } catch {
+            // Ignore parse errors
+          }
+        };
+
+        ws.onerror = () => {
+          clearTimeout(timeout);
+          resolve();
+        };
+      });
+
+      // Process pack events
+      for (const packConfig of FEATURED_PACKS) {
+        const event = packEvents.get(packConfig.dTag);
+        if (event) {
+          // Get pack name from name tag or title tag or content
+          let packName = event.tags.find((t: string[]) => t[0] === 'name')?.[1]
+            || event.tags.find((t: string[]) => t[0] === 'title')?.[1]
+            || event.content
+            || 'Follow Pack';
+
+          // Get member pubkeys from p tags
+          const memberPubkeys = event.tags
+            .filter((t: string[]) => t[0] === 'p')
+            .map((t: string[]) => t[1]);
+
+          packs.push({
+            dTag: packConfig.dTag,
+            name: packName,
+            members: memberPubkeys.map((pk: string) => ({ pubkey: pk })),
+            followingStatus: 'idle'
+          });
+        }
+      }
+
+      // Fetch profile pictures for pack members (first 4 of each pack)
+      if (packs.length > 0) {
+        const allPubkeys = new Set<string>();
+        for (const pack of packs) {
+          pack.members.slice(0, 4).forEach(m => allPubkeys.add(m.pubkey));
+        }
+        const profiles = await fetchPackMemberProfiles(Array.from(allPubkeys));
+
+        // Update members with profile data
+        for (const pack of packs) {
+          pack.members = pack.members.map(m => ({
+            ...m,
+            picture: profiles.get(m.pubkey)?.picture,
+            name: profiles.get(m.pubkey)?.name
+          }));
+        }
+      }
+
+      followPacks = packs;
+    } catch (err) {
+      console.error('Error fetching follow packs:', err);
+    } finally {
+      followPacksLoading = false;
+    }
+  }
+
+  // Fetch profile metadata for pack members
+  async function fetchPackMemberProfiles(pubkeys: string[]): Promise<Map<string, { picture?: string; name?: string }>> {
+    const profiles = new Map<string, { picture?: string; name?: string }>();
+
+    if (pubkeys.length === 0) return profiles;
+
+    try {
+      const relayUrl = 'wss://relay.primal.net';
+      const ws = new WebSocket(relayUrl);
+      const subId = Math.random().toString(36).substring(2, 14);
+
+      await new Promise<void>((resolve) => {
+        const timeout = setTimeout(() => {
+          ws.close();
+          resolve();
+        }, 5000);
+
+        ws.onopen = () => {
+          const filter = {
+            kinds: [0],
+            authors: pubkeys
+          };
+          ws.send(JSON.stringify(['REQ', subId, filter]));
+        };
+
+        ws.onmessage = (msg) => {
+          try {
+            const data = JSON.parse(msg.data);
+            if (data[0] === 'EVENT' && data[1] === subId) {
+              const event = data[2];
+              const content = JSON.parse(event.content);
+              profiles.set(event.pubkey, {
+                picture: content.picture,
+                name: content.name || content.display_name
+              });
+            } else if (data[0] === 'EOSE') {
+              clearTimeout(timeout);
+              ws.close();
+              resolve();
+            }
+          } catch {
+            // Ignore parse errors
+          }
+        };
+
+        ws.onerror = () => {
+          clearTimeout(timeout);
+          resolve();
+        };
+      });
+    } catch (err) {
+      console.error('Error fetching profiles:', err);
+    }
+
+    return profiles;
+  }
+
+  // Follow all members of a pack
+  async function followAll(packIndex: number): Promise<void> {
+    if (!keypair || packIndex >= followPacks.length) return;
+
+    const pack = followPacks[packIndex];
+    followPacks[packIndex] = { ...pack, followingStatus: 'following' };
+    followPacks = [...followPacks];
+
+    try {
+      // Get all member pubkeys from the pack
+      const contactPubkeys = pack.members.map(m => m.pubkey);
+
+      // Create kind 3 contact list event
+      const contactListEvent = createContactListEvent(keypair.publicKeyHex, contactPubkeys);
+
+      // Sign the event
+      const signedEvent = finalizeEvent(contactListEvent as EventTemplate, hexToBytes(keypair.privateKeyHex));
+
+      // Publish to relays
+      await importSingleToPrimalCache(signedEvent);
+      await publishToRelays(signedEvent, NOSTR_RELAYS);
+
+      followPacks[packIndex] = { ...pack, followingStatus: 'done' };
+      followPacks = [...followPacks];
+    } catch (err) {
+      console.error('Error following pack:', err);
+      followPacks[packIndex] = { ...pack, followingStatus: 'error' };
+      followPacks = [...followPacks];
+    }
+  }
+
   // Rotating Nostr sayings
   const NOSTR_SAYINGS = [
     "Not your keys, not your content",
@@ -167,6 +384,9 @@
     sayingInterval = setInterval(() => {
       currentSayingIndex = (currentSayingIndex + 1) % NOSTR_SAYINGS.length;
     }, 3000);
+
+    // Fetch follow packs in background
+    fetchFollowPacks();
 
     await loadGift();
   });
@@ -811,6 +1031,69 @@
               </div>
             </div>
         </div>
+
+        <!-- Follow Packs Section -->
+        {#if followPacks.length > 0}
+          <div class="follow-packs-section">
+            <h3>Find People to Follow</h3>
+
+            {#each followPacks as pack, i}
+              <div class="follow-pack-card">
+                <div class="pack-header">
+                  <span class="pack-name">{pack.name}</span>
+                  <span class="pack-count">{pack.members.length} people</span>
+                </div>
+
+                <div class="pack-members">
+                  {#each pack.members.slice(0, 4) as member}
+                    <div class="member-avatar">
+                      {#if member.picture}
+                        <img src={member.picture} alt="" />
+                      {:else}
+                        <div class="avatar-placeholder">
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/>
+                            <circle cx="12" cy="7" r="4"/>
+                          </svg>
+                        </div>
+                      {/if}
+                    </div>
+                  {/each}
+                  {#if pack.members.length > 4}
+                    <div class="member-count">+{pack.members.length - 4}</div>
+                  {/if}
+                </div>
+
+                <button
+                  class="follow-all-btn"
+                  class:done={pack.followingStatus === 'done'}
+                  class:following={pack.followingStatus === 'following'}
+                  disabled={pack.followingStatus === 'following' || pack.followingStatus === 'done' || !keySaved}
+                  on:click={() => followAll(i)}
+                >
+                  {#if pack.followingStatus === 'done'}
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M20 6L9 17l-5-5"/>
+                    </svg>
+                    Following
+                  {:else if pack.followingStatus === 'following'}
+                    <div class="btn-spinner"></div>
+                    Following...
+                  {:else}
+                    Follow All ({pack.members.length})
+                  {/if}
+                </button>
+              </div>
+            {/each}
+
+            <a href="https://following.space" target="_blank" rel="noopener" class="browse-more-link">
+              Browse more packs at following.space
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M7 17L17 7M17 7H7M17 7v10"/>
+              </svg>
+            </a>
+          </div>
+        {/if}
       </div>
     {/if}
   </main>
@@ -1604,5 +1887,143 @@
     background: var(--bg-secondary);
     color: var(--text-primary);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  }
+
+  /* Follow Packs Section */
+  .follow-packs-section {
+    margin-top: 2rem;
+    text-align: left;
+  }
+
+  .follow-packs-section h3 {
+    font-size: 1.125rem;
+    font-weight: 600;
+    margin-bottom: 1rem;
+    color: var(--text-primary);
+  }
+
+  .follow-pack-card {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 0.75rem;
+    padding: 1rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .pack-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+  }
+
+  .pack-name {
+    font-weight: 600;
+    color: var(--text-primary);
+    font-size: 0.9375rem;
+  }
+
+  .pack-count {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+
+  .pack-members {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .member-avatar {
+    width: 2rem;
+    height: 2rem;
+    border-radius: 50%;
+    overflow: hidden;
+    background: var(--bg-secondary);
+    flex-shrink: 0;
+  }
+
+  .member-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .avatar-placeholder {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+  }
+
+  .member-count {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    padding: 0 0.5rem;
+  }
+
+  .follow-all-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;
+    width: 100%;
+    padding: 0.625rem 1rem;
+    background: linear-gradient(135deg, #a855f7 0%, #8b5cf6 100%);
+    border: none;
+    border-radius: 0.5rem;
+    color: white;
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .follow-all-btn:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 15px rgba(168, 85, 247, 0.4);
+  }
+
+  .follow-all-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .follow-all-btn.done {
+    background: #22c55e;
+  }
+
+  .follow-all-btn.following {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+  }
+
+  .btn-spinner {
+    width: 1rem;
+    height: 1rem;
+    border: 2px solid var(--border);
+    border-top-color: #a855f7;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+
+  .browse-more-link {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;
+    margin-top: 1rem;
+    padding: 0.75rem;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    text-decoration: none;
+    transition: color 0.2s;
+  }
+
+  .browse-more-link:hover {
+    color: #a855f7;
   }
 </style>

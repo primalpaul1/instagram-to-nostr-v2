@@ -520,3 +520,24 @@ async function sendEventsToCache(events: Event[]): Promise<boolean> {
     }
   });
 }
+
+/**
+ * Create a contact list event (kind 3) for following users.
+ * Each contact is added as a 'p' tag with their pubkey.
+ */
+export function createContactListEvent(
+  pubkey: string,
+  contacts: string[]
+): Omit<Event, 'sig'> {
+  // Create p tags for each contact
+  const tags: string[][] = contacts.map(contactPubkey => ['p', contactPubkey]);
+
+  return {
+    kind: 3,
+    pubkey,
+    created_at: Math.floor(Date.now() / 1000),
+    tags,
+    content: '',
+    id: '' // Will be filled by signer
+  };
+}
