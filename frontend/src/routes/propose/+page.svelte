@@ -328,12 +328,6 @@
       const payloadSizeKB = Math.round(bodyStr.length / 1024);
       console.log('[Propose] Sending payload size:', bodyStr.length, 'bytes (', payloadSizeKB, 'KB)');
 
-      // Check if payload is too large (limit is ~500KB to be safe)
-      const MAX_PAYLOAD_KB = 450;
-      if (payloadSizeKB > MAX_PAYLOAD_KB) {
-        throw new Error(`Selection too large (${payloadSizeKB}KB). Please select fewer posts (max ~${MAX_PAYLOAD_KB}KB). Try selecting ${Math.floor(totalSelectedCount * MAX_PAYLOAD_KB / payloadSizeKB)} items or fewer.`);
-      }
-
       const response = await fetch('/api/proposals', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
