@@ -325,7 +325,14 @@
       }
 
       const bodyStr = JSON.stringify(body);
-      console.log('[Propose] Sending payload size:', bodyStr.length, 'bytes');
+      const payloadSizeKB = Math.round(bodyStr.length / 1024);
+      console.log('[Propose] Sending payload size:', bodyStr.length, 'bytes (', payloadSizeKB, 'KB)');
+
+      // Check if payload is too large (limit is ~500KB to be safe)
+      const MAX_PAYLOAD_KB = 450;
+      if (payloadSizeKB > MAX_PAYLOAD_KB) {
+        throw new Error(`Selection too large (${payloadSizeKB}KB). Please select fewer posts (max ~${MAX_PAYLOAD_KB}KB). Try selecting ${Math.floor(totalSelectedCount * MAX_PAYLOAD_KB / payloadSizeKB)} items or fewer.`);
+      }
 
       const response = await fetch('/api/proposals', {
         method: 'POST',
@@ -334,6 +341,11 @@
       });
 
       console.log('[Propose] Response status:', response.status);
+
+      // Handle 413 Payload Too Large specifically
+      if (response.status === 413) {
+        throw new Error(`Selection too large (${payloadSizeKB}KB). Please select fewer posts.`);
+      }
 
       const responseText = await response.text();
       console.log('[Propose] Response text length:', responseText.length);
@@ -344,7 +356,12 @@
           const data = JSON.parse(responseText);
           errorMessage = data.message || errorMessage;
         } catch {
-          errorMessage = `Server error: ${response.status} - ${responseText.slice(0, 200)}`;
+          // If response is empty or invalid, it might be a size limit issue
+          if (responseText.length === 0) {
+            errorMessage = `Server error (empty response). Try selecting fewer posts.`;
+          } else {
+            errorMessage = `Server error: ${response.status} - ${responseText.slice(0, 200)}`;
+          }
         }
         throw new Error(errorMessage);
       }
@@ -354,6 +371,10 @@
         data = JSON.parse(responseText);
       } catch (parseErr) {
         console.error('[Propose] JSON parse error:', parseErr, 'Response:', responseText.slice(0, 500));
+        // Empty response often means payload was too large
+        if (responseText.length === 0) {
+          throw new Error(`Server returned empty response. Try selecting fewer posts (${totalSelectedCount} selected, ~${payloadSizeKB}KB).`);
+        }
         throw new Error(`Invalid response from server (${responseText.length} bytes)`);
       }
 
