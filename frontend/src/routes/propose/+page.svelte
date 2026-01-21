@@ -324,21 +324,43 @@
         body.feed = feedInfo;
       }
 
+      const bodyStr = JSON.stringify(body);
+      console.log('[Propose] Sending payload size:', bodyStr.length, 'bytes');
+
       const response = await fetch('/api/proposals', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
+        body: bodyStr
       });
 
+      console.log('[Propose] Response status:', response.status);
+
+      const responseText = await response.text();
+      console.log('[Propose] Response text length:', responseText.length);
+
       if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.message || 'Failed to create proposal');
+        let errorMessage = 'Failed to create proposal';
+        try {
+          const data = JSON.parse(responseText);
+          errorMessage = data.message || errorMessage;
+        } catch {
+          errorMessage = `Server error: ${response.status} - ${responseText.slice(0, 200)}`;
+        }
+        throw new Error(errorMessage);
       }
 
-      const data = await response.json();
+      let data;
+      try {
+        data = JSON.parse(responseText);
+      } catch (parseErr) {
+        console.error('[Propose] JSON parse error:', parseErr, 'Response:', responseText.slice(0, 500));
+        throw new Error(`Invalid response from server (${responseText.length} bytes)`);
+      }
+
       claimUrl = data.claimUrl;
       step = 'done';
     } catch (err) {
+      console.error('[Propose] Error:', err);
       error = err instanceof Error ? err.message : 'Failed to create proposal';
       step = 'select';
     }

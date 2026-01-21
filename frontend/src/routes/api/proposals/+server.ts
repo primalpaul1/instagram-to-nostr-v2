@@ -60,8 +60,10 @@ interface FeedInput {
 }
 
 export const POST: RequestHandler = async ({ request, url }) => {
+  console.log('[Proposals API] Received POST request');
   try {
     const body = await request.json();
+    console.log('[Proposals API] Body parsed, handle:', body.handle, 'posts count:', body.posts?.length, 'articles count:', body.articles?.length);
     const { handle, targetNpub, posts, profile, proposal_type, articles, feed } = body as {
       handle: string;
       targetNpub: string;
@@ -189,13 +191,14 @@ export const POST: RequestHandler = async ({ request, url }) => {
     const baseUrl = url.origin || 'https://ownyourposts.com';
     const claimUrl = `${baseUrl}/claim/${claimToken}`;
 
+    console.log('[Proposals API] Success! proposalId:', proposalId, 'claimUrl:', claimUrl);
     return json({
       proposalId,
       claimToken,
       claimUrl
     });
   } catch (err) {
-    console.error('Error creating proposal:', err);
+    console.error('[Proposals API] Error creating proposal:', err);
     return json(
       { message: 'Failed to create proposal' },
       { status: 500 }
