@@ -654,14 +654,10 @@
 </script>
 
 <svelte:head>
-  <title>Claim Your Posts | Own Your Posts</title>
+  <title>Welcome to Primal</title>
 </svelte:head>
 
 <div class="gift-claim-page">
-  <header>
-    <a href="/" class="logo">Own Your Posts</a>
-  </header>
-
   <main>
     {#if step === 'loading'}
       <div class="loading-step">
@@ -891,8 +887,8 @@
             </svg>
             <div class="progress-percent">
               {#if allTasksComplete}
-                <svg class="checkmark-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                  <path class="checkmark-path" d="M20 6L9 17l-5-5"/>
+                <svg class="checkmark-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <path class="checkmark-path" d="M5 13l4 4L19 7"/>
                 </svg>
               {:else}
                 {Math.round(progressPercent)}%
