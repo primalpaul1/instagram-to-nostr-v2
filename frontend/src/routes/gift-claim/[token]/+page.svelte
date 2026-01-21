@@ -170,17 +170,20 @@
 
   const token = $page.params.token;
 
+  // Relays to try for fetching packs
+  const PACK_RELAYS = ['wss://relay.primal.net', 'wss://relay.damus.io', 'wss://nos.lol'];
+
   // Fetch a single follow pack from relay
-  async function fetchSinglePack(packConfig: { dTag: string; author: string }): Promise<FollowPack | null> {
+  async function fetchPackFromRelay(relayUrl: string, packConfig: { dTag: string; author: string }): Promise<FollowPack | null> {
     return new Promise((resolve) => {
       try {
-        const ws = new WebSocket('wss://relay.primal.net');
+        const ws = new WebSocket(relayUrl);
         const subId = Math.random().toString(36).substring(2, 14);
 
         const timeout = setTimeout(() => {
           ws.close();
           resolve(null);
-        }, 5000);
+        }, 8000);
 
         ws.onopen = () => {
           const filter = {
@@ -234,6 +237,15 @@
     });
   }
 
+  // Try multiple relays to fetch a pack
+  async function fetchSinglePack(packConfig: { dTag: string; author: string }): Promise<FollowPack | null> {
+    for (const relay of PACK_RELAYS) {
+      const result = await fetchPackFromRelay(relay, packConfig);
+      if (result) return result;
+    }
+    return null;
+  }
+
   // Fetch follow packs from relays (kind 39089)
   async function fetchFollowPacks(): Promise<void> {
     followPacksLoading = true;
@@ -270,29 +282,31 @@
     }
   }
 
-  // Fetch profile metadata for pack members
+  // Fetch profile metadata using Primal cache for better coverage
   async function fetchPackMemberProfiles(pubkeys: string[]): Promise<Map<string, { picture?: string; name?: string }>> {
     const profiles = new Map<string, { picture?: string; name?: string }>();
 
     if (pubkeys.length === 0) return profiles;
 
+    // Use Primal cache for profiles - it has better coverage
     try {
-      const relayUrl = 'wss://relay.primal.net';
-      const ws = new WebSocket(relayUrl);
+      const ws = new WebSocket('wss://cache1.primal.net/v1');
       const subId = Math.random().toString(36).substring(2, 14);
 
       await new Promise<void>((resolve) => {
         const timeout = setTimeout(() => {
           ws.close();
           resolve();
-        }, 5000);
+        }, 10000); // Longer timeout for many profiles
 
         ws.onopen = () => {
-          const filter = {
-            kinds: [0],
-            authors: pubkeys
-          };
-          ws.send(JSON.stringify(['REQ', subId, filter]));
+          // Use Primal's user_infos cache request for batch profile fetching
+          const cacheRequest = JSON.stringify([
+            'REQ',
+            subId,
+            { cache: ['user_infos', { pubkeys }] }
+          ]);
+          ws.send(cacheRequest);
         };
 
         ws.onmessage = (msg) => {
@@ -300,11 +314,18 @@
             const data = JSON.parse(msg.data);
             if (data[0] === 'EVENT' && data[1] === subId) {
               const event = data[2];
-              const content = JSON.parse(event.content);
-              profiles.set(event.pubkey, {
-                picture: content.picture,
-                name: content.name || content.display_name
-              });
+              // Kind 0 events contain profile metadata
+              if (event.kind === 0) {
+                try {
+                  const content = JSON.parse(event.content);
+                  profiles.set(event.pubkey, {
+                    picture: content.picture,
+                    name: content.name || content.display_name
+                  });
+                } catch {
+                  // Skip invalid JSON content
+                }
+              }
             } else if (data[0] === 'EOSE') {
               clearTimeout(timeout);
               ws.close();
@@ -321,7 +342,62 @@
         };
       });
     } catch (err) {
-      console.error('Error fetching profiles:', err);
+      console.error('Error fetching profiles from Primal cache:', err);
+    }
+
+    // Fallback: fetch missing profiles from regular relay
+    const missingPubkeys = pubkeys.filter(pk => !profiles.has(pk));
+    if (missingPubkeys.length > 0) {
+      try {
+        const ws = new WebSocket('wss://relay.primal.net');
+        const subId = Math.random().toString(36).substring(2, 14);
+
+        await new Promise<void>((resolve) => {
+          const timeout = setTimeout(() => {
+            ws.close();
+            resolve();
+          }, 8000);
+
+          ws.onopen = () => {
+            const filter = {
+              kinds: [0],
+              authors: missingPubkeys
+            };
+            ws.send(JSON.stringify(['REQ', subId, filter]));
+          };
+
+          ws.onmessage = (msg) => {
+            try {
+              const data = JSON.parse(msg.data);
+              if (data[0] === 'EVENT' && data[1] === subId) {
+                const event = data[2];
+                try {
+                  const content = JSON.parse(event.content);
+                  profiles.set(event.pubkey, {
+                    picture: content.picture,
+                    name: content.name || content.display_name
+                  });
+                } catch {
+                  // Skip invalid JSON
+                }
+              } else if (data[0] === 'EOSE') {
+                clearTimeout(timeout);
+                ws.close();
+                resolve();
+              }
+            } catch {
+              // Ignore parse errors
+            }
+          };
+
+          ws.onerror = () => {
+            clearTimeout(timeout);
+            resolve();
+          };
+        });
+      } catch (err) {
+        console.error('Error fetching profiles from relay:', err);
+      }
     }
 
     return profiles;
