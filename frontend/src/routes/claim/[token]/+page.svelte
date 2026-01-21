@@ -653,10 +653,6 @@
 </svelte:head>
 
 <div class="claim-page">
-  <header>
-    <a href="/" class="logo">Welcome to Primal</a>
-  </header>
-
   <main>
     {#if step === 'loading'}
       <div class="loading-step">
