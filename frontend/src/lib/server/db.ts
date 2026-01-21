@@ -616,6 +616,82 @@ export async function getProposalByTokenWithBoth(claimToken: string): Promise<{ 
   return { proposal, posts, articles };
 }
 
+// Batched proposal creation - creates proposal with all posts/articles in single DB transaction
+export interface ProposalPostInput {
+  postType: 'reel' | 'image' | 'carousel';
+  mediaItems: string;
+  caption?: string;
+  originalDate?: string;
+  thumbnailUrl?: string;
+}
+
+export interface ProposalArticleInput {
+  title: string;
+  contentMarkdown: string;
+  summary?: string;
+  publishedAt?: string;
+  link?: string;
+  imageUrl?: string;
+  hashtags?: string[];
+}
+
+export async function createProposalWithContent(
+  id: string,
+  claimToken: string,
+  targetNpub: string,
+  targetPubkeyHex: string,
+  igHandle: string,
+  profileData: string | undefined,
+  proposalType: 'posts' | 'articles' | 'combined',
+  posts: ProposalPostInput[],
+  articles: ProposalArticleInput[]
+): Promise<Proposal> {
+  await ensureProposalTables();
+
+  return withDb(async (database) => {
+    // Default expiration: 30 days from now
+    const expiration = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
+    // Create the proposal
+    database.run(
+      `INSERT INTO proposals (id, claim_token, target_npub, target_pubkey_hex, ig_handle, profile_data, proposal_type, expires_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, claimToken, targetNpub, targetPubkeyHex, igHandle, profileData || null, proposalType, expiration]
+    );
+
+    // Create all posts in the same transaction
+    for (const post of posts) {
+      database.run(
+        `INSERT INTO proposal_posts (proposal_id, post_type, media_items, caption, original_date, thumbnail_url)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [id, post.postType, post.mediaItems, post.caption || null, post.originalDate || null, post.thumbnailUrl || null]
+      );
+    }
+
+    // Create all articles in the same transaction
+    for (const article of articles) {
+      database.run(
+        `INSERT INTO proposal_articles (proposal_id, title, summary, content_markdown, published_at, link, image_url, hashtags, status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
+        [
+          id,
+          article.title,
+          article.summary || null,
+          article.contentMarkdown,
+          article.publishedAt || null,
+          article.link || null,
+          article.imageUrl || null,
+          article.hashtags ? JSON.stringify(article.hashtags) : null
+        ]
+      );
+    }
+
+    // Return the proposal we just created
+    const result = database.exec('SELECT * FROM proposals WHERE id = ?', [id]);
+    return rowToObject<Proposal>(result[0].columns, result[0].values[0]);
+  });
+}
+
 export async function getPendingProposals(): Promise<Proposal[]> {
   await ensureProposalTables();
   const database = await getDb();

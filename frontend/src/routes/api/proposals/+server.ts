@@ -1,5 +1,5 @@
 import { json } from '@sveltejs/kit';
-import { createProposal, createProposalPost, createProposalArticle } from '$lib/server/db';
+import { createProposalWithContent, type ProposalPostInput, type ProposalArticleInput } from '$lib/server/db';
 import { npubToHex } from '$lib/nip46';
 import type { RequestHandler } from './$types';
 
@@ -146,46 +146,38 @@ export const POST: RequestHandler = async ({ request, url }) => {
     // Use feed URL as handle for articles-only, otherwise use the social handle
     const proposalHandle = proposalType === 'articles' ? (feed?.url || 'RSS Feed') : handle;
 
-    await createProposal(
+    // Convert posts to input format
+    const postInputs: ProposalPostInput[] = (posts || []).map(post => ({
+      postType: post.post_type,
+      mediaItems: JSON.stringify(post.media_items),
+      caption: post.caption,
+      originalDate: post.original_date,
+      thumbnailUrl: post.thumbnail_url
+    }));
+
+    // Convert articles to input format
+    const articleInputs: ProposalArticleInput[] = (articles || []).map(article => ({
+      title: article.title,
+      contentMarkdown: article.content_markdown,
+      summary: article.summary,
+      publishedAt: article.published_at,
+      link: article.link,
+      imageUrl: article.image_url,
+      hashtags: article.hashtags
+    }));
+
+    // Create proposal with all content in a single DB transaction
+    await createProposalWithContent(
       proposalId,
       claimToken,
       targetNpub,
       targetPubkeyHex,
       proposalHandle,
       profileData,
-      undefined, // expiresAt - use default
-      proposalType
+      proposalType,
+      postInputs,
+      articleInputs
     );
-
-    // Create proposal posts if we have them
-    if ((proposalType === 'posts' || proposalType === 'combined') && posts) {
-      for (const post of posts) {
-        await createProposalPost(
-          proposalId,
-          post.post_type,
-          JSON.stringify(post.media_items),
-          post.caption,
-          post.original_date,
-          post.thumbnail_url
-        );
-      }
-    }
-
-    // Create proposal articles if we have them
-    if ((proposalType === 'articles' || proposalType === 'combined') && articles) {
-      for (const article of articles) {
-        await createProposalArticle(
-          proposalId,
-          article.title,
-          article.content_markdown,
-          article.summary,
-          article.published_at,
-          article.link,
-          article.image_url,
-          article.hashtags
-        );
-      }
-    }
 
     // Build the claim URL
     const baseUrl = url.origin || 'https://ownyourposts.com';
