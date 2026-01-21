@@ -502,29 +502,34 @@ def reset_stale_processing_proposals() -> int:
     This handles cases where the worker was restarted mid-processing.
     Also resets any 'uploading' posts back to 'pending'.
     """
-    with get_connection() as conn:
-        # Count stale proposals
-        cursor = conn.execute(
-            "SELECT COUNT(*) as count FROM proposals WHERE status = 'processing'"
-        )
-        count = cursor.fetchone()["count"]
-
-        if count > 0:
-            # Reset proposal_posts that were uploading
-            conn.execute(
-                """
-                UPDATE proposal_posts
-                SET status = 'pending'
-                WHERE status = 'uploading'
-                AND proposal_id IN (SELECT id FROM proposals WHERE status = 'processing')
-                """
+    try:
+        with get_connection() as conn:
+            # Count stale proposals
+            cursor = conn.execute(
+                "SELECT COUNT(*) as count FROM proposals WHERE status = 'processing'"
             )
-            # Reset proposals
-            conn.execute(
-                "UPDATE proposals SET status = 'pending' WHERE status = 'processing'"
-            )
+            count = cursor.fetchone()["count"]
 
-        return count
+            if count > 0:
+                # Reset proposal_posts that were uploading
+                conn.execute(
+                    """
+                    UPDATE proposal_posts
+                    SET status = 'pending'
+                    WHERE status = 'uploading'
+                    AND proposal_id IN (SELECT id FROM proposals WHERE status = 'processing')
+                    """
+                )
+                # Reset proposals
+                conn.execute(
+                    "UPDATE proposals SET status = 'pending' WHERE status = 'processing'"
+                )
+
+            return count
+    except Exception as e:
+        if "no such table" in str(e):
+            return 0  # Table doesn't exist yet, nothing to reset
+        raise
 
 
 # ============================================
@@ -690,29 +695,34 @@ def reset_stale_processing_gifts() -> int:
     This handles cases where the worker was restarted mid-processing.
     Also resets any 'uploading' posts back to 'pending'.
     """
-    with get_connection() as conn:
-        # Count stale gifts
-        cursor = conn.execute(
-            "SELECT COUNT(*) as count FROM gifts WHERE status = 'processing'"
-        )
-        count = cursor.fetchone()["count"]
-
-        if count > 0:
-            # Reset gift_posts that were uploading
-            conn.execute(
-                """
-                UPDATE gift_posts
-                SET status = 'pending'
-                WHERE status = 'uploading'
-                AND gift_id IN (SELECT id FROM gifts WHERE status = 'processing')
-                """
+    try:
+        with get_connection() as conn:
+            # Count stale gifts
+            cursor = conn.execute(
+                "SELECT COUNT(*) as count FROM gifts WHERE status = 'processing'"
             )
-            # Reset gifts
-            conn.execute(
-                "UPDATE gifts SET status = 'pending' WHERE status = 'processing'"
-            )
+            count = cursor.fetchone()["count"]
 
-        return count
+            if count > 0:
+                # Reset gift_posts that were uploading
+                conn.execute(
+                    """
+                    UPDATE gift_posts
+                    SET status = 'pending'
+                    WHERE status = 'uploading'
+                    AND gift_id IN (SELECT id FROM gifts WHERE status = 'processing')
+                    """
+                )
+                # Reset gifts
+                conn.execute(
+                    "UPDATE gifts SET status = 'pending' WHERE status = 'processing'"
+                )
+
+            return count
+    except Exception as e:
+        if "no such table" in str(e):
+            return 0  # Table doesn't exist yet, nothing to reset
+        raise
 
 
 # ============================================
@@ -943,59 +953,64 @@ def reset_stale_processing_migrations(older_than_minutes: int = 30) -> int:
     Only resets migrations that have been processing for longer than older_than_minutes.
     This handles crashed workers without disrupting active processing.
     """
-    with get_connection() as conn:
-        # Count truly stale migrations (processing for > N minutes)
-        cursor = conn.execute(
-            """
-            SELECT COUNT(*) as count FROM migrations
-            WHERE status = 'processing'
-            AND updated_at < datetime('now', ? || ' minutes')
-            """,
-            (f"-{older_than_minutes}",)
-        )
-        count = cursor.fetchone()["count"]
-
-        if count > 0:
-            # Reset migration_posts that were uploading for stale migrations only
-            conn.execute(
+    try:
+        with get_connection() as conn:
+            # Count truly stale migrations (processing for > N minutes)
+            cursor = conn.execute(
                 """
-                UPDATE migration_posts
-                SET status = 'pending'
-                WHERE status = 'uploading'
-                AND migration_id IN (
-                    SELECT id FROM migrations
-                    WHERE status = 'processing'
-                    AND updated_at < datetime('now', ? || ' minutes')
-                )
-                """,
-                (f"-{older_than_minutes}",)
-            )
-            # Reset migration_articles that were uploading for stale migrations only
-            conn.execute(
-                """
-                UPDATE migration_articles
-                SET status = 'pending'
-                WHERE status = 'uploading'
-                AND migration_id IN (
-                    SELECT id FROM migrations
-                    WHERE status = 'processing'
-                    AND updated_at < datetime('now', ? || ' minutes')
-                )
-                """,
-                (f"-{older_than_minutes}",)
-            )
-            # Reset only stale migrations
-            conn.execute(
-                """
-                UPDATE migrations
-                SET status = 'pending'
+                SELECT COUNT(*) as count FROM migrations
                 WHERE status = 'processing'
                 AND updated_at < datetime('now', ? || ' minutes')
                 """,
                 (f"-{older_than_minutes}",)
             )
+            count = cursor.fetchone()["count"]
 
-        return count
+            if count > 0:
+                # Reset migration_posts that were uploading for stale migrations only
+                conn.execute(
+                    """
+                    UPDATE migration_posts
+                    SET status = 'pending'
+                    WHERE status = 'uploading'
+                    AND migration_id IN (
+                        SELECT id FROM migrations
+                        WHERE status = 'processing'
+                        AND updated_at < datetime('now', ? || ' minutes')
+                    )
+                    """,
+                    (f"-{older_than_minutes}",)
+                )
+                # Reset migration_articles that were uploading for stale migrations only
+                conn.execute(
+                    """
+                    UPDATE migration_articles
+                    SET status = 'pending'
+                    WHERE status = 'uploading'
+                    AND migration_id IN (
+                        SELECT id FROM migrations
+                        WHERE status = 'processing'
+                        AND updated_at < datetime('now', ? || ' minutes')
+                    )
+                    """,
+                    (f"-{older_than_minutes}",)
+                )
+                # Reset only stale migrations
+                conn.execute(
+                    """
+                    UPDATE migrations
+                    SET status = 'pending'
+                    WHERE status = 'processing'
+                    AND updated_at < datetime('now', ? || ' minutes')
+                    """,
+                    (f"-{older_than_minutes}",)
+                )
+
+            return count
+    except Exception as e:
+        if "no such table" in str(e):
+            return 0  # Table doesn't exist yet, nothing to reset
+        raise
 
 
 def cleanup_completed_migrations(older_than_days: int = 7) -> int:
