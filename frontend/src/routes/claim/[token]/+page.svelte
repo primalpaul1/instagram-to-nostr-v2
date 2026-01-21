@@ -649,12 +649,12 @@
 </script>
 
 <svelte:head>
-  <title>Claim Your Content | Own Your Posts</title>
+  <title>Welcome to Primal</title>
 </svelte:head>
 
 <div class="claim-page">
   <header>
-    <a href="/" class="logo">Own Your Posts</a>
+    <a href="/" class="logo">Welcome to Primal</a>
   </header>
 
   <main>
@@ -1035,11 +1035,11 @@
     {:else if step === 'complete'}
       <div class="complete-step">
         <div class="success-icon">
-          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M20 6L9 17l-5-5"/>
           </svg>
         </div>
-        <h2>You Own Your Content!</h2>
+        <h2>Welcome to Primal!</h2>
         <p class="subtitle">Your content is now yours forever on Nostr</p>
 
         <div class="stats-card">
