@@ -316,39 +316,44 @@ def claim_next_pending_proposal() -> Optional[dict]:
     Returns the claimed proposal or None if none available.
     Safe for concurrent workers - only one worker can claim each proposal.
     """
-    with get_connection() as conn:
-        while True:
-            # Find a candidate
-            cursor = conn.execute(
-                """
-                SELECT * FROM proposals
-                WHERE status = 'pending'
-                ORDER BY created_at ASC
-                LIMIT 1
-                """
-            )
-            row = cursor.fetchone()
+    try:
+        with get_connection() as conn:
+            while True:
+                # Find a candidate
+                cursor = conn.execute(
+                    """
+                    SELECT * FROM proposals
+                    WHERE status = 'pending'
+                    ORDER BY created_at ASC
+                    LIMIT 1
+                    """
+                )
+                row = cursor.fetchone()
 
-            if not row:
-                return None  # No pending proposals
+                if not row:
+                    return None  # No pending proposals
 
-            proposal = dict(row)
+                proposal = dict(row)
 
-            # Try to claim it atomically
-            cursor = conn.execute(
-                """
-                UPDATE proposals
-                SET status = 'processing'
-                WHERE id = ? AND status = 'pending'
-                """,
-                (proposal['id'],),
-            )
+                # Try to claim it atomically
+                cursor = conn.execute(
+                    """
+                    UPDATE proposals
+                    SET status = 'processing'
+                    WHERE id = ? AND status = 'pending'
+                    """,
+                    (proposal['id'],),
+                )
 
-            if cursor.rowcount > 0:
-                # We successfully claimed it
-                return proposal
+                if cursor.rowcount > 0:
+                    # We successfully claimed it
+                    return proposal
 
-            # Someone else claimed it, try again
+                # Someone else claimed it, try again
+    except Exception as e:
+        if "no such table" in str(e):
+            return None  # Table doesn't exist yet
+        raise
 
 
 def get_proposal_posts(proposal_id: str) -> list[dict]:
@@ -461,39 +466,44 @@ def cleanup_expired_proposals() -> int:
     - Have expired and weren't claimed, OR
     - Were claimed more than 7 days ago (no longer needed)
     """
-    with get_connection() as conn:
-        # Get count first
-        cursor = conn.execute(
-            """
-            SELECT COUNT(*) as count FROM proposals
-            WHERE (expires_at < datetime('now') AND status != 'claimed')
-               OR (status = 'claimed' AND claimed_at < datetime('now', '-7 days'))
-            """
-        )
-        count = cursor.fetchone()["count"]
-
-        if count > 0:
-            # Delete proposal posts first (foreign key)
-            conn.execute(
+    try:
+        with get_connection() as conn:
+            # Get count first
+            cursor = conn.execute(
                 """
-                DELETE FROM proposal_posts
-                WHERE proposal_id IN (
-                    SELECT id FROM proposals
-                    WHERE (expires_at < datetime('now') AND status != 'claimed')
-                       OR (status = 'claimed' AND claimed_at < datetime('now', '-7 days'))
-                )
-                """
-            )
-            # Delete proposals
-            conn.execute(
-                """
-                DELETE FROM proposals
+                SELECT COUNT(*) as count FROM proposals
                 WHERE (expires_at < datetime('now') AND status != 'claimed')
                    OR (status = 'claimed' AND claimed_at < datetime('now', '-7 days'))
                 """
             )
+            count = cursor.fetchone()["count"]
 
-        return count
+            if count > 0:
+                # Delete proposal posts first (foreign key)
+                conn.execute(
+                    """
+                    DELETE FROM proposal_posts
+                    WHERE proposal_id IN (
+                        SELECT id FROM proposals
+                        WHERE (expires_at < datetime('now') AND status != 'claimed')
+                           OR (status = 'claimed' AND claimed_at < datetime('now', '-7 days'))
+                    )
+                    """
+                )
+                # Delete proposals
+                conn.execute(
+                    """
+                    DELETE FROM proposals
+                    WHERE (expires_at < datetime('now') AND status != 'claimed')
+                       OR (status = 'claimed' AND claimed_at < datetime('now', '-7 days'))
+                    """
+                )
+
+            return count
+    except Exception as e:
+        if "no such table" in str(e):
+            return 0  # Table doesn't exist yet
+        raise
 
 
 def reset_stale_processing_proposals() -> int:
@@ -558,39 +568,44 @@ def claim_next_pending_gift() -> Optional[dict]:
     Returns the claimed gift or None if none available.
     Safe for concurrent workers - only one worker can claim each gift.
     """
-    with get_connection() as conn:
-        while True:
-            # Find a candidate
-            cursor = conn.execute(
-                """
-                SELECT * FROM gifts
-                WHERE status = 'pending'
-                ORDER BY created_at ASC
-                LIMIT 1
-                """
-            )
-            row = cursor.fetchone()
+    try:
+        with get_connection() as conn:
+            while True:
+                # Find a candidate
+                cursor = conn.execute(
+                    """
+                    SELECT * FROM gifts
+                    WHERE status = 'pending'
+                    ORDER BY created_at ASC
+                    LIMIT 1
+                    """
+                )
+                row = cursor.fetchone()
 
-            if not row:
-                return None  # No pending gifts
+                if not row:
+                    return None  # No pending gifts
 
-            gift = dict(row)
+                gift = dict(row)
 
-            # Try to claim it atomically
-            cursor = conn.execute(
-                """
-                UPDATE gifts
-                SET status = 'processing'
-                WHERE id = ? AND status = 'pending'
-                """,
-                (gift['id'],),
-            )
+                # Try to claim it atomically
+                cursor = conn.execute(
+                    """
+                    UPDATE gifts
+                    SET status = 'processing'
+                    WHERE id = ? AND status = 'pending'
+                    """,
+                    (gift['id'],),
+                )
 
-            if cursor.rowcount > 0:
-                # We successfully claimed it
-                return gift
+                if cursor.rowcount > 0:
+                    # We successfully claimed it
+                    return gift
 
-            # Someone else claimed it, try again
+                # Someone else claimed it, try again
+    except Exception as e:
+        if "no such table" in str(e):
+            return None  # Table doesn't exist yet
+        raise
 
 
 def get_gift_posts(gift_id: str) -> list[dict]:
@@ -654,39 +669,44 @@ def cleanup_expired_gifts() -> int:
     - Have expired and weren't claimed, OR
     - Were claimed more than 7 days ago (no longer needed)
     """
-    with get_connection() as conn:
-        # Get count first
-        cursor = conn.execute(
-            """
-            SELECT COUNT(*) as count FROM gifts
-            WHERE (expires_at < datetime('now') AND status != 'claimed')
-               OR (status = 'claimed' AND claimed_at < datetime('now', '-7 days'))
-            """
-        )
-        count = cursor.fetchone()["count"]
-
-        if count > 0:
-            # Delete gift posts first (foreign key)
-            conn.execute(
+    try:
+        with get_connection() as conn:
+            # Get count first
+            cursor = conn.execute(
                 """
-                DELETE FROM gift_posts
-                WHERE gift_id IN (
-                    SELECT id FROM gifts
-                    WHERE (expires_at < datetime('now') AND status != 'claimed')
-                       OR (status = 'claimed' AND claimed_at < datetime('now', '-7 days'))
-                )
-                """
-            )
-            # Delete gifts
-            conn.execute(
-                """
-                DELETE FROM gifts
+                SELECT COUNT(*) as count FROM gifts
                 WHERE (expires_at < datetime('now') AND status != 'claimed')
                    OR (status = 'claimed' AND claimed_at < datetime('now', '-7 days'))
                 """
             )
+            count = cursor.fetchone()["count"]
 
-        return count
+            if count > 0:
+                # Delete gift posts first (foreign key)
+                conn.execute(
+                    """
+                    DELETE FROM gift_posts
+                    WHERE gift_id IN (
+                        SELECT id FROM gifts
+                        WHERE (expires_at < datetime('now') AND status != 'claimed')
+                           OR (status = 'claimed' AND claimed_at < datetime('now', '-7 days'))
+                    )
+                    """
+                )
+                # Delete gifts
+                conn.execute(
+                    """
+                    DELETE FROM gifts
+                    WHERE (expires_at < datetime('now') AND status != 'claimed')
+                       OR (status = 'claimed' AND claimed_at < datetime('now', '-7 days'))
+                    """
+                )
+
+            return count
+    except Exception as e:
+        if "no such table" in str(e):
+            return 0  # Table doesn't exist yet
+        raise
 
 
 def reset_stale_processing_gifts() -> int:
@@ -799,39 +819,44 @@ def claim_next_pending_migration() -> Optional[dict]:
     Returns the claimed migration or None if none available.
     Safe for concurrent workers - only one worker can claim each migration.
     """
-    with get_connection() as conn:
-        while True:
-            # Find a candidate
-            cursor = conn.execute(
-                """
-                SELECT * FROM migrations
-                WHERE status = 'pending'
-                ORDER BY created_at ASC
-                LIMIT 1
-                """
-            )
-            row = cursor.fetchone()
+    try:
+        with get_connection() as conn:
+            while True:
+                # Find a candidate
+                cursor = conn.execute(
+                    """
+                    SELECT * FROM migrations
+                    WHERE status = 'pending'
+                    ORDER BY created_at ASC
+                    LIMIT 1
+                    """
+                )
+                row = cursor.fetchone()
 
-            if not row:
-                return None  # No pending migrations
+                if not row:
+                    return None  # No pending migrations
 
-            migration = dict(row)
+                migration = dict(row)
 
-            # Try to claim it atomically (also set updated_at for stale detection)
-            cursor = conn.execute(
-                """
-                UPDATE migrations
-                SET status = 'processing', updated_at = CURRENT_TIMESTAMP
-                WHERE id = ? AND status = 'pending'
-                """,
-                (migration['id'],),
-            )
+                # Try to claim it atomically (also set updated_at for stale detection)
+                cursor = conn.execute(
+                    """
+                    UPDATE migrations
+                    SET status = 'processing', updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ? AND status = 'pending'
+                    """,
+                    (migration['id'],),
+                )
 
-            if cursor.rowcount > 0:
-                # We successfully claimed it
-                return migration
+                if cursor.rowcount > 0:
+                    # We successfully claimed it
+                    return migration
 
-            # Someone else claimed it, try again
+                # Someone else claimed it, try again
+    except Exception as e:
+        if "no such table" in str(e):
+            return None  # Table doesn't exist yet
+        raise
 
 
 def get_migration_posts(migration_id: str) -> list[dict]:
@@ -1017,51 +1042,56 @@ def cleanup_completed_migrations(older_than_days: int = 7) -> int:
     """
     Delete migrations that have been complete for more than N days.
     """
-    with get_connection() as conn:
-        # Get count first
-        cursor = conn.execute(
-            """
-            SELECT COUNT(*) as count FROM migrations
-            WHERE status = 'complete'
-            AND updated_at < datetime('now', ? || ' days')
-            """,
-            (f"-{older_than_days}",)
-        )
-        count = cursor.fetchone()["count"]
-
-        if count > 0:
-            # Delete migration posts first (foreign key)
-            conn.execute(
+    try:
+        with get_connection() as conn:
+            # Get count first
+            cursor = conn.execute(
                 """
-                DELETE FROM migration_posts
-                WHERE migration_id IN (
-                    SELECT id FROM migrations
-                    WHERE status = 'complete'
-                    AND updated_at < datetime('now', ? || ' days')
-                )
-                """,
-                (f"-{older_than_days}",)
-            )
-            # Delete migration articles
-            conn.execute(
-                """
-                DELETE FROM migration_articles
-                WHERE migration_id IN (
-                    SELECT id FROM migrations
-                    WHERE status = 'complete'
-                    AND updated_at < datetime('now', ? || ' days')
-                )
-                """,
-                (f"-{older_than_days}",)
-            )
-            # Delete migrations
-            conn.execute(
-                """
-                DELETE FROM migrations
+                SELECT COUNT(*) as count FROM migrations
                 WHERE status = 'complete'
                 AND updated_at < datetime('now', ? || ' days')
                 """,
                 (f"-{older_than_days}",)
             )
+            count = cursor.fetchone()["count"]
 
-        return count
+            if count > 0:
+                # Delete migration posts first (foreign key)
+                conn.execute(
+                    """
+                    DELETE FROM migration_posts
+                    WHERE migration_id IN (
+                        SELECT id FROM migrations
+                        WHERE status = 'complete'
+                        AND updated_at < datetime('now', ? || ' days')
+                    )
+                    """,
+                    (f"-{older_than_days}",)
+                )
+                # Delete migration articles
+                conn.execute(
+                    """
+                    DELETE FROM migration_articles
+                    WHERE migration_id IN (
+                        SELECT id FROM migrations
+                        WHERE status = 'complete'
+                        AND updated_at < datetime('now', ? || ' days')
+                    )
+                    """,
+                    (f"-{older_than_days}",)
+                )
+                # Delete migrations
+                conn.execute(
+                    """
+                    DELETE FROM migrations
+                    WHERE status = 'complete'
+                    AND updated_at < datetime('now', ? || ' days')
+                    """,
+                    (f"-{older_than_days}",)
+                )
+
+            return count
+    except Exception as e:
+        if "no such table" in str(e):
+            return 0  # Table doesn't exist yet
+        raise
