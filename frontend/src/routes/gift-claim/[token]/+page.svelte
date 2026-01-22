@@ -725,6 +725,34 @@
       suggestedFollowProfiles = [...suggestedFollowProfiles];
     }
   }
+
+  async function unfollowAllAccounts() {
+    if (!keypair) return;
+
+    // Mark all as processing
+    suggestedFollowProfiles = suggestedFollowProfiles.map(p =>
+      p.status === 'done' ? { ...p, status: 'following' as const } : p
+    );
+
+    try {
+      // Create empty contact list (unfollow everyone)
+      const contactListEvent = createContactListEvent(keypair.publicKeyHex, []);
+      const signedEvent = finalizeEvent(contactListEvent as EventTemplate, hexToBytes(keypair.privateKeyHex));
+
+      await importSingleToPrimalCache(signedEvent);
+      await publishToRelays(signedEvent, NOSTR_RELAYS);
+
+      // Mark all as unfollowed
+      suggestedFollowProfiles = suggestedFollowProfiles.map(p => ({ ...p, status: 'idle' as const }));
+      suggestedFollowAllStatus = 'idle';
+    } catch (err) {
+      console.error('Error unfollowing all accounts:', err);
+      // Revert to done state
+      suggestedFollowProfiles = suggestedFollowProfiles.map(p =>
+        p.status === 'following' ? { ...p, status: 'done' as const } : p
+      );
+    }
+  }
 </script>
 
 <svelte:head>
@@ -957,40 +985,30 @@
 
     {:else if step === 'publishing'}
       <div class="publishing-step">
-        <div class="progress-circle-container">
-          <div class="progress-circle" class:complete={allTasksComplete}>
-            <svg viewBox="0 0 36 36">
-              <path
-                class="progress-bg"
-                d="M18 2.0845
-                  a 15.9155 15.9155 0 0 1 0 31.831
-                  a 15.9155 15.9155 0 0 1 0 -31.831"
-              />
-              <path
-                class="progress-fill-circle"
-                stroke-dasharray="{progressPercent}, 100"
-                d="M18 2.0845
-                  a 15.9155 15.9155 0 0 1 0 31.831
-                  a 15.9155 15.9155 0 0 1 0 -31.831"
-              />
-            </svg>
-            <div class="progress-percent">
-              {#if allTasksComplete}
-                <svg class="checkmark-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                  <path class="checkmark-path" d="M5 13l4 4L19 7"/>
-                </svg>
-              {:else}
+        {#if !allTasksComplete}
+          <div class="progress-circle-container">
+            <div class="progress-circle">
+              <svg viewBox="0 0 36 36">
+                <path
+                  class="progress-bg"
+                  d="M18 2.0845
+                    a 15.9155 15.9155 0 0 1 0 31.831
+                    a 15.9155 15.9155 0 0 1 0 -31.831"
+                />
+                <path
+                  class="progress-fill-circle"
+                  stroke-dasharray="{progressPercent}, 100"
+                  d="M18 2.0845
+                    a 15.9155 15.9155 0 0 1 0 31.831
+                    a 15.9155 15.9155 0 0 1 0 -31.831"
+                />
+              </svg>
+              <div class="progress-percent">
                 {Math.round(progressPercent)}%
-              {/if}
+              </div>
             </div>
-          </div>
-          <div class="progress-label">
-            {#if allTasksComplete}
-              <span class="progress-title welcome-complete">Welcome to Primal!</span>
-            {:else}
+            <div class="progress-label">
               <span class="progress-title nostr-saying">{NOSTR_SAYINGS[currentSayingIndex]}</span>
-            {/if}
-            {#if !allTasksComplete}
               <span class="progress-detail">
                 {#if isResuming && completedCount === 0}
                   Resuming... {alreadyPublishedCount} already done, {totalCount} remaining
@@ -998,12 +1016,15 @@
                   {completedCount + alreadyPublishedCount} of {totalCount + alreadyPublishedCount} {isCombinedGift ? 'items' : (isArticleGift ? 'articles' : 'posts')}
                 {/if}
               </span>
-            {/if}
+            </div>
           </div>
-        </div>
+        {/if}
 
         <div class="whats-next-section" class:complete={allTasksComplete}>
-            <h3>Next Steps</h3>
+          {#if allTasksComplete}
+            <h2 class="welcome-title">Welcome to Primal!</h2>
+          {/if}
+          <h3>Next Steps</h3>
 
             <div class="step-card" class:highlight={!keySaved}>
               <div class="step-number">1</div>
@@ -1124,6 +1145,15 @@
                 </div>
               {/each}
             </div>
+
+            {#if suggestedFollowProfiles.some(p => p.status === 'done')}
+              <button
+                class="unfollow-all-btn"
+                on:click={unfollowAllAccounts}
+              >
+                Unfollow All
+              </button>
+            {/if}
           </div>
         {/if}
 
@@ -2122,6 +2152,27 @@
   }
 
   .unfollow-btn:hover {
+    border-color: #ef4444;
+    color: #ef4444;
+    background: rgba(239, 68, 68, 0.1);
+  }
+
+  .unfollow-all-btn {
+    display: block;
+    width: 100%;
+    margin-top: 1rem;
+    padding: 0.5rem 1rem;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .unfollow-all-btn:hover {
     border-color: #ef4444;
     color: #ef4444;
     background: rgba(239, 68, 68, 0.1);
