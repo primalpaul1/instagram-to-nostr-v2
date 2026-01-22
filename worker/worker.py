@@ -1061,7 +1061,9 @@ async def process_gift(gift: dict) -> None:
             if profile_data:
                 try:
                     profile = json.loads(profile_data)
-                    profile_picture_url = profile.get("profile_picture_url")
+                    # Handle nested structure for articles/combined gifts
+                    actual_profile = profile.get("profile", profile)  # Use nested 'profile' if exists, else use root
+                    profile_picture_url = actual_profile.get("profile_picture_url")
 
                     if profile_picture_url and not profile_picture_url.startswith("https://blossom"):
                         print(f"Uploading profile picture for gift {gift_id}")
@@ -1096,7 +1098,7 @@ async def process_gift(gift: dict) -> None:
                                 blossom_pic_url = upload_data.get("url") or f"{BLOSSOM_SERVER}/{pic_hash}"
 
                                 # Update profile with blossom URL
-                                profile["profile_picture_url"] = blossom_pic_url
+                                actual_profile["profile_picture_url"] = blossom_pic_url
                                 update_gift_profile_data(gift_id, json.dumps(profile))
                                 print(f"Profile picture uploaded to {blossom_pic_url}")
                             else:
