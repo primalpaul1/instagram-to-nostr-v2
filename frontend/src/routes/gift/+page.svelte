@@ -1097,15 +1097,6 @@
             </div>
             <span class="input-hint">Add your npub to show "Prepared by [you]" on the claim page</span>
           </div>
-
-          <div class="info-box">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="10"/>
-              <path d="M12 16v-4M12 8h.01"/>
-            </svg>
-            <p>The recipient will choose a password to create their Nostr account. You won't have access to their private key.</p>
-          </div>
-
           <button type="submit" class="primary-btn" disabled={platform === 'rss' ? !feedUrl.trim() : !handle.trim()}>
             Fetch {platform === 'rss' ? 'Articles' : 'Content'}
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
