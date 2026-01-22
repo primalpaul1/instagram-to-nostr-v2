@@ -21,11 +21,7 @@ import websockets
 import re
 
 from db import (
-    get_jobs_with_unpublished_profiles,
-    claim_next_unpublished_profile,
-    reset_stale_processing_profiles,
     init_db,
-    update_job_profile_published,
     # Proposal functions
     get_pending_proposals,
     claim_next_pending_proposal,
@@ -481,87 +477,6 @@ async def upload_media_to_blossom(
         "width": width,
         "height": height,
     }
-
-
-async def process_profile(job: dict) -> None:
-    """Process a job's profile - upload picture to Blossom and publish Kind 0 event."""
-    job_id = job["id"]
-    print(f"Processing profile for job {job_id}")
-
-    try:
-        secret_key_hex = job["secret_key_hex"]
-        public_key_hex = job["public_key_hex"]
-        profile_name = job["profile_name"]
-        profile_bio = job.get("profile_bio")
-        profile_picture_url = job.get("profile_picture_url")
-
-        blossom_picture_url = None
-
-        # If there's a profile picture, upload it to Blossom
-        if profile_picture_url:
-            try:
-                async with httpx.AsyncClient(timeout=120.0) as client:
-                    # Download the profile picture
-                    pic_response = await client.get(profile_picture_url, follow_redirects=True)
-                    pic_response.raise_for_status()
-                    pic_content = pic_response.content
-                    pic_hash = hashlib.sha256(pic_content).hexdigest()
-
-                    # Determine content type
-                    content_type = pic_response.headers.get("content-type", "image/jpeg")
-                    if "image" not in content_type:
-                        content_type = "image/jpeg"
-
-                    # Create Blossom auth header
-                    auth_header = create_blossom_auth_event(public_key_hex, secret_key_hex, pic_hash)
-
-                    # Upload to Blossom
-                    upload_response = await client.put(
-                        f"{BLOSSOM_SERVER}/upload",
-                        content=pic_content,
-                        headers={
-                            "Authorization": auth_header,
-                            "Content-Type": content_type,
-                            "X-SHA-256": pic_hash,
-                        },
-                    )
-
-                    if upload_response.status_code in (200, 201):
-                        upload_data = upload_response.json()
-                        blossom_picture_url = upload_data.get("url") or f"{BLOSSOM_SERVER}/{pic_hash}"
-                        print(f"Profile picture uploaded to {blossom_picture_url}")
-                    else:
-                        print(f"Failed to upload profile picture: {upload_response.text}")
-            except Exception as e:
-                print(f"Error uploading profile picture: {e}")
-                # Continue without the profile picture
-
-        # Create and publish Kind 0 profile event
-        event = create_profile_event(
-            public_key_hex=public_key_hex,
-            secret_key_hex=secret_key_hex,
-            name=profile_name,
-            about=profile_bio,
-            picture_url=blossom_picture_url,
-        )
-
-        # Publish to relays
-        successful_relays = await publish_to_relays(event)
-
-        if successful_relays:
-            print(f"Profile published to {len(successful_relays)} relays for job {job_id}")
-
-            # Also import to Primal cache for immediate visibility
-            cache_imported = await import_to_primal_cache([event])
-            if cache_imported:
-                print(f"Profile imported to Primal cache for job {job_id}")
-
-            update_job_profile_published(job_id, blossom_picture_url)
-        else:
-            print(f"Failed to publish profile to any relay for job {job_id}")
-
-    except Exception as e:
-        print(f"Error processing profile for job {job_id}: {e}")
 
 
 def generate_temp_keypair() -> tuple[str, str]:
@@ -1379,7 +1294,6 @@ async def worker_loop():
                 reset_stale_processing_proposals()
                 reset_stale_processing_gifts()
                 reset_stale_processing_migrations()
-                reset_stale_processing_profiles()
 
                 # Clean up old completed migrations
                 deleted_migrations = cleanup_completed_migrations()
@@ -1391,13 +1305,6 @@ async def worker_loop():
             # Process items using atomic claim functions
             # This ensures multiple workers don't process the same item
             processed_any = False
-
-            # Process profiles (claim one at a time)
-            profile = claim_next_unpublished_profile()
-            if profile:
-                print(f"Claimed profile for @{profile.get('handle', 'unknown')}")
-                await process_profile(profile)
-                processed_any = True
 
             # Process proposals (claim one at a time)
             proposal = claim_next_pending_proposal()
