@@ -1503,11 +1503,22 @@
   }
 
   .progress-circle-container.complete .welcome-title {
+    display: block;
     font-size: 1.5rem;
     font-weight: 700;
     color: #22c55e;
     margin: 0;
+    text-align: center;
     animation: welcome-fade 0.5s ease-out;
+  }
+
+  .welcome-title {
+    display: block;
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #22c55e;
+    margin: 0 !important;
+    text-align: center;
   }
 
   .progress-circle {
