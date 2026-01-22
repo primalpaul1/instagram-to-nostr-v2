@@ -993,7 +993,7 @@
     {#if step === 'input'}
       <div class="input-step">
         <h1>Gift Freedom</h1>
-        <p class="subtitle">Help someone new own their content on Nostr. They'll create their account with a password.</p>
+        <p class="subtitle">Help someone new own their content on Nostr.</p>
 
         {#if error}
           <div class="error-banner">{error}</div>
@@ -1041,7 +1041,7 @@
               on:click={() => platform = 'rss'}
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M6.18 15.64a2.18 2.18 0 0 1 2.18 2.18C8.36 19 7.38 20 6.18 20C5 20 4 19 4 17.82a2.18 2.18 0 0 1 2.18-2.18M4 4.44A15.56 15.56 0 0 1 19.56 20h-2.83A12.73 12.73 0 0 0 4 7.27V4.44m0 5.66a9.9 9.9 0 0 1 9.9 9.9h-2.83A7.07 7.07 0 0 0 4 12.93V10.1Z"/>
+                <path d="M22.539 8.242H1.46V5.406h21.08v2.836zM1.46 10.812V24L12 18.11 22.54 24V10.812H1.46zM22.54 0H1.46v2.836h21.08V0z"/>
               </svg>
               Blog
             </button>
