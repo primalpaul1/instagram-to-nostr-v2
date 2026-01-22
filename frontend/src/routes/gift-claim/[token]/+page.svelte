@@ -1502,6 +1502,15 @@
     padding: 1.5rem;
   }
 
+  .progress-circle-container.complete::before {
+    content: "Welcome to Primal!";
+    display: block;
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #22c55e;
+    text-align: center;
+  }
+
   .progress-circle-container.complete .welcome-title {
     display: block;
     font-size: 1.5rem;
