@@ -987,7 +987,7 @@
       <div class="publishing-step">
         <div class="progress-circle-container" class:complete={allTasksComplete}>
           {#if allTasksComplete}
-            <h2 class="welcome-title">Welcome to Primal!</h2>
+            <h2 style="font-size: 1.5rem; font-weight: 700; color: #22c55e; margin: 0; text-align: center;">Welcome to Primal!</h2>
           {:else}
             <div class="progress-circle">
               <svg viewBox="0 0 36 36">
