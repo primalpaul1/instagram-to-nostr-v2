@@ -55,6 +55,7 @@
   let handle = '';
   let feedUrl = '';
   let platform: 'instagram' | 'tiktok' | 'twitter' | 'rss' = 'instagram';
+  let preparedByNpub = '';
   let posts: Post[] = [];
   let articles: Article[] = [];
   let fetchedPosts: any[] = [];
@@ -779,6 +780,11 @@
         suggested_follows: suggestedFollows.length > 0 ? suggestedFollows : undefined
       };
 
+      // Add preparedBy if provided
+      if (preparedByNpub.trim()) {
+        body.preparedByNpub = preparedByNpub.trim();
+      }
+
       // Add posts if we have them (combine main posts and additional posts)
       if (hasPosts) {
         const allSelectedPosts = [
@@ -852,6 +858,7 @@
     step = 'input';
     handle = '';
     feedUrl = '';
+    preparedByNpub = '';
     posts = [];
     articles = [];
     profile = null;
@@ -1076,6 +1083,19 @@
               </div>
             </div>
           {/if}
+
+          <div class="input-group">
+            <label for="preparedBy">Your Nostr Pubkey (optional)</label>
+            <input
+              id="preparedBy"
+              type="text"
+              bind:value={preparedByNpub}
+              placeholder="npub1..."
+              class="npub-input"
+              autocomplete="off"
+            />
+            <span class="input-hint">Add your npub to show "Prepared by [you]" on the claim page</span>
+          </div>
 
           <div class="info-box">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">

@@ -57,6 +57,7 @@
   let feedUrl = '';
   let platform: 'instagram' | 'tiktok' | 'twitter' | 'rss' = 'instagram';
   let targetNpub = '';
+  let preparedByNpub = '';
   let posts: Post[] = [];
   let articles: Article[] = [];
   let fetchedPosts: any[] = [];  // Accumulates during streaming
@@ -298,6 +299,11 @@
         profile
       };
 
+      // Add preparedBy if provided
+      if (preparedByNpub.trim()) {
+        body.preparedByNpub = preparedByNpub.trim();
+      }
+
       // Add posts if we have them
       if (hasPosts) {
         body.posts = selectedPosts.map(p => ({
@@ -386,6 +392,7 @@
     handle = '';
     feedUrl = '';
     targetNpub = '';
+    preparedByNpub = '';
     posts = [];
     articles = [];
     profile = null;
@@ -618,6 +625,19 @@
               autocomplete="off"
             />
             <span class="input-hint">The npub of the person who will claim this content</span>
+          </div>
+
+          <div class="input-group">
+            <label for="preparedBy">Your Nostr Pubkey (optional)</label>
+            <input
+              id="preparedBy"
+              type="text"
+              bind:value={preparedByNpub}
+              placeholder="npub1..."
+              class="npub-input"
+              autocomplete="off"
+            />
+            <span class="input-hint">Add your npub to show "Prepared by [you]" on the claim page</span>
           </div>
 
           <button type="submit" class="primary-btn" disabled={(platform === 'rss' ? !feedUrl.trim() : !handle.trim()) || !targetNpub.trim()}>

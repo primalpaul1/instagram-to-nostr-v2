@@ -59,12 +59,68 @@ interface FeedInput {
   image_url?: string;
 }
 
+// Fetch Nostr profile from relay
+async function fetchNostrProfile(npub: string): Promise<{ name: string | null; picture: string | null } | null> {
+  const pubkeyHex = npubToHex(npub);
+  if (!pubkeyHex) return null;
+
+  try {
+    const WebSocket = (await import('ws')).default;
+    const ws = new WebSocket('wss://cache1.primal.net/v1');
+
+    return new Promise((resolve) => {
+      const timeout = setTimeout(() => {
+        ws.close();
+        resolve(null);
+      }, 5000);
+
+      ws.on('open', () => {
+        ws.send(JSON.stringify([
+          'REQ',
+          'profile',
+          { cache: ['user_infos', { pubkeys: [pubkeyHex] }] }
+        ]));
+      });
+
+      ws.on('message', (data: Buffer) => {
+        try {
+          const msg = JSON.parse(data.toString());
+          if (msg[0] === 'EVENT' && msg[2]?.kind === 0) {
+            const content = JSON.parse(msg[2].content);
+            clearTimeout(timeout);
+            ws.close();
+            resolve({
+              name: content.display_name || content.name || null,
+              picture: content.picture || null
+            });
+          } else if (msg[0] === 'EOSE') {
+            clearTimeout(timeout);
+            ws.close();
+            resolve(null);
+          }
+        } catch {
+          // Ignore parse errors
+        }
+      });
+
+      ws.on('error', () => {
+        clearTimeout(timeout);
+        ws.close();
+        resolve(null);
+      });
+    });
+  } catch (err) {
+    console.error('[Proposals API] Error fetching Nostr profile:', err);
+    return null;
+  }
+}
+
 export const POST: RequestHandler = async ({ request, url }) => {
   console.log('[Proposals API] Received POST request');
   try {
     const body = await request.json();
     console.log('[Proposals API] Body parsed, handle:', body.handle, 'posts count:', body.posts?.length, 'articles count:', body.articles?.length);
-    const { handle, targetNpub, posts, profile, proposal_type, articles, feed } = body as {
+    const { handle, targetNpub, posts, profile, proposal_type, articles, feed, preparedByNpub } = body as {
       handle: string;
       targetNpub: string;
       posts?: PostInput[];
@@ -72,6 +128,7 @@ export const POST: RequestHandler = async ({ request, url }) => {
       proposal_type?: 'posts' | 'articles' | 'combined';
       articles?: ArticleInput[];
       feed?: FeedInput;
+      preparedByNpub?: string;
     };
 
     const proposalType = proposal_type || 'posts';
@@ -166,6 +223,17 @@ export const POST: RequestHandler = async ({ request, url }) => {
       hashtags: article.hashtags
     }));
 
+    // Fetch preparedBy profile if npub provided
+    let preparedByData: string | undefined;
+    if (preparedByNpub) {
+      const creatorProfile = await fetchNostrProfile(preparedByNpub);
+      preparedByData = JSON.stringify({
+        npub: preparedByNpub,
+        name: creatorProfile?.name || null,
+        picture: creatorProfile?.picture || null
+      });
+    }
+
     // Create proposal with all content in a single DB transaction
     await createProposalWithContent(
       proposalId,
@@ -176,7 +244,8 @@ export const POST: RequestHandler = async ({ request, url }) => {
       profileData,
       proposalType,
       postInputs,
-      articleInputs
+      articleInputs,
+      preparedByData
     );
 
     // Build the claim URL

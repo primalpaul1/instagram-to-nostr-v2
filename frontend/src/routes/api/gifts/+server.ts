@@ -60,10 +60,78 @@ interface FeedInput {
   image_url?: string;
 }
 
+// Fetch Nostr profile from relay
+async function fetchNostrProfile(npub: string): Promise<{ name: string | null; picture: string | null } | null> {
+  // Convert npub to hex
+  let pubkeyHex: string | null = null;
+  try {
+    if (npub.startsWith('npub1')) {
+      const { nip19 } = await import('nostr-tools');
+      const decoded = nip19.decode(npub);
+      if (decoded.type === 'npub') {
+        pubkeyHex = decoded.data as string;
+      }
+    }
+  } catch {
+    return null;
+  }
+  if (!pubkeyHex) return null;
+
+  try {
+    const WebSocket = (await import('ws')).default;
+    const ws = new WebSocket('wss://cache1.primal.net/v1');
+
+    return new Promise((resolve) => {
+      const timeout = setTimeout(() => {
+        ws.close();
+        resolve(null);
+      }, 5000);
+
+      ws.on('open', () => {
+        ws.send(JSON.stringify([
+          'REQ',
+          'profile',
+          { cache: ['user_infos', { pubkeys: [pubkeyHex] }] }
+        ]));
+      });
+
+      ws.on('message', (data: Buffer) => {
+        try {
+          const msg = JSON.parse(data.toString());
+          if (msg[0] === 'EVENT' && msg[2]?.kind === 0) {
+            const content = JSON.parse(msg[2].content);
+            clearTimeout(timeout);
+            ws.close();
+            resolve({
+              name: content.display_name || content.name || null,
+              picture: content.picture || null
+            });
+          } else if (msg[0] === 'EOSE') {
+            clearTimeout(timeout);
+            ws.close();
+            resolve(null);
+          }
+        } catch {
+          // Ignore parse errors
+        }
+      });
+
+      ws.on('error', () => {
+        clearTimeout(timeout);
+        ws.close();
+        resolve(null);
+      });
+    });
+  } catch (err) {
+    console.error('[Gifts API] Error fetching Nostr profile:', err);
+    return null;
+  }
+}
+
 export const POST: RequestHandler = async ({ request, url }) => {
   try {
     const body = await request.json();
-    const { handle, posts, profile, gift_type, articles, feed, suggested_follows } = body as {
+    const { handle, posts, profile, gift_type, articles, feed, suggested_follows, preparedByNpub } = body as {
       handle: string;
       posts?: PostInput[];
       profile?: ProfileInput;
@@ -71,6 +139,7 @@ export const POST: RequestHandler = async ({ request, url }) => {
       articles?: ArticleInput[];
       feed?: FeedInput;
       suggested_follows?: string[];
+      preparedByNpub?: string;
     };
 
     const giftType = gift_type || 'posts';
@@ -148,6 +217,17 @@ export const POST: RequestHandler = async ({ request, url }) => {
         }))
       : [];
 
+    // Fetch preparedBy profile if npub provided
+    let preparedByData: string | undefined;
+    if (preparedByNpub) {
+      const creatorProfile = await fetchNostrProfile(preparedByNpub);
+      preparedByData = JSON.stringify({
+        npub: preparedByNpub,
+        name: creatorProfile?.name || null,
+        picture: creatorProfile?.picture || null
+      });
+    }
+
     // Create gift with all content atomically - prevents race conditions
     // where the gift or posts could be lost due to concurrent database writes
     await createGiftWithContent(
@@ -158,7 +238,8 @@ export const POST: RequestHandler = async ({ request, url }) => {
       giftType,
       postsInput,
       articlesInput,
-      suggested_follows
+      suggested_follows,
+      preparedByData
     );
 
     // Build the claim URL

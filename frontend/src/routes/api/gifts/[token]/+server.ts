@@ -58,6 +58,16 @@ export const GET: RequestHandler = async ({ params }) => {
       }
     }
 
+    // Parse prepared_by
+    let preparedBy: { npub: string; name: string | null; picture: string | null } | null = null;
+    if (gift.prepared_by) {
+      try {
+        preparedBy = JSON.parse(gift.prepared_by);
+      } catch {
+        // Ignore parse errors
+      }
+    }
+
     // Handle based on gift type
     if (gift.gift_type === 'combined') {
       const result = await getGiftByTokenWithBoth(token);
@@ -132,6 +142,7 @@ export const GET: RequestHandler = async ({ params }) => {
         posts: formattedPosts,
         articles: formattedArticles,
         suggested_follows: suggestedFollows,
+        prepared_by: preparedBy,
         createdAt: gift.created_at,
         expiresAt: gift.expires_at
       });
@@ -176,6 +187,7 @@ export const GET: RequestHandler = async ({ params }) => {
         profile,
         articles: formattedArticles,
         suggested_follows: suggestedFollows,
+        prepared_by: preparedBy,
         createdAt: gift.created_at,
         expiresAt: gift.expires_at
       });
@@ -226,6 +238,7 @@ export const GET: RequestHandler = async ({ params }) => {
         profile,
         posts: formattedPosts,
         suggested_follows: suggestedFollows,
+        prepared_by: preparedBy,
         createdAt: gift.created_at,
         expiresAt: gift.expires_at
       });

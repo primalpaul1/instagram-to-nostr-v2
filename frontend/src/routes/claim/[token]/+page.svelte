@@ -61,6 +61,12 @@
     image_url?: string;
   }
 
+  interface PreparedBy {
+    npub: string;
+    name: string | null;
+    picture: string | null;
+  }
+
   interface Proposal {
     status: string;
     proposal_type: 'posts' | 'articles' | 'combined';
@@ -71,6 +77,7 @@
     feed?: FeedInfo;
     posts: ProposalPost[];
     articles: ProposalArticle[];
+    prepared_by: PreparedBy | null;
   }
 
   let step: PageStep = 'loading';
@@ -676,6 +683,21 @@
 
     {:else if step === 'preview' && proposal}
       <div class="preview-step">
+        {#if proposal.prepared_by}
+          <div class="prepared-by">
+            {#if proposal.prepared_by.picture}
+              <img src={proposal.prepared_by.picture} alt="" class="prepared-by-pic" />
+            {:else}
+              <div class="prepared-by-pic placeholder">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/>
+                  <circle cx="12" cy="7" r="4"/>
+                </svg>
+              </div>
+            {/if}
+            <span class="prepared-by-text">Prepared by <strong>{proposal.prepared_by.name || proposal.prepared_by.npub.slice(0, 12) + '...'}</strong></span>
+          </div>
+        {/if}
         <div class="gift-icon">
           <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polyline points="20 12 20 22 4 22 4 12"/>
@@ -1322,6 +1344,39 @@
   /* Preview */
   .preview-step {
     text-align: center;
+  }
+
+  .prepared-by {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+    padding: 0.75rem 1rem;
+    background: var(--bg-secondary);
+    border-radius: 2rem;
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+  }
+
+  .prepared-by-pic {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    object-fit: cover;
+  }
+
+  .prepared-by-pic.placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-tertiary);
+    color: var(--text-muted);
+  }
+
+  .prepared-by-text strong {
+    color: var(--text-primary);
+    font-weight: 600;
   }
 
   .gift-icon {

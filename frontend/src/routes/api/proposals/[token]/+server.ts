@@ -46,6 +46,16 @@ export const GET: RequestHandler = async ({ params }) => {
       }
     }
 
+    // Parse prepared_by
+    let preparedBy: { npub: string; name: string | null; picture: string | null } | null = null;
+    if (proposal.prepared_by) {
+      try {
+        preparedBy = JSON.parse(proposal.prepared_by);
+      } catch {
+        // Ignore parse errors
+      }
+    }
+
     // Helper to format posts
     const formatPosts = (posts: any[]) => posts.map(post => {
       let mediaItems = [];
@@ -115,6 +125,7 @@ export const GET: RequestHandler = async ({ params }) => {
         feed,
         posts: formatPosts(result.posts),
         articles: formatArticles(result.articles),
+        prepared_by: preparedBy,
         createdAt: proposal.created_at,
         expiresAt: proposal.expires_at
       });
@@ -133,6 +144,7 @@ export const GET: RequestHandler = async ({ params }) => {
         profile,
         feed,
         articles: formatArticles(result.articles),
+        prepared_by: preparedBy,
         createdAt: proposal.created_at,
         expiresAt: proposal.expires_at
       });
@@ -151,6 +163,7 @@ export const GET: RequestHandler = async ({ params }) => {
         handle: proposal.ig_handle,
         profile,
         posts: formatPosts(result.posts),
+        prepared_by: preparedBy,
         createdAt: proposal.created_at,
         expiresAt: proposal.expires_at
       });

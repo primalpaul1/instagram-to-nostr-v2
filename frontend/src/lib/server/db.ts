@@ -269,6 +269,7 @@ export interface Proposal {
   ig_handle: string;
   profile_data: string | null;  // JSON string
   proposal_type: 'posts' | 'articles' | 'combined';
+  prepared_by: string | null;  // JSON string: {npub, name, picture}
   status: 'pending' | 'processing' | 'ready' | 'claimed' | 'expired';
   claimed_at: string | null;
   created_at: string;
@@ -379,6 +380,11 @@ export async function ensureProposalTables(): Promise<void> {
 
     if (!columns.includes('proposal_type')) {
       database.run("ALTER TABLE proposals ADD COLUMN proposal_type TEXT DEFAULT 'posts' CHECK (proposal_type IN ('posts', 'articles', 'combined'))");
+      saveDb(database);
+    }
+
+    if (!columns.includes('prepared_by')) {
+      database.run("ALTER TABLE proposals ADD COLUMN prepared_by TEXT");
       saveDb(database);
     }
 
@@ -644,7 +650,8 @@ export async function createProposalWithContent(
   profileData: string | undefined,
   proposalType: 'posts' | 'articles' | 'combined',
   posts: ProposalPostInput[],
-  articles: ProposalArticleInput[]
+  articles: ProposalArticleInput[],
+  preparedBy?: string  // JSON string: {npub, name, picture}
 ): Promise<Proposal> {
   await ensureProposalTables();
 
@@ -654,9 +661,9 @@ export async function createProposalWithContent(
 
     // Create the proposal
     database.run(
-      `INSERT INTO proposals (id, claim_token, target_npub, target_pubkey_hex, ig_handle, profile_data, proposal_type, expires_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, claimToken, targetNpub, targetPubkeyHex, igHandle, profileData || null, proposalType, expiration]
+      `INSERT INTO proposals (id, claim_token, target_npub, target_pubkey_hex, ig_handle, profile_data, proposal_type, prepared_by, expires_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, claimToken, targetNpub, targetPubkeyHex, igHandle, profileData || null, proposalType, preparedBy || null, expiration]
     );
 
     // Create all posts in the same transaction
@@ -741,6 +748,7 @@ export interface Gift {
   salt: string | null;  // No longer used - kept for backward compatibility
   gift_type: 'posts' | 'articles' | 'combined';
   suggested_follows: string | null;  // JSON array of npubs
+  prepared_by: string | null;  // JSON string: {npub, name, picture}
   status: 'pending' | 'processing' | 'ready' | 'claimed' | 'expired';
   claimed_at: string | null;
   created_at: string;
@@ -854,6 +862,11 @@ export async function ensureGiftTables(): Promise<void> {
 
     if (!columns.includes('suggested_follows')) {
       database.run("ALTER TABLE gifts ADD COLUMN suggested_follows TEXT");
+      saveDb(database);
+    }
+
+    if (!columns.includes('prepared_by')) {
+      database.run("ALTER TABLE gifts ADD COLUMN prepared_by TEXT");
       saveDb(database);
     }
 
@@ -1167,7 +1180,8 @@ export async function createGiftWithContent(
   giftType: 'posts' | 'articles' | 'combined',
   posts: GiftPostInput[],
   articles: GiftArticleInput[],
-  suggestedFollows?: string[]
+  suggestedFollows?: string[],
+  preparedBy?: string  // JSON string: {npub, name, picture}
 ): Promise<Gift> {
   await ensureGiftTables();
 
@@ -1177,9 +1191,9 @@ export async function createGiftWithContent(
 
     // Create the gift
     database.run(
-      `INSERT INTO gifts (id, claim_token, ig_handle, salt, profile_data, gift_type, suggested_follows, expires_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, claimToken, igHandle, '', profileData || null, giftType, suggestedFollows?.length ? JSON.stringify(suggestedFollows) : null, expiration]
+      `INSERT INTO gifts (id, claim_token, ig_handle, salt, profile_data, gift_type, suggested_follows, prepared_by, expires_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, claimToken, igHandle, '', profileData || null, giftType, suggestedFollows?.length ? JSON.stringify(suggestedFollows) : null, preparedBy || null, expiration]
     );
 
     // Create all posts
