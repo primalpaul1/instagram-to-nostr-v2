@@ -20,7 +20,7 @@
 
   interface GiftPost {
     id: number;
-    post_type: 'reel' | 'image' | 'carousel';
+    post_type: 'reel' | 'image' | 'carousel' | 'text';
     caption: string | null;
     original_date: string | null;
     thumbnail_url: string | null;

@@ -28,7 +28,7 @@ interface MediaItemInput {
 
 interface PostInput {
   id: string;
-  post_type: 'reel' | 'image' | 'carousel';
+  post_type: 'reel' | 'image' | 'carousel' | 'text';
   caption?: string;
   original_date?: string;
   thumbnail_url?: string;

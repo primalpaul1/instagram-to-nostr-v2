@@ -758,7 +758,7 @@ export interface Gift {
 export interface GiftPost {
   id: number;
   gift_id: string;
-  post_type: 'reel' | 'image' | 'carousel';
+  post_type: 'reel' | 'image' | 'carousel' | 'text';
   caption: string | null;
   original_date: string | null;
   media_items: string;  // JSON string
@@ -813,7 +813,7 @@ export async function ensureGiftTables(): Promise<void> {
       CREATE TABLE IF NOT EXISTS gift_posts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         gift_id TEXT NOT NULL,
-        post_type TEXT NOT NULL CHECK (post_type IN ('reel', 'image', 'carousel')),
+        post_type TEXT NOT NULL CHECK (post_type IN ('reel', 'image', 'carousel', 'text')),
         caption TEXT,
         original_date TEXT,
         media_items TEXT NOT NULL,
