@@ -72,7 +72,7 @@ Instagram Profile → Backend (gallery-dl metadata) → Frontend (user selection
 |----------|---------|
 | **IP** | 5.161.115.236 |
 | **User** | root |
-| **Password** | smoothie |
+| **Password** | See `.env` file (SERVER_PASSWORD) |
 
 ### Deploy to Production
 ```bash
