@@ -985,8 +985,10 @@
 
     {:else if step === 'publishing'}
       <div class="publishing-step">
-        {#if !allTasksComplete}
-          <div class="progress-circle-container">
+        <div class="progress-circle-container" class:complete={allTasksComplete}>
+          {#if allTasksComplete}
+            <h2 class="welcome-title">Welcome to Primal!</h2>
+          {:else}
             <div class="progress-circle">
               <svg viewBox="0 0 36 36">
                 <path
@@ -1017,13 +1019,10 @@
                 {/if}
               </span>
             </div>
-          </div>
-        {/if}
-
-        <div class="whats-next-section" class:complete={allTasksComplete}>
-          {#if allTasksComplete}
-            <h2 class="welcome-title">Welcome to Primal!</h2>
           {/if}
+        </div>
+
+        <div class="whats-next-section">
           <h3>Next Steps</h3>
 
             <div class="step-card" class:highlight={!keySaved}>
@@ -1494,6 +1493,21 @@
     background: var(--bg-tertiary);
     border-radius: 1rem;
     border: 1px solid var(--border);
+    transition: all 0.5s ease;
+  }
+
+  .progress-circle-container.complete {
+    background: linear-gradient(135deg, rgba(34, 197, 94, 0.15) 0%, rgba(34, 197, 94, 0.05) 100%);
+    border-color: #22c55e;
+    padding: 1.5rem;
+  }
+
+  .progress-circle-container.complete .welcome-title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #22c55e;
+    margin: 0;
+    animation: welcome-fade 0.5s ease-out;
   }
 
   .progress-circle {
@@ -1649,12 +1663,6 @@
     border-radius: 1rem;
     background: var(--bg-secondary);
     border: 1px solid var(--border);
-    transition: all 0.5s ease;
-  }
-
-  .whats-next-section.complete {
-    background: linear-gradient(135deg, rgba(34, 197, 94, 0.15) 0%, rgba(34, 197, 94, 0.05) 100%);
-    border-color: #22c55e;
   }
 
   .whats-next-section h3 {
@@ -1662,17 +1670,6 @@
     font-weight: 600;
     margin-bottom: 1rem;
     color: var(--text-primary);
-  }
-
-  .whats-next-section.complete h3 {
-    color: #22c55e;
-  }
-
-  .progress-title.welcome-complete {
-    font-size: 1.25rem;
-    font-weight: 700;
-    color: #22c55e;
-    animation: welcome-fade 0.5s ease-out;
   }
 
   @keyframes welcome-fade {
