@@ -21,16 +21,11 @@ import websockets
 import re
 
 from db import (
-    get_pending_tasks,
-    claim_next_pending_task,
-    get_task_retry_count,
     get_jobs_with_unpublished_profiles,
     claim_next_unpublished_profile,
     reset_stale_processing_profiles,
     init_db,
-    update_job_status,
     update_job_profile_published,
-    update_task_status,
     # Proposal functions
     get_pending_proposals,
     claim_next_pending_proposal,
@@ -486,119 +481,6 @@ async def upload_media_to_blossom(
         "width": width,
         "height": height,
     }
-
-
-async def process_task(task: dict) -> None:
-    """Process a single post task (reel, image, or carousel)."""
-    task_id = task["id"]
-    job_id = task["job_id"]
-    post_type = task.get("post_type", "reel")
-
-    print(f"Processing task {task_id} (type: {post_type})")
-
-    try:
-        # Update status to uploading
-        update_task_status(task_id, "uploading")
-
-        # Get keys
-        secret_key_hex = task["secret_key_hex"]
-        public_key_hex = task["public_key_hex"]
-
-        # Parse media items
-        media_items_json = task.get("media_items")
-        if media_items_json:
-            media_items = json.loads(media_items_json)
-        else:
-            # Backwards compatibility: single video
-            media_items = [{
-                "url": task["instagram_url"],
-                "media_type": "video",
-                "width": task.get("width"),
-                "height": task.get("height"),
-            }]
-
-        # Upload all media items in parallel for faster carousel processing
-        async with httpx.AsyncClient(timeout=300.0) as client:
-            async def upload_item(item):
-                print(f"Uploading {item['media_type']} for task {task_id}")
-                return await upload_media_to_blossom(
-                    client=client,
-                    media_url=item["url"],
-                    media_type=item["media_type"],
-                    public_key_hex=public_key_hex,
-                    secret_key_hex=secret_key_hex,
-                    width=item.get("width"),
-                    height=item.get("height"),
-                )
-            media_uploads = await asyncio.gather(*[upload_item(item) for item in media_items])
-
-        # Get primary blossom URL (first item)
-        primary_blossom_url = media_uploads[0]["url"] if media_uploads else None
-        all_blossom_urls = [m["url"] for m in media_uploads]
-
-        # Update status to publishing
-        update_task_status(
-            task_id,
-            "publishing",
-            blossom_url=primary_blossom_url,
-            blossom_urls=json.dumps(all_blossom_urls) if len(all_blossom_urls) > 1 else None,
-        )
-
-        # Create and sign Nostr event with all media
-        event = create_post_event(
-            public_key_hex=public_key_hex,
-            secret_key_hex=secret_key_hex,
-            media_uploads=media_uploads,
-            caption=task.get("caption"),
-            original_date=task.get("original_date"),
-        )
-
-        # Publish to relays
-        successful_relays = await publish_to_relays(event)
-
-        if not successful_relays:
-            raise Exception("Failed to publish to any relay")
-
-        # Also import to Primal cache for immediate visibility
-        cache_imported = await import_to_primal_cache([event])
-        if cache_imported:
-            print(f"Task {task_id} imported to Primal cache")
-
-        # Success!
-        update_task_status(
-            task_id,
-            "complete",
-            blossom_url=primary_blossom_url,
-            blossom_urls=json.dumps(all_blossom_urls) if len(all_blossom_urls) > 1 else None,
-            nostr_event_id=event["id"],
-        )
-        print(f"Task {task_id} completed successfully ({len(media_uploads)} media items)")
-
-    except Exception as e:
-        error_msg = str(e)
-        print(f"Task {task_id} failed: {error_msg}")
-
-        retry_count = get_task_retry_count(task_id)
-        if retry_count < MAX_RETRIES:
-            # Schedule for retry with exponential backoff
-            update_task_status(
-                task_id,
-                "pending",
-                error=error_msg,
-                increment_retry=True,
-            )
-            # Backoff delay is handled by the polling interval
-        else:
-            # Max retries exceeded
-            update_task_status(
-                task_id,
-                "error",
-                error=f"Max retries exceeded: {error_msg}",
-            )
-
-    finally:
-        # Update job status
-        update_job_status(job_id)
 
 
 async def process_profile(job: dict) -> None:
@@ -1444,13 +1326,6 @@ async def worker_loop():
     if migration_reset_count > 0:
         print(f"Reset {migration_reset_count} stale processing migrations")
 
-    # Semaphore for concurrency limiting
-    semaphore = asyncio.Semaphore(CONCURRENCY)
-
-    async def process_with_semaphore(task):
-        async with semaphore:
-            await process_task(task)
-
     # Track last cleanup time
     last_cleanup = 0
     last_status_log = 0
@@ -1483,10 +1358,9 @@ async def worker_loop():
             if now - last_status_log > STATUS_LOG_INTERVAL:
                 pending_proposals = get_pending_proposals(limit=100)
                 pending_gifts = get_pending_gifts(limit=100)
-                pending_tasks = get_pending_tasks(limit=100)
-                total_pending = len(pending_proposals) + len(pending_gifts) + len(pending_tasks)
+                total_pending = len(pending_proposals) + len(pending_gifts)
                 if total_pending > 0:
-                    print(f"[Queue Status] {len(pending_proposals)} proposals, {len(pending_gifts)} gifts, {len(pending_tasks)} tasks pending")
+                    print(f"[Queue Status] {len(pending_proposals)} proposals, {len(pending_gifts)} gifts pending")
                 last_status_log = now
 
             # Periodic cleanup of expired proposals and gifts
@@ -1544,25 +1418,6 @@ async def worker_loop():
             if migration:
                 print(f"Claimed migration {migration['id']} ({migration['source_type']}): {migration.get('source_handle', 'unknown')}")
                 await process_migration(migration)
-                processed_any = True
-
-            # Process tasks concurrently (claim multiple, up to CONCURRENCY)
-            async def claim_and_process_task():
-                """Claim and process one task atomically."""
-                task = claim_next_pending_task()
-                if task:
-                    await process_task(task)
-                    return True
-                return False
-
-            # Launch CONCURRENCY workers to claim and process tasks
-            task_results = await asyncio.gather(
-                *[claim_and_process_task() for _ in range(CONCURRENCY)],
-                return_exceptions=True,
-            )
-            tasks_processed = sum(1 for r in task_results if r is True)
-            if tasks_processed > 0:
-                print(f"Processed {tasks_processed} tasks")
                 processed_any = True
 
             if not processed_any:
