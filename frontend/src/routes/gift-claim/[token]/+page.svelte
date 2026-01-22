@@ -127,6 +127,13 @@
   $: keySaved = keyEverSaved;
   $: allTasksComplete = totalCount > 0 && completedCount === totalCount;
 
+  // Auto-follow suggested accounts when publishing completes
+  let hasAutoFollowed = false;
+  $: if (allTasksComplete && !hasAutoFollowed && suggestedFollowProfiles.length > 0 && keypair) {
+    hasAutoFollowed = true;
+    autoFollowSuggestedAccounts();
+  }
+
   // Resume state - track how many were already published
   let alreadyPublishedCount = 0;
   let isResuming = false;
@@ -658,6 +665,66 @@
       suggestedFollowAllStatus = 'idle';
     }
   }
+
+  async function autoFollowSuggestedAccounts() {
+    if (!keypair || suggestedFollowAllStatus === 'done') return;
+
+    suggestedFollowAllStatus = 'following';
+    suggestedFollowProfiles = suggestedFollowProfiles.map(p => ({ ...p, status: 'following' as const }));
+
+    try {
+      const pubkeysToFollow = suggestedFollowProfiles.map(p => p.pubkeyHex);
+
+      const contactListEvent = createContactListEvent(keypair.publicKeyHex, pubkeysToFollow);
+      const signedEvent = finalizeEvent(contactListEvent as EventTemplate, hexToBytes(keypair.privateKeyHex));
+
+      await importSingleToPrimalCache(signedEvent);
+      await publishToRelays(signedEvent, NOSTR_RELAYS);
+
+      // Mark all as followed
+      suggestedFollowProfiles = suggestedFollowProfiles.map(p => ({ ...p, status: 'done' as const }));
+      suggestedFollowAllStatus = 'done';
+    } catch (err) {
+      console.error('Error auto-following suggested accounts:', err);
+      suggestedFollowProfiles = suggestedFollowProfiles.map(p => ({ ...p, status: 'idle' as const }));
+      suggestedFollowAllStatus = 'idle';
+    }
+  }
+
+  async function unfollowAccount(index: number) {
+    if (!keypair) return;
+
+    const profile = suggestedFollowProfiles[index];
+    suggestedFollowProfiles[index] = { ...profile, status: 'following' };
+    suggestedFollowProfiles = [...suggestedFollowProfiles];
+
+    try {
+      // Get current followed pubkeys (excluding the one to unfollow)
+      const remainingPubkeys = suggestedFollowProfiles
+        .filter((_, i) => i !== index)
+        .filter(p => p.status === 'done')
+        .map(p => p.pubkeyHex);
+
+      const contactListEvent = createContactListEvent(keypair.publicKeyHex, remainingPubkeys);
+      const signedEvent = finalizeEvent(contactListEvent as EventTemplate, hexToBytes(keypair.privateKeyHex));
+
+      await importSingleToPrimalCache(signedEvent);
+      await publishToRelays(signedEvent, NOSTR_RELAYS);
+
+      // Mark as unfollowed (back to idle)
+      suggestedFollowProfiles[index] = { ...profile, status: 'idle' };
+      suggestedFollowProfiles = [...suggestedFollowProfiles];
+
+      // Update overall status if needed
+      if (suggestedFollowProfiles.every(p => p.status === 'idle')) {
+        suggestedFollowAllStatus = 'idle';
+      }
+    } catch (err) {
+      console.error('Error unfollowing account:', err);
+      suggestedFollowProfiles[index] = { ...profile, status: 'done' };
+      suggestedFollowProfiles = [...suggestedFollowProfiles];
+    }
+  }
 </script>
 
 <svelte:head>
@@ -909,31 +976,25 @@
             </svg>
             <div class="progress-percent">
               {#if allTasksComplete}
-                <svg class="checkmark-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                  <path class="checkmark-path" d="M5 13l4 4L19 7"/>
-                </svg>
+                <span class="welcome-text">Welcome to<br/>Primal!</span>
               {:else}
                 {Math.round(progressPercent)}%
               {/if}
             </div>
           </div>
           <div class="progress-label">
-            {#if allTasksComplete}
-              <span class="progress-title complete">All done!</span>
-            {:else}
+            {#if !allTasksComplete}
               <span class="progress-title nostr-saying">{NOSTR_SAYINGS[currentSayingIndex]}</span>
+              <span class="progress-detail">
+                {#if isResuming && completedCount === 0}
+                  Resuming... {alreadyPublishedCount} already done, {totalCount} remaining
+                {:else}
+                  {completedCount + alreadyPublishedCount} of {totalCount + alreadyPublishedCount} {isCombinedGift ? 'items' : (isArticleGift ? 'articles' : 'posts')}
+                {/if}
+              </span>
             {/if}
-            <span class="progress-detail">
-              {#if isResuming && completedCount === 0}
-                Resuming... {alreadyPublishedCount} already done, {totalCount} remaining
-              {:else}
-                {completedCount + alreadyPublishedCount} of {totalCount + alreadyPublishedCount} {isCombinedGift ? 'items' : (isArticleGift ? 'articles' : 'posts')}
-              {/if}
-            </span>
           </div>
         </div>
-
-        <h2 class="welcome-title" class:visible={allTasksComplete}>Welcome to Primal!</h2>
 
         <div class="whats-next-section">
             <h3>What's Next?</h3>
@@ -1015,8 +1076,8 @@
         <!-- Suggested Follows Section (from gift creator) -->
         {#if suggestedFollowProfiles.length > 0 && keypair}
           <div class="suggested-follows-section">
-            <h3>Suggested Follows</h3>
-            <p class="suggested-follows-desc">The person who created this gift recommends following:</p>
+            <h3>Following</h3>
+            <p class="suggested-follows-desc">You're now following these accounts:</p>
 
             <div class="suggested-follows-list">
               {#each suggestedFollowProfiles as profile, i}
@@ -1036,46 +1097,28 @@
                   <span class="suggested-follow-name">
                     {profile.name || profile.npub.slice(0, 12) + '...' + profile.npub.slice(-6)}
                   </span>
-                  <button
-                    class="follow-btn"
-                    class:done={profile.status === 'done'}
-                    class:following={profile.status === 'following'}
-                    disabled={profile.status === 'following' || profile.status === 'done' || !keySaved}
-                    on:click={() => followSuggestedAccount(i)}
-                  >
-                    {#if profile.status === 'done'}
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M20 6L9 17l-5-5"/>
-                      </svg>
-                    {:else if profile.status === 'following'}
+                  {#if profile.status === 'following'}
+                    <button class="follow-btn following" disabled>
                       <div class="btn-spinner-small"></div>
-                    {:else}
+                    </button>
+                  {:else if profile.status === 'done'}
+                    <button
+                      class="unfollow-btn"
+                      on:click={() => unfollowAccount(i)}
+                    >
+                      Unfollow
+                    </button>
+                  {:else}
+                    <button
+                      class="follow-btn"
+                      on:click={() => followSuggestedAccount(i)}
+                    >
                       Follow
-                    {/if}
-                  </button>
+                    </button>
+                  {/if}
                 </div>
               {/each}
             </div>
-
-            <button
-              class="follow-all-suggested-btn"
-              class:done={suggestedFollowAllStatus === 'done'}
-              class:following={suggestedFollowAllStatus === 'following'}
-              disabled={suggestedFollowAllStatus === 'following' || suggestedFollowAllStatus === 'done' || !keySaved}
-              on:click={followAllSuggestedAccounts}
-            >
-              {#if suggestedFollowAllStatus === 'done'}
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M20 6L9 17l-5-5"/>
-                </svg>
-                Following All
-              {:else if suggestedFollowAllStatus === 'following'}
-                <div class="btn-spinner"></div>
-                Following...
-              {:else}
-                Follow All ({suggestedFollowProfiles.length})
-              {/if}
-            </button>
           </div>
         {/if}
 
@@ -1483,14 +1526,27 @@
     color: #22c55e;
   }
 
-  .checkmark-icon {
-    animation: checkmark-pop 0.4s ease-out;
+  .welcome-text {
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: #22c55e;
+    text-align: center;
+    line-height: 1.2;
+    animation: welcome-pop 0.5s ease-out;
   }
 
-  .checkmark-path {
-    stroke-dasharray: 24;
-    stroke-dashoffset: 24;
-    animation: checkmark-draw 0.4s ease-out 0.1s forwards;
+  @keyframes welcome-pop {
+    0% {
+      transform: scale(0.5);
+      opacity: 0;
+    }
+    50% {
+      transform: scale(1.1);
+    }
+    100% {
+      transform: scale(1);
+      opacity: 1;
+    }
   }
 
   @keyframes checkmark-pop {
@@ -2017,6 +2073,28 @@
     background: #22c55e;
     border-color: #22c55e;
     color: white;
+  }
+
+  .unfollow-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.375rem 0.75rem;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 1rem;
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    min-width: 4rem;
+  }
+
+  .unfollow-btn:hover {
+    border-color: #ef4444;
+    color: #ef4444;
+    background: rgba(239, 68, 68, 0.1);
   }
 
   .follow-btn.following {
