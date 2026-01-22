@@ -22,7 +22,8 @@
     "@noble/secp256k1": "^2.0.0",
     "nostr-tools": "^2.10.0",
     "qrcode": "^1.5.4",
-    "sql.js": "^1.10.0"
+    "sql.js": "^1.10.0",
+    "ws": "^8.18.0"
   },
   "type": "module"
 }
