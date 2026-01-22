@@ -976,15 +976,21 @@
             </svg>
             <div class="progress-percent">
               {#if allTasksComplete}
-                <span class="welcome-text">Welcome to<br/>Primal!</span>
+                <svg class="checkmark-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <path class="checkmark-path" d="M5 13l4 4L19 7"/>
+                </svg>
               {:else}
                 {Math.round(progressPercent)}%
               {/if}
             </div>
           </div>
           <div class="progress-label">
-            {#if !allTasksComplete}
+            {#if allTasksComplete}
+              <span class="progress-title welcome-complete">Welcome to Primal!</span>
+            {:else}
               <span class="progress-title nostr-saying">{NOSTR_SAYINGS[currentSayingIndex]}</span>
+            {/if}
+            {#if !allTasksComplete}
               <span class="progress-detail">
                 {#if isResuming && completedCount === 0}
                   Resuming... {alreadyPublishedCount} already done, {totalCount} remaining
@@ -996,8 +1002,8 @@
           </div>
         </div>
 
-        <div class="whats-next-section">
-            <h3>What's Next?</h3>
+        <div class="whats-next-section" class:complete={allTasksComplete}>
+            <h3>Next Steps</h3>
 
             <div class="step-card" class:highlight={!keySaved}>
               <div class="step-number">1</div>
@@ -1076,8 +1082,7 @@
         <!-- Suggested Follows Section (from gift creator) -->
         {#if suggestedFollowProfiles.length > 0 && keypair}
           <div class="suggested-follows-section">
-            <h3>Following</h3>
-            <p class="suggested-follows-desc">You're now following these accounts:</p>
+            <h3>Suggested Follows</h3>
 
             <div class="suggested-follows-list">
               {#each suggestedFollowProfiles as profile, i}
@@ -1526,26 +1531,19 @@
     color: #22c55e;
   }
 
-  .welcome-text {
-    font-size: 0.7rem;
-    font-weight: 700;
-    color: #22c55e;
-    text-align: center;
-    line-height: 1.2;
-    animation: welcome-pop 0.5s ease-out;
+  .checkmark-icon {
+    animation: checkmark-pop 0.4s ease-out;
   }
 
-  @keyframes welcome-pop {
-    0% {
-      transform: scale(0.5);
-      opacity: 0;
-    }
-    50% {
-      transform: scale(1.1);
-    }
-    100% {
-      transform: scale(1);
-      opacity: 1;
+  .checkmark-path {
+    stroke-dasharray: 24;
+    stroke-dashoffset: 24;
+    animation: checkmark-draw 0.4s ease-out 0.1s forwards;
+  }
+
+  @keyframes checkmark-draw {
+    to {
+      stroke-dashoffset: 0;
     }
   }
 
@@ -1617,6 +1615,16 @@
 
   .whats-next-section {
     text-align: left;
+    padding: 1.5rem;
+    border-radius: 1rem;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    transition: all 0.5s ease;
+  }
+
+  .whats-next-section.complete {
+    background: linear-gradient(135deg, rgba(34, 197, 94, 0.15) 0%, rgba(34, 197, 94, 0.05) 100%);
+    border-color: #22c55e;
   }
 
   .whats-next-section h3 {
@@ -1624,6 +1632,28 @@
     font-weight: 600;
     margin-bottom: 1rem;
     color: var(--text-primary);
+  }
+
+  .whats-next-section.complete h3 {
+    color: #22c55e;
+  }
+
+  .progress-title.welcome-complete {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #22c55e;
+    animation: welcome-fade 0.5s ease-out;
+  }
+
+  @keyframes welcome-fade {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
 
   .get-primal-btn {

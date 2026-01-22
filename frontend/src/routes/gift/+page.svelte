@@ -1086,14 +1086,15 @@
 
           <div class="input-group">
             <label for="preparedBy">Your Nostr Pubkey (optional)</label>
-            <input
-              id="preparedBy"
-              type="text"
-              bind:value={preparedByNpub}
-              placeholder="npub1..."
-              class="npub-input"
-              autocomplete="off"
-            />
+            <div class="input-wrapper">
+              <input
+                id="preparedBy"
+                type="text"
+                bind:value={preparedByNpub}
+                placeholder="npub1..."
+                autocomplete="off"
+              />
+            </div>
             <span class="input-hint">Add your npub to show "Prepared by [you]" on the claim page</span>
           </div>
 
