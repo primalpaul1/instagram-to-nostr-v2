@@ -7,6 +7,7 @@ import asyncio
 import hashlib
 import json
 import os
+import re
 import subprocess
 import tempfile
 from typing import Optional
@@ -920,6 +921,9 @@ async def fetch_twitter_stream(handle: str):
                         if media_items:
                             has_video = any(m["media_type"] == "video" for m in media_items)
                             post_type = "reel" if has_video else ("carousel" if len(media_items) > 1 else "image")
+                            # Strip t.co links from tweets with media (they point to the attached media)
+                            text = re.sub(r'https?://t\.co/\w+', '', text).strip()
+                            text = re.sub(r'\s+', ' ', text).strip()
                         else:
                             # Text-only tweet
                             post_type = "text"
