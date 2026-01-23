@@ -1306,7 +1306,7 @@ export async function getRssGiftByTokenWithArticles(claimToken: string): Promise
 export interface Migration {
   id: string;
   source_handle: string;
-  source_type: 'instagram' | 'tiktok' | 'rss';
+  source_type: 'instagram' | 'tiktok' | 'rss' | 'twitter';
   profile_data: string | null;  // JSON string
   status: 'pending' | 'processing' | 'ready' | 'complete';
   created_at: string;
@@ -1357,7 +1357,7 @@ export async function ensureMigrationTables(): Promise<void> {
       CREATE TABLE IF NOT EXISTS migrations (
         id TEXT PRIMARY KEY,
         source_handle TEXT NOT NULL,
-        source_type TEXT NOT NULL CHECK (source_type IN ('instagram', 'tiktok', 'rss')),
+        source_type TEXT NOT NULL CHECK (source_type IN ('instagram', 'tiktok', 'rss', 'twitter')),
         profile_data TEXT,
         status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'ready', 'complete')),
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -1428,7 +1428,7 @@ export interface MigrationArticleInput {
 export async function createMigrationWithContent(
   id: string,
   sourceHandle: string,
-  sourceType: 'instagram' | 'tiktok' | 'rss',
+  sourceType: 'instagram' | 'tiktok' | 'rss' | 'twitter',
   profileData: string | undefined,
   posts: MigrationPostInput[],
   articles: MigrationArticleInput[]
