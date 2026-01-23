@@ -1,112 +1,53 @@
-import initSqlJs, { type Database } from 'sql.js';
+import Database from 'better-sqlite3';
 import { env } from '$env/dynamic/private';
 import fs from 'fs';
 import path from 'path';
 
 const DATABASE_PATH = env.DATABASE_PATH || '/data/instagram.db';
 
-let SQL: Awaited<ReturnType<typeof initSqlJs>> | null = null;
+// Single persistent database connection with WAL mode
+let db: Database.Database | null = null;
 
-// Async mutex to prevent race conditions on database access
-// Without this, concurrent requests can overwrite each other's changes
-let dbLock: Promise<void> = Promise.resolve();
-let dbLockResolve: (() => void) | null = null;
-
-async function acquireDbLock(): Promise<void> {
-  // Wait for any existing lock to be released
-  await dbLock;
-  // Create a new lock
-  dbLock = new Promise((resolve) => {
-    dbLockResolve = resolve;
-  });
-}
-
-function releaseDbLock(): void {
-  if (dbLockResolve) {
-    dbLockResolve();
-    dbLockResolve = null;
-  }
-}
-
-// Execute a database operation with lock protection
-async function withDb<T>(operation: (db: Database) => T): Promise<T> {
-  await acquireDbLock();
-  try {
-    const db = await getDbInternal();
-    const result = operation(db);
-    saveDbInternal(db);
-    return result;
-  } finally {
-    releaseDbLock();
-  }
-}
-
-// Execute multiple database operations in a single locked transaction
-async function withDbTransaction<T>(operation: (db: Database, save: () => void) => T): Promise<T> {
-  await acquireDbLock();
-  try {
-    const db = await getDbInternal();
-    const save = () => saveDbInternal(db);
-    const result = operation(db, save);
-    return result;
-  } finally {
-    releaseDbLock();
-  }
-}
-
-async function getDbInternal(): Promise<Database> {
-  // Initialize sql.js once
-  if (!SQL) {
-    SQL = await initSqlJs();
-  }
-
-  // Ensure data directory exists
-  const dataDir = path.dirname(DATABASE_PATH);
-  if (!fs.existsSync(dataDir)) {
-    fs.mkdirSync(dataDir, { recursive: true });
-  }
-
-  // Always read fresh from disk to see worker updates
-  let db: Database;
-  if (fs.existsSync(DATABASE_PATH)) {
-    const buffer = fs.readFileSync(DATABASE_PATH);
-    db = new SQL.Database(buffer);
-  } else {
-    db = new SQL.Database();
-    // Initialize schema for new database
-    const schemaPath = path.join(process.cwd(), 'schema.sql');
-    const parentSchemaPath = path.join(process.cwd(), '..', 'schema.sql');
-
-    let schema = '';
-    if (fs.existsSync(schemaPath)) {
-      schema = fs.readFileSync(schemaPath, 'utf-8');
-    } else if (fs.existsSync(parentSchemaPath)) {
-      schema = fs.readFileSync(parentSchemaPath, 'utf-8');
+function getDb(): Database.Database {
+  if (!db) {
+    // Ensure data directory exists
+    const dataDir = path.dirname(DATABASE_PATH);
+    if (!fs.existsSync(dataDir)) {
+      fs.mkdirSync(dataDir, { recursive: true });
     }
 
-    if (schema) {
-      db.run(schema);
-      const data = db.export();
-      fs.writeFileSync(DATABASE_PATH, Buffer.from(data));
+    // Check if database exists - if not, we need to initialize it
+    const dbExists = fs.existsSync(DATABASE_PATH);
+
+    // Open database connection
+    db = new Database(DATABASE_PATH);
+
+    // Enable WAL mode for better concurrency with worker
+    db.pragma('journal_mode = WAL');
+
+    // Initialize schema if new database
+    if (!dbExists) {
+      const schemaPath = path.join(process.cwd(), 'schema.sql');
+      const parentSchemaPath = path.join(process.cwd(), '..', 'schema.sql');
+
+      let schema = '';
+      if (fs.existsSync(schemaPath)) {
+        schema = fs.readFileSync(schemaPath, 'utf-8');
+      } else if (fs.existsSync(parentSchemaPath)) {
+        schema = fs.readFileSync(parentSchemaPath, 'utf-8');
+      }
+
+      if (schema) {
+        db.exec(schema);
+      }
     }
   }
-
   return db;
 }
 
-function saveDbInternal(db: Database): void {
-  const data = db.export();
-  const buffer = Buffer.from(data);
-  fs.writeFileSync(DATABASE_PATH, buffer);
-}
-
-// Legacy functions for backward compatibility - still use locking
-async function getDb(): Promise<Database> {
-  return getDbInternal();
-}
-
-function saveDb(db: Database): void {
-  saveDbInternal(db);
+// Helper to convert row object to typed interface
+function rowToObject<T>(row: Record<string, unknown>): T {
+  return row as T;
 }
 
 export interface Job {
@@ -146,14 +87,6 @@ export interface VideoTask {
   created_at: string;
 }
 
-function rowToObject<T>(columns: string[], values: any[]): T {
-  const obj: any = {};
-  columns.forEach((col, i) => {
-    obj[col] = values[i];
-  });
-  return obj as T;
-}
-
 export async function createJob(
   id: string,
   handle: string,
@@ -163,32 +96,28 @@ export async function createJob(
   profileBio?: string,
   profilePictureUrl?: string
 ): Promise<Job> {
-  return withDb(async (database) => {
-    database.run(
-      `INSERT INTO jobs (id, handle, public_key_hex, secret_key_hex, status, profile_name, profile_bio, profile_picture_url)
-       VALUES (?, ?, ?, ?, 'pending', ?, ?, ?)`,
-      [id, handle, publicKeyHex, secretKeyHex, profileName || null, profileBio || null, profilePictureUrl || null]
-    );
-    const result = database.exec('SELECT * FROM jobs WHERE id = ?', [id]);
-    return rowToObject<Job>(result[0].columns, result[0].values[0]);
-  });
+  const database = getDb();
+  database.prepare(
+    `INSERT INTO jobs (id, handle, public_key_hex, secret_key_hex, status, profile_name, profile_bio, profile_picture_url)
+     VALUES (?, ?, ?, ?, 'pending', ?, ?, ?)`
+  ).run(id, handle, publicKeyHex, secretKeyHex, profileName || null, profileBio || null, profilePictureUrl || null);
+
+  const row = database.prepare('SELECT * FROM jobs WHERE id = ?').get(id);
+  return rowToObject<Job>(row as Record<string, unknown>);
 }
 
 export async function getJob(id: string): Promise<Job | undefined> {
-  const database = await getDb();
-  const result = database.exec('SELECT * FROM jobs WHERE id = ?', [id]);
-  if (result.length === 0 || result[0].values.length === 0) return undefined;
-  return rowToObject<Job>(result[0].columns, result[0].values[0]);
+  const database = getDb();
+  const row = database.prepare('SELECT * FROM jobs WHERE id = ?').get(id);
+  if (!row) return undefined;
+  return rowToObject<Job>(row as Record<string, unknown>);
 }
 
 export async function updateJobStatus(id: string, status: Job['status']): Promise<void> {
-  return withDb(async (database) => {
-    database.run(
-      `UPDATE jobs SET status = ?, updated_at = datetime('now')
-       WHERE id = ?`,
-      [status, id]
-    );
-  });
+  const database = getDb();
+  database.prepare(
+    `UPDATE jobs SET status = ?, updated_at = datetime('now') WHERE id = ?`
+  ).run(status, id);
 }
 
 export async function createVideoTask(
@@ -205,48 +134,45 @@ export async function createVideoTask(
   postType?: 'reel' | 'image' | 'carousel',
   mediaItems?: string  // JSON string
 ): Promise<VideoTask> {
-  return withDb(async (database) => {
-    database.run(
-      `INSERT INTO video_tasks (
-        id, job_id, instagram_url, filename, caption, original_date,
-        width, height, duration, thumbnail_url, post_type, media_items, status
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
-      [
-        id,
-        jobId,
-        instagramUrl,
-        filename || null,
-        caption || null,
-        originalDate || null,
-        width || null,
-        height || null,
-        duration || null,
-        thumbnailUrl || null,
-        postType || 'reel',
-        mediaItems || null
-      ]
-    );
-    const result = database.exec('SELECT * FROM video_tasks WHERE id = ?', [id]);
-    return rowToObject<VideoTask>(result[0].columns, result[0].values[0]);
-  });
+  const database = getDb();
+  database.prepare(
+    `INSERT INTO video_tasks (
+      id, job_id, instagram_url, filename, caption, original_date,
+      width, height, duration, thumbnail_url, post_type, media_items, status
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`
+  ).run(
+    id,
+    jobId,
+    instagramUrl,
+    filename || null,
+    caption || null,
+    originalDate || null,
+    width || null,
+    height || null,
+    duration || null,
+    thumbnailUrl || null,
+    postType || 'reel',
+    mediaItems || null
+  );
+
+  const row = database.prepare('SELECT * FROM video_tasks WHERE id = ?').get(id);
+  return rowToObject<VideoTask>(row as Record<string, unknown>);
 }
 
 export async function getVideoTask(id: string): Promise<VideoTask | undefined> {
-  const database = await getDb();
-  const result = database.exec('SELECT * FROM video_tasks WHERE id = ?', [id]);
-  if (result.length === 0 || result[0].values.length === 0) return undefined;
-  return rowToObject<VideoTask>(result[0].columns, result[0].values[0]);
+  const database = getDb();
+  const row = database.prepare('SELECT * FROM video_tasks WHERE id = ?').get(id);
+  if (!row) return undefined;
+  return rowToObject<VideoTask>(row as Record<string, unknown>);
 }
 
 export async function getVideoTasksByJobId(jobId: string): Promise<VideoTask[]> {
-  const database = await getDb();
-  const result = database.exec(
-    'SELECT * FROM video_tasks WHERE job_id = ? ORDER BY created_at',
-    [jobId]
-  );
-  if (result.length === 0) return [];
-  return result[0].values.map(row => rowToObject<VideoTask>(result[0].columns, row));
+  const database = getDb();
+  const rows = database.prepare(
+    'SELECT * FROM video_tasks WHERE job_id = ? ORDER BY created_at'
+  ).all(jobId);
+  return rows.map(row => rowToObject<VideoTask>(row as Record<string, unknown>));
 }
 
 export async function getJobWithTasks(jobId: string): Promise<{ job: Job; tasks: VideoTask[] } | null> {
@@ -306,16 +232,16 @@ export interface ProposalArticle {
 }
 
 export async function ensureProposalTables(): Promise<void> {
-  const database = await getDb();
+  const database = getDb();
 
   // Check if proposals table exists
-  const result = database.exec(
+  const tableExists = database.prepare(
     "SELECT name FROM sqlite_master WHERE type='table' AND name='proposals'"
-  );
+  ).get();
 
-  if (result.length === 0 || result[0].values.length === 0) {
+  if (!tableExists) {
     // Create proposals tables
-    database.run(`
+    database.exec(`
       CREATE TABLE IF NOT EXISTS proposals (
         id TEXT PRIMARY KEY,
         claim_token TEXT UNIQUE NOT NULL,
@@ -331,7 +257,7 @@ export async function ensureProposalTables(): Promise<void> {
       )
     `);
 
-    database.run(`
+    database.exec(`
       CREATE TABLE IF NOT EXISTS proposal_posts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         proposal_id TEXT NOT NULL,
@@ -347,7 +273,7 @@ export async function ensureProposalTables(): Promise<void> {
       )
     `);
 
-    database.run(`
+    database.exec(`
       CREATE TABLE IF NOT EXISTS proposal_articles (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         proposal_id TEXT NOT NULL,
@@ -366,35 +292,31 @@ export async function ensureProposalTables(): Promise<void> {
       )
     `);
 
-    database.run('CREATE INDEX IF NOT EXISTS idx_proposals_claim_token ON proposals(claim_token)');
-    database.run('CREATE INDEX IF NOT EXISTS idx_proposals_status ON proposals(status)');
-    database.run('CREATE INDEX IF NOT EXISTS idx_proposals_expires_at ON proposals(expires_at)');
-    database.run('CREATE INDEX IF NOT EXISTS idx_proposal_posts_proposal_id ON proposal_posts(proposal_id)');
-    database.run('CREATE INDEX IF NOT EXISTS idx_proposal_articles_proposal_id ON proposal_articles(proposal_id)');
-
-    saveDb(database);
+    database.exec('CREATE INDEX IF NOT EXISTS idx_proposals_claim_token ON proposals(claim_token)');
+    database.exec('CREATE INDEX IF NOT EXISTS idx_proposals_status ON proposals(status)');
+    database.exec('CREATE INDEX IF NOT EXISTS idx_proposals_expires_at ON proposals(expires_at)');
+    database.exec('CREATE INDEX IF NOT EXISTS idx_proposal_posts_proposal_id ON proposal_posts(proposal_id)');
+    database.exec('CREATE INDEX IF NOT EXISTS idx_proposal_articles_proposal_id ON proposal_articles(proposal_id)');
   } else {
     // Table exists, check if proposal_type column exists
-    const colCheck = database.exec("PRAGMA table_info(proposals)");
-    const columns = colCheck.length > 0 ? colCheck[0].values.map(row => row[1]) : [];
+    const columns = database.prepare("PRAGMA table_info(proposals)").all() as Array<{name: string}>;
+    const columnNames = columns.map(col => col.name);
 
-    if (!columns.includes('proposal_type')) {
-      database.run("ALTER TABLE proposals ADD COLUMN proposal_type TEXT DEFAULT 'posts' CHECK (proposal_type IN ('posts', 'articles', 'combined'))");
-      saveDb(database);
+    if (!columnNames.includes('proposal_type')) {
+      database.exec("ALTER TABLE proposals ADD COLUMN proposal_type TEXT DEFAULT 'posts' CHECK (proposal_type IN ('posts', 'articles', 'combined'))");
     }
 
-    if (!columns.includes('prepared_by')) {
-      database.run("ALTER TABLE proposals ADD COLUMN prepared_by TEXT");
-      saveDb(database);
+    if (!columnNames.includes('prepared_by')) {
+      database.exec("ALTER TABLE proposals ADD COLUMN prepared_by TEXT");
     }
 
     // Check if proposal_articles table exists
-    const articlesCheck = database.exec(
+    const articlesTableExists = database.prepare(
       "SELECT name FROM sqlite_master WHERE type='table' AND name='proposal_articles'"
-    );
+    ).get();
 
-    if (articlesCheck.length === 0 || articlesCheck[0].values.length === 0) {
-      database.run(`
+    if (!articlesTableExists) {
+      database.exec(`
         CREATE TABLE IF NOT EXISTS proposal_articles (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           proposal_id TEXT NOT NULL,
@@ -412,8 +334,7 @@ export async function ensureProposalTables(): Promise<void> {
           FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE
         )
       `);
-      database.run('CREATE INDEX IF NOT EXISTS idx_proposal_articles_proposal_id ON proposal_articles(proposal_id)');
-      saveDb(database);
+      database.exec('CREATE INDEX IF NOT EXISTS idx_proposal_articles_proposal_id ON proposal_articles(proposal_id)');
     }
   }
 }
@@ -429,51 +350,46 @@ export async function createProposal(
   proposalType: 'posts' | 'articles' | 'combined' = 'posts'
 ): Promise<Proposal> {
   await ensureProposalTables();
+  const database = getDb();
 
-  return withDb(async (database) => {
-    // Default expiration: 30 days from now
-    const expiration = expiresAt || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+  // Default expiration: 30 days from now
+  const expiration = expiresAt || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
-    database.run(
-      `INSERT INTO proposals (id, claim_token, target_npub, target_pubkey_hex, ig_handle, profile_data, proposal_type, expires_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, claimToken, targetNpub, targetPubkeyHex, igHandle, profileData || null, proposalType, expiration]
-    );
+  database.prepare(
+    `INSERT INTO proposals (id, claim_token, target_npub, target_pubkey_hex, ig_handle, profile_data, proposal_type, expires_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(id, claimToken, targetNpub, targetPubkeyHex, igHandle, profileData || null, proposalType, expiration);
 
-    const result = database.exec('SELECT * FROM proposals WHERE id = ?', [id]);
-    return rowToObject<Proposal>(result[0].columns, result[0].values[0]);
-  });
+  const row = database.prepare('SELECT * FROM proposals WHERE id = ?').get(id);
+  return rowToObject<Proposal>(row as Record<string, unknown>);
 }
 
 export async function getProposal(id: string): Promise<Proposal | undefined> {
   await ensureProposalTables();
-  const database = await getDb();
-  const result = database.exec('SELECT * FROM proposals WHERE id = ?', [id]);
-  if (result.length === 0 || result[0].values.length === 0) return undefined;
-  return rowToObject<Proposal>(result[0].columns, result[0].values[0]);
+  const database = getDb();
+  const row = database.prepare('SELECT * FROM proposals WHERE id = ?').get(id);
+  if (!row) return undefined;
+  return rowToObject<Proposal>(row as Record<string, unknown>);
 }
 
 export async function getProposalByToken(claimToken: string): Promise<Proposal | undefined> {
   await ensureProposalTables();
-  const database = await getDb();
-  const result = database.exec('SELECT * FROM proposals WHERE claim_token = ?', [claimToken]);
-  if (result.length === 0 || result[0].values.length === 0) return undefined;
-  return rowToObject<Proposal>(result[0].columns, result[0].values[0]);
+  const database = getDb();
+  const row = database.prepare('SELECT * FROM proposals WHERE claim_token = ?').get(claimToken);
+  if (!row) return undefined;
+  return rowToObject<Proposal>(row as Record<string, unknown>);
 }
 
 export async function updateProposalStatus(id: string, status: Proposal['status']): Promise<void> {
-  return withDb(async (database) => {
-    database.run('UPDATE proposals SET status = ? WHERE id = ?', [status, id]);
-  });
+  const database = getDb();
+  database.prepare('UPDATE proposals SET status = ? WHERE id = ?').run(status, id);
 }
 
 export async function markProposalClaimed(id: string): Promise<void> {
-  return withDb(async (database) => {
-    database.run(
-      `UPDATE proposals SET status = 'claimed', claimed_at = datetime('now') WHERE id = ?`,
-      [id]
-    );
-  });
+  const database = getDb();
+  database.prepare(
+    `UPDATE proposals SET status = 'claimed', claimed_at = datetime('now') WHERE id = ?`
+  ).run(id);
 }
 
 export async function createProposalPost(
@@ -485,32 +401,27 @@ export async function createProposalPost(
   thumbnailUrl?: string
 ): Promise<ProposalPost> {
   await ensureProposalTables();
+  const database = getDb();
 
-  return withDb(async (database) => {
-    database.run(
-      `INSERT INTO proposal_posts (proposal_id, post_type, media_items, caption, original_date, thumbnail_url)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [proposalId, postType, mediaItems, caption || null, originalDate || null, thumbnailUrl || null]
-    );
+  database.prepare(
+    `INSERT INTO proposal_posts (proposal_id, post_type, media_items, caption, original_date, thumbnail_url)
+     VALUES (?, ?, ?, ?, ?, ?)`
+  ).run(proposalId, postType, mediaItems, caption || null, originalDate || null, thumbnailUrl || null);
 
-    // Get the last inserted post
-    const result = database.exec(
-      'SELECT * FROM proposal_posts WHERE proposal_id = ? ORDER BY id DESC LIMIT 1',
-      [proposalId]
-    );
-    return rowToObject<ProposalPost>(result[0].columns, result[0].values[0]);
-  });
+  // Get the last inserted post
+  const row = database.prepare(
+    'SELECT * FROM proposal_posts WHERE proposal_id = ? ORDER BY id DESC LIMIT 1'
+  ).get(proposalId);
+  return rowToObject<ProposalPost>(row as Record<string, unknown>);
 }
 
 export async function getProposalPosts(proposalId: string): Promise<ProposalPost[]> {
   await ensureProposalTables();
-  const database = await getDb();
-  const result = database.exec(
-    'SELECT * FROM proposal_posts WHERE proposal_id = ? ORDER BY id',
-    [proposalId]
-  );
-  if (result.length === 0) return [];
-  return result[0].values.map(row => rowToObject<ProposalPost>(result[0].columns, row));
+  const database = getDb();
+  const rows = database.prepare(
+    'SELECT * FROM proposal_posts WHERE proposal_id = ? ORDER BY id'
+  ).all(proposalId);
+  return rows.map(row => rowToObject<ProposalPost>(row as Record<string, unknown>));
 }
 
 export async function updateProposalPostStatus(
@@ -518,16 +429,14 @@ export async function updateProposalPostStatus(
   status: ProposalPost['status'],
   blossomUrls?: string
 ): Promise<void> {
-  return withDb(async (database) => {
-    if (blossomUrls) {
-      database.run(
-        'UPDATE proposal_posts SET status = ?, blossom_urls = ? WHERE id = ?',
-        [status, blossomUrls, postId]
-      );
-    } else {
-      database.run('UPDATE proposal_posts SET status = ? WHERE id = ?', [status, postId]);
-    }
-  });
+  const database = getDb();
+  if (blossomUrls) {
+    database.prepare(
+      'UPDATE proposal_posts SET status = ?, blossom_urls = ? WHERE id = ?'
+    ).run(status, blossomUrls, postId);
+  } else {
+    database.prepare('UPDATE proposal_posts SET status = ? WHERE id = ?').run(status, postId);
+  }
 }
 
 export async function getProposalWithPosts(proposalId: string): Promise<{ proposal: Proposal; posts: ProposalPost[] } | null> {
@@ -559,50 +468,44 @@ export async function createProposalArticle(
   hashtags?: string[]
 ): Promise<ProposalArticle> {
   await ensureProposalTables();
+  const database = getDb();
 
-  return withDb(async (database) => {
-    database.run(
-      `INSERT INTO proposal_articles (proposal_id, title, summary, content_markdown, published_at, link, image_url, hashtags, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
-      [
-        proposalId,
-        title,
-        summary || null,
-        contentMarkdown,
-        publishedAt || null,
-        link || null,
-        imageUrl || null,
-        hashtags ? JSON.stringify(hashtags) : null
-      ]
-    );
+  database.prepare(
+    `INSERT INTO proposal_articles (proposal_id, title, summary, content_markdown, published_at, link, image_url, hashtags, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')`
+  ).run(
+    proposalId,
+    title,
+    summary || null,
+    contentMarkdown,
+    publishedAt || null,
+    link || null,
+    imageUrl || null,
+    hashtags ? JSON.stringify(hashtags) : null
+  );
 
-    // Get the last inserted article
-    const result = database.exec(
-      'SELECT * FROM proposal_articles WHERE proposal_id = ? ORDER BY id DESC LIMIT 1',
-      [proposalId]
-    );
-    return rowToObject<ProposalArticle>(result[0].columns, result[0].values[0]);
-  });
+  // Get the last inserted article
+  const row = database.prepare(
+    'SELECT * FROM proposal_articles WHERE proposal_id = ? ORDER BY id DESC LIMIT 1'
+  ).get(proposalId);
+  return rowToObject<ProposalArticle>(row as Record<string, unknown>);
 }
 
 export async function getProposalArticles(proposalId: string): Promise<ProposalArticle[]> {
   await ensureProposalTables();
-  const database = await getDb();
-  const result = database.exec(
-    'SELECT * FROM proposal_articles WHERE proposal_id = ? ORDER BY id',
-    [proposalId]
-  );
-  if (result.length === 0) return [];
-  return result[0].values.map(row => rowToObject<ProposalArticle>(result[0].columns, row));
+  const database = getDb();
+  const rows = database.prepare(
+    'SELECT * FROM proposal_articles WHERE proposal_id = ? ORDER BY id'
+  ).all(proposalId);
+  return rows.map(row => rowToObject<ProposalArticle>(row as Record<string, unknown>));
 }
 
 export async function updateProposalArticleStatus(
   articleId: number,
   status: ProposalArticle['status']
 ): Promise<void> {
-  return withDb(async (database) => {
-    database.run('UPDATE proposal_articles SET status = ? WHERE id = ?', [status, articleId]);
-  });
+  const database = getDb();
+  database.prepare('UPDATE proposal_articles SET status = ? WHERE id = ?').run(status, articleId);
 }
 
 export async function getProposalByTokenWithArticles(claimToken: string): Promise<{ proposal: Proposal; articles: ProposalArticle[] } | null> {
@@ -654,83 +557,84 @@ export async function createProposalWithContent(
   preparedBy?: string  // JSON string: {npub, name, picture}
 ): Promise<Proposal> {
   await ensureProposalTables();
+  const database = getDb();
 
-  return withDb(async (database) => {
+  // Use a transaction for atomic creation
+  const transaction = database.transaction(() => {
     // Default expiration: 30 days from now
     const expiration = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
     // Create the proposal
-    database.run(
+    database.prepare(
       `INSERT INTO proposals (id, claim_token, target_npub, target_pubkey_hex, ig_handle, profile_data, proposal_type, prepared_by, expires_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, claimToken, targetNpub, targetPubkeyHex, igHandle, profileData || null, proposalType, preparedBy || null, expiration]
-    );
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(id, claimToken, targetNpub, targetPubkeyHex, igHandle, profileData || null, proposalType, preparedBy || null, expiration);
 
     // Create all posts in the same transaction
+    const insertPost = database.prepare(
+      `INSERT INTO proposal_posts (proposal_id, post_type, media_items, caption, original_date, thumbnail_url)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    );
     for (const post of posts) {
-      database.run(
-        `INSERT INTO proposal_posts (proposal_id, post_type, media_items, caption, original_date, thumbnail_url)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [id, post.postType, post.mediaItems, post.caption || null, post.originalDate || null, post.thumbnailUrl || null]
-      );
+      insertPost.run(id, post.postType, post.mediaItems, post.caption || null, post.originalDate || null, post.thumbnailUrl || null);
     }
 
     // Create all articles in the same transaction
+    const insertArticle = database.prepare(
+      `INSERT INTO proposal_articles (proposal_id, title, summary, content_markdown, published_at, link, image_url, hashtags, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')`
+    );
     for (const article of articles) {
-      database.run(
-        `INSERT INTO proposal_articles (proposal_id, title, summary, content_markdown, published_at, link, image_url, hashtags, status)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
-        [
-          id,
-          article.title,
-          article.summary || null,
-          article.contentMarkdown,
-          article.publishedAt || null,
-          article.link || null,
-          article.imageUrl || null,
-          article.hashtags ? JSON.stringify(article.hashtags) : null
-        ]
+      insertArticle.run(
+        id,
+        article.title,
+        article.summary || null,
+        article.contentMarkdown,
+        article.publishedAt || null,
+        article.link || null,
+        article.imageUrl || null,
+        article.hashtags ? JSON.stringify(article.hashtags) : null
       );
     }
 
     // Return the proposal we just created
-    const result = database.exec('SELECT * FROM proposals WHERE id = ?', [id]);
-    return rowToObject<Proposal>(result[0].columns, result[0].values[0]);
+    return database.prepare('SELECT * FROM proposals WHERE id = ?').get(id);
   });
+
+  const row = transaction();
+  return rowToObject<Proposal>(row as Record<string, unknown>);
 }
 
 export async function getPendingProposals(): Promise<Proposal[]> {
   await ensureProposalTables();
-  const database = await getDb();
-  const result = database.exec(
+  const database = getDb();
+  const rows = database.prepare(
     "SELECT * FROM proposals WHERE status = 'pending' ORDER BY created_at"
-  );
-  if (result.length === 0) return [];
-  return result[0].values.map(row => rowToObject<Proposal>(result[0].columns, row));
+  ).all();
+  return rows.map(row => rowToObject<Proposal>(row as Record<string, unknown>));
 }
 
 export async function cleanupExpiredProposals(): Promise<number> {
   await ensureProposalTables();
-  const database = await getDb();
+  const database = getDb();
 
   // Get count of expired proposals
-  const countResult = database.exec(
+  const countRow = database.prepare(
     "SELECT COUNT(*) as count FROM proposals WHERE expires_at < datetime('now') AND status != 'claimed'"
-  );
-  const count = countResult.length > 0 ? (countResult[0].values[0][0] as number) : 0;
+  ).get() as { count: number };
+  const count = countRow?.count || 0;
 
   if (count > 0) {
     // Delete proposal posts first (foreign key)
-    database.run(`
+    database.prepare(`
       DELETE FROM proposal_posts
       WHERE proposal_id IN (
         SELECT id FROM proposals WHERE expires_at < datetime('now') AND status != 'claimed'
       )
-    `);
+    `).run();
 
     // Delete expired proposals
-    database.run("DELETE FROM proposals WHERE expires_at < datetime('now') AND status != 'claimed'");
-    saveDb(database);
+    database.prepare("DELETE FROM proposals WHERE expires_at < datetime('now') AND status != 'claimed'").run();
   }
 
   return count;
@@ -785,16 +689,16 @@ export interface GiftArticle {
 }
 
 export async function ensureGiftTables(): Promise<void> {
-  const database = await getDb();
+  const database = getDb();
 
   // Check if gifts table exists
-  const result = database.exec(
+  const tableExists = database.prepare(
     "SELECT name FROM sqlite_master WHERE type='table' AND name='gifts'"
-  );
+  ).get();
 
-  if (result.length === 0 || result[0].values.length === 0) {
+  if (!tableExists) {
     // Create gifts tables
-    database.run(`
+    database.exec(`
       CREATE TABLE IF NOT EXISTS gifts (
         id TEXT PRIMARY KEY,
         claim_token TEXT UNIQUE NOT NULL,
@@ -809,7 +713,7 @@ export async function ensureGiftTables(): Promise<void> {
       )
     `);
 
-    database.run(`
+    database.exec(`
       CREATE TABLE IF NOT EXISTS gift_posts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         gift_id TEXT NOT NULL,
@@ -825,7 +729,7 @@ export async function ensureGiftTables(): Promise<void> {
       )
     `);
 
-    database.run(`
+    database.exec(`
       CREATE TABLE IF NOT EXISTS gift_articles (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         gift_id TEXT NOT NULL,
@@ -843,40 +747,35 @@ export async function ensureGiftTables(): Promise<void> {
       )
     `);
 
-    database.run('CREATE INDEX IF NOT EXISTS idx_gifts_claim_token ON gifts(claim_token)');
-    database.run('CREATE INDEX IF NOT EXISTS idx_gifts_status ON gifts(status)');
-    database.run('CREATE INDEX IF NOT EXISTS idx_gifts_expires_at ON gifts(expires_at)');
-    database.run('CREATE INDEX IF NOT EXISTS idx_gift_posts_gift_id ON gift_posts(gift_id)');
-    database.run('CREATE INDEX IF NOT EXISTS idx_gift_articles_gift_id ON gift_articles(gift_id)');
-
-    saveDb(database);
+    database.exec('CREATE INDEX IF NOT EXISTS idx_gifts_claim_token ON gifts(claim_token)');
+    database.exec('CREATE INDEX IF NOT EXISTS idx_gifts_status ON gifts(status)');
+    database.exec('CREATE INDEX IF NOT EXISTS idx_gifts_expires_at ON gifts(expires_at)');
+    database.exec('CREATE INDEX IF NOT EXISTS idx_gift_posts_gift_id ON gift_posts(gift_id)');
+    database.exec('CREATE INDEX IF NOT EXISTS idx_gift_articles_gift_id ON gift_articles(gift_id)');
   } else {
     // Table exists, check if gift_type column exists
-    const colCheck = database.exec("PRAGMA table_info(gifts)");
-    const columns = colCheck.length > 0 ? colCheck[0].values.map(row => row[1]) : [];
+    const columns = database.prepare("PRAGMA table_info(gifts)").all() as Array<{name: string}>;
+    const columnNames = columns.map(col => col.name);
 
-    if (!columns.includes('gift_type')) {
-      database.run("ALTER TABLE gifts ADD COLUMN gift_type TEXT DEFAULT 'posts' CHECK (gift_type IN ('posts', 'articles', 'combined'))");
-      saveDb(database);
+    if (!columnNames.includes('gift_type')) {
+      database.exec("ALTER TABLE gifts ADD COLUMN gift_type TEXT DEFAULT 'posts' CHECK (gift_type IN ('posts', 'articles', 'combined'))");
     }
 
-    if (!columns.includes('suggested_follows')) {
-      database.run("ALTER TABLE gifts ADD COLUMN suggested_follows TEXT");
-      saveDb(database);
+    if (!columnNames.includes('suggested_follows')) {
+      database.exec("ALTER TABLE gifts ADD COLUMN suggested_follows TEXT");
     }
 
-    if (!columns.includes('prepared_by')) {
-      database.run("ALTER TABLE gifts ADD COLUMN prepared_by TEXT");
-      saveDb(database);
+    if (!columnNames.includes('prepared_by')) {
+      database.exec("ALTER TABLE gifts ADD COLUMN prepared_by TEXT");
     }
 
     // Check if gift_articles table exists
-    const articlesCheck = database.exec(
+    const articlesTableExists = database.prepare(
       "SELECT name FROM sqlite_master WHERE type='table' AND name='gift_articles'"
-    );
+    ).get();
 
-    if (articlesCheck.length === 0 || articlesCheck[0].values.length === 0) {
-      database.run(`
+    if (!articlesTableExists) {
+      database.exec(`
         CREATE TABLE IF NOT EXISTS gift_articles (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           gift_id TEXT NOT NULL,
@@ -894,16 +793,14 @@ export async function ensureGiftTables(): Promise<void> {
           FOREIGN KEY (gift_id) REFERENCES gifts(id) ON DELETE CASCADE
         )
       `);
-      database.run('CREATE INDEX IF NOT EXISTS idx_gift_articles_gift_id ON gift_articles(gift_id)');
-      saveDb(database);
+      database.exec('CREATE INDEX IF NOT EXISTS idx_gift_articles_gift_id ON gift_articles(gift_id)');
     } else {
       // Check if inline_image_urls column exists in gift_articles
-      const articleColCheck = database.exec("PRAGMA table_info(gift_articles)");
-      const articleColumns = articleColCheck.length > 0 ? articleColCheck[0].values.map(row => row[1]) : [];
+      const articleColumns = database.prepare("PRAGMA table_info(gift_articles)").all() as Array<{name: string}>;
+      const articleColumnNames = articleColumns.map(col => col.name);
 
-      if (!articleColumns.includes('inline_image_urls')) {
-        database.run("ALTER TABLE gift_articles ADD COLUMN inline_image_urls TEXT");
-        saveDb(database);
+      if (!articleColumnNames.includes('inline_image_urls')) {
+        database.exec("ALTER TABLE gift_articles ADD COLUMN inline_image_urls TEXT");
       }
     }
   }
@@ -918,52 +815,47 @@ export async function createGift(
   giftType: 'posts' | 'articles' | 'combined' = 'posts'
 ): Promise<Gift> {
   await ensureGiftTables();
+  const database = getDb();
 
-  return withDb(async (database) => {
-    // Default expiration: 30 days from now
-    const expiration = expiresAt || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+  // Default expiration: 30 days from now
+  const expiration = expiresAt || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
-    database.run(
-      `INSERT INTO gifts (id, claim_token, ig_handle, salt, profile_data, gift_type, expires_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [id, claimToken, igHandle, '', profileData || null, giftType, expiration]
-    );
+  database.prepare(
+    `INSERT INTO gifts (id, claim_token, ig_handle, salt, profile_data, gift_type, expires_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).run(id, claimToken, igHandle, '', profileData || null, giftType, expiration);
 
-    // Return the gift we just created
-    const result = database.exec('SELECT * FROM gifts WHERE id = ?', [id]);
-    return rowToObject<Gift>(result[0].columns, result[0].values[0]);
-  });
+  // Return the gift we just created
+  const row = database.prepare('SELECT * FROM gifts WHERE id = ?').get(id);
+  return rowToObject<Gift>(row as Record<string, unknown>);
 }
 
 export async function getGift(id: string): Promise<Gift | undefined> {
   await ensureGiftTables();
-  const database = await getDb();
-  const result = database.exec('SELECT * FROM gifts WHERE id = ?', [id]);
-  if (result.length === 0 || result[0].values.length === 0) return undefined;
-  return rowToObject<Gift>(result[0].columns, result[0].values[0]);
+  const database = getDb();
+  const row = database.prepare('SELECT * FROM gifts WHERE id = ?').get(id);
+  if (!row) return undefined;
+  return rowToObject<Gift>(row as Record<string, unknown>);
 }
 
 export async function getGiftByToken(claimToken: string): Promise<Gift | undefined> {
   await ensureGiftTables();
-  const database = await getDb();
-  const result = database.exec('SELECT * FROM gifts WHERE claim_token = ?', [claimToken]);
-  if (result.length === 0 || result[0].values.length === 0) return undefined;
-  return rowToObject<Gift>(result[0].columns, result[0].values[0]);
+  const database = getDb();
+  const row = database.prepare('SELECT * FROM gifts WHERE claim_token = ?').get(claimToken);
+  if (!row) return undefined;
+  return rowToObject<Gift>(row as Record<string, unknown>);
 }
 
 export async function updateGiftStatus(id: string, status: Gift['status']): Promise<void> {
-  return withDb(async (database) => {
-    database.run('UPDATE gifts SET status = ? WHERE id = ?', [status, id]);
-  });
+  const database = getDb();
+  database.prepare('UPDATE gifts SET status = ? WHERE id = ?').run(status, id);
 }
 
 export async function markGiftClaimed(id: string): Promise<void> {
-  return withDb(async (database) => {
-    database.run(
-      `UPDATE gifts SET status = 'claimed', claimed_at = datetime('now') WHERE id = ?`,
-      [id]
-    );
-  });
+  const database = getDb();
+  database.prepare(
+    `UPDATE gifts SET status = 'claimed', claimed_at = datetime('now') WHERE id = ?`
+  ).run(id);
 }
 
 export async function createGiftPost(
@@ -975,32 +867,27 @@ export async function createGiftPost(
   thumbnailUrl?: string
 ): Promise<GiftPost> {
   await ensureGiftTables();
+  const database = getDb();
 
-  return withDb(async (database) => {
-    database.run(
-      `INSERT INTO gift_posts (gift_id, post_type, media_items, caption, original_date, thumbnail_url)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [giftId, postType, mediaItems, caption || null, originalDate || null, thumbnailUrl || null]
-    );
+  database.prepare(
+    `INSERT INTO gift_posts (gift_id, post_type, media_items, caption, original_date, thumbnail_url)
+     VALUES (?, ?, ?, ?, ?, ?)`
+  ).run(giftId, postType, mediaItems, caption || null, originalDate || null, thumbnailUrl || null);
 
-    // Get the last inserted post
-    const result = database.exec(
-      'SELECT * FROM gift_posts WHERE gift_id = ? ORDER BY id DESC LIMIT 1',
-      [giftId]
-    );
-    return rowToObject<GiftPost>(result[0].columns, result[0].values[0]);
-  });
+  // Get the last inserted post
+  const row = database.prepare(
+    'SELECT * FROM gift_posts WHERE gift_id = ? ORDER BY id DESC LIMIT 1'
+  ).get(giftId);
+  return rowToObject<GiftPost>(row as Record<string, unknown>);
 }
 
 export async function getGiftPosts(giftId: string): Promise<GiftPost[]> {
   await ensureGiftTables();
-  const database = await getDb();
-  const result = database.exec(
-    'SELECT * FROM gift_posts WHERE gift_id = ? ORDER BY id',
-    [giftId]
-  );
-  if (result.length === 0) return [];
-  return result[0].values.map(row => rowToObject<GiftPost>(result[0].columns, row));
+  const database = getDb();
+  const rows = database.prepare(
+    'SELECT * FROM gift_posts WHERE gift_id = ? ORDER BY id'
+  ).all(giftId);
+  return rows.map(row => rowToObject<GiftPost>(row as Record<string, unknown>));
 }
 
 export async function updateGiftPostStatus(
@@ -1008,16 +895,14 @@ export async function updateGiftPostStatus(
   status: GiftPost['status'],
   blossomUrls?: string
 ): Promise<void> {
-  return withDb(async (database) => {
-    if (blossomUrls) {
-      database.run(
-        'UPDATE gift_posts SET status = ?, blossom_urls = ? WHERE id = ?',
-        [status, blossomUrls, postId]
-      );
-    } else {
-      database.run('UPDATE gift_posts SET status = ? WHERE id = ?', [status, postId]);
-    }
-  });
+  const database = getDb();
+  if (blossomUrls) {
+    database.prepare(
+      'UPDATE gift_posts SET status = ?, blossom_urls = ? WHERE id = ?'
+    ).run(status, blossomUrls, postId);
+  } else {
+    database.prepare('UPDATE gift_posts SET status = ? WHERE id = ?').run(status, postId);
+  }
 }
 
 export async function getGiftWithPosts(giftId: string): Promise<{ gift: Gift; posts: GiftPost[] } | null> {
@@ -1050,51 +935,45 @@ export async function createGiftArticle(
   hashtags?: string[]
 ): Promise<GiftArticle> {
   await ensureGiftTables();
+  const database = getDb();
 
-  return withDb(async (database) => {
-    database.run(
-      `INSERT INTO gift_articles (gift_id, title, summary, content_markdown, published_at, link, image_url, blossom_image_url, hashtags, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
-      [
-        giftId,
-        title,
-        summary || null,
-        contentMarkdown,
-        publishedAt || null,
-        link || null,
-        imageUrl || null,
-        blossomImageUrl || null,
-        hashtags ? JSON.stringify(hashtags) : null
-      ]
-    );
+  database.prepare(
+    `INSERT INTO gift_articles (gift_id, title, summary, content_markdown, published_at, link, image_url, blossom_image_url, hashtags, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`
+  ).run(
+    giftId,
+    title,
+    summary || null,
+    contentMarkdown,
+    publishedAt || null,
+    link || null,
+    imageUrl || null,
+    blossomImageUrl || null,
+    hashtags ? JSON.stringify(hashtags) : null
+  );
 
-    // Get the last inserted article
-    const result = database.exec(
-      'SELECT * FROM gift_articles WHERE gift_id = ? ORDER BY id DESC LIMIT 1',
-      [giftId]
-    );
-    return rowToObject<GiftArticle>(result[0].columns, result[0].values[0]);
-  });
+  // Get the last inserted article
+  const row = database.prepare(
+    'SELECT * FROM gift_articles WHERE gift_id = ? ORDER BY id DESC LIMIT 1'
+  ).get(giftId);
+  return rowToObject<GiftArticle>(row as Record<string, unknown>);
 }
 
 export async function getGiftArticles(giftId: string): Promise<GiftArticle[]> {
   await ensureGiftTables();
-  const database = await getDb();
-  const result = database.exec(
-    'SELECT * FROM gift_articles WHERE gift_id = ? ORDER BY id',
-    [giftId]
-  );
-  if (result.length === 0) return [];
-  return result[0].values.map(row => rowToObject<GiftArticle>(result[0].columns, row));
+  const database = getDb();
+  const rows = database.prepare(
+    'SELECT * FROM gift_articles WHERE gift_id = ? ORDER BY id'
+  ).all(giftId);
+  return rows.map(row => rowToObject<GiftArticle>(row as Record<string, unknown>));
 }
 
 export async function updateGiftArticleStatus(
   articleId: number,
   status: GiftArticle['status']
 ): Promise<void> {
-  return withDb(async (database) => {
-    database.run('UPDATE gift_articles SET status = ? WHERE id = ?', [status, articleId]);
-  });
+  const database = getDb();
+  database.prepare('UPDATE gift_articles SET status = ? WHERE id = ?').run(status, articleId);
 }
 
 export async function getGiftByTokenWithArticles(claimToken: string): Promise<{ gift: Gift; articles: GiftArticle[] } | null> {
@@ -1116,36 +995,34 @@ export async function getGiftByTokenWithBoth(claimToken: string): Promise<{ gift
 
 export async function getPendingGifts(): Promise<Gift[]> {
   await ensureGiftTables();
-  const database = await getDb();
-  const result = database.exec(
+  const database = getDb();
+  const rows = database.prepare(
     "SELECT * FROM gifts WHERE status = 'pending' ORDER BY created_at"
-  );
-  if (result.length === 0) return [];
-  return result[0].values.map(row => rowToObject<Gift>(result[0].columns, row));
+  ).all();
+  return rows.map(row => rowToObject<Gift>(row as Record<string, unknown>));
 }
 
 export async function cleanupExpiredGifts(): Promise<number> {
   await ensureGiftTables();
-  const database = await getDb();
+  const database = getDb();
 
   // Get count of expired gifts
-  const countResult = database.exec(
+  const countRow = database.prepare(
     "SELECT COUNT(*) as count FROM gifts WHERE expires_at < datetime('now') AND status != 'claimed'"
-  );
-  const count = countResult.length > 0 ? (countResult[0].values[0][0] as number) : 0;
+  ).get() as { count: number };
+  const count = countRow?.count || 0;
 
   if (count > 0) {
     // Delete gift posts first (foreign key)
-    database.run(`
+    database.prepare(`
       DELETE FROM gift_posts
       WHERE gift_id IN (
         SELECT id FROM gifts WHERE expires_at < datetime('now') AND status != 'claimed'
       )
-    `);
+    `).run();
 
     // Delete expired gifts
-    database.run("DELETE FROM gifts WHERE expires_at < datetime('now') AND status != 'claimed'");
-    saveDb(database);
+    database.prepare("DELETE FROM gifts WHERE expires_at < datetime('now') AND status != 'claimed'").run();
   }
 
   return count;
@@ -1184,50 +1061,53 @@ export async function createGiftWithContent(
   preparedBy?: string  // JSON string: {npub, name, picture}
 ): Promise<Gift> {
   await ensureGiftTables();
+  const database = getDb();
 
-  return withDb(async (database) => {
+  // Use a transaction for atomic creation
+  const transaction = database.transaction(() => {
     // Default expiration: 30 days from now
     const expiration = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
     // Create the gift
-    database.run(
+    database.prepare(
       `INSERT INTO gifts (id, claim_token, ig_handle, salt, profile_data, gift_type, suggested_follows, prepared_by, expires_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, claimToken, igHandle, '', profileData || null, giftType, suggestedFollows?.length ? JSON.stringify(suggestedFollows) : null, preparedBy || null, expiration]
-    );
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(id, claimToken, igHandle, '', profileData || null, giftType, suggestedFollows?.length ? JSON.stringify(suggestedFollows) : null, preparedBy || null, expiration);
 
     // Create all posts
+    const insertPost = database.prepare(
+      `INSERT INTO gift_posts (gift_id, post_type, media_items, caption, original_date, thumbnail_url)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    );
     for (const post of posts) {
-      database.run(
-        `INSERT INTO gift_posts (gift_id, post_type, media_items, caption, original_date, thumbnail_url)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [id, post.postType, post.mediaItems, post.caption || null, post.originalDate || null, post.thumbnailUrl || null]
-      );
+      insertPost.run(id, post.postType, post.mediaItems, post.caption || null, post.originalDate || null, post.thumbnailUrl || null);
     }
 
     // Create all articles
+    const insertArticle = database.prepare(
+      `INSERT INTO gift_articles (gift_id, title, summary, content_markdown, published_at, link, image_url, blossom_image_url, hashtags, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`
+    );
     for (const article of articles) {
-      database.run(
-        `INSERT INTO gift_articles (gift_id, title, summary, content_markdown, published_at, link, image_url, blossom_image_url, hashtags, status)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
-        [
-          id,
-          article.title,
-          article.summary || null,
-          article.contentMarkdown,
-          article.publishedAt || null,
-          article.link || null,
-          article.imageUrl || null,
-          article.blossomImageUrl || null,
-          article.hashtags ? JSON.stringify(article.hashtags) : null
-        ]
+      insertArticle.run(
+        id,
+        article.title,
+        article.summary || null,
+        article.contentMarkdown,
+        article.publishedAt || null,
+        article.link || null,
+        article.imageUrl || null,
+        article.blossomImageUrl || null,
+        article.hashtags ? JSON.stringify(article.hashtags) : null
       );
     }
 
     // Return the gift we just created
-    const result = database.exec('SELECT * FROM gifts WHERE id = ?', [id]);
-    return rowToObject<Gift>(result[0].columns, result[0].values[0]);
+    return database.prepare('SELECT * FROM gifts WHERE id = ?').get(id);
   });
+
+  const row = transaction();
+  return rowToObject<Gift>(row as Record<string, unknown>);
 }
 
 // ============================================
@@ -1263,16 +1143,16 @@ export interface RssGiftArticle {
 }
 
 export async function ensureRssGiftTables(): Promise<void> {
-  const database = await getDb();
+  const database = getDb();
 
   // Check if rss_gifts table exists
-  const result = database.exec(
+  const tableExists = database.prepare(
     "SELECT name FROM sqlite_master WHERE type='table' AND name='rss_gifts'"
-  );
+  ).get();
 
-  if (result.length === 0 || result[0].values.length === 0) {
+  if (!tableExists) {
     // Create rss_gifts tables
-    database.run(`
+    database.exec(`
       CREATE TABLE IF NOT EXISTS rss_gifts (
         id TEXT PRIMARY KEY,
         claim_token TEXT UNIQUE NOT NULL,
@@ -1287,7 +1167,7 @@ export async function ensureRssGiftTables(): Promise<void> {
       )
     `);
 
-    database.run(`
+    database.exec(`
       CREATE TABLE IF NOT EXISTS rss_gift_articles (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         rss_gift_id TEXT NOT NULL,
@@ -1305,11 +1185,9 @@ export async function ensureRssGiftTables(): Promise<void> {
       )
     `);
 
-    database.run('CREATE INDEX IF NOT EXISTS idx_rss_gifts_claim_token ON rss_gifts(claim_token)');
-    database.run('CREATE INDEX IF NOT EXISTS idx_rss_gifts_status ON rss_gifts(status)');
-    database.run('CREATE INDEX IF NOT EXISTS idx_rss_gift_articles_rss_gift_id ON rss_gift_articles(rss_gift_id)');
-
-    saveDb(database);
+    database.exec('CREATE INDEX IF NOT EXISTS idx_rss_gifts_claim_token ON rss_gifts(claim_token)');
+    database.exec('CREATE INDEX IF NOT EXISTS idx_rss_gifts_status ON rss_gifts(status)');
+    database.exec('CREATE INDEX IF NOT EXISTS idx_rss_gift_articles_rss_gift_id ON rss_gift_articles(rss_gift_id)');
   }
 }
 
@@ -1323,44 +1201,41 @@ export async function createRssGift(
   expiresAt?: string
 ): Promise<RssGift> {
   await ensureRssGiftTables();
+  const database = getDb();
 
-  return withDb(async (database) => {
-    // Default expiration: 30 days from now
-    const expiration = expiresAt || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+  // Default expiration: 30 days from now
+  const expiration = expiresAt || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
-    database.run(
-      `INSERT INTO rss_gifts (id, claim_token, feed_url, feed_title, feed_description, feed_image_url, status, expires_at)
-       VALUES (?, ?, ?, ?, ?, ?, 'ready', ?)`,
-      [id, claimToken, feedUrl, feedTitle || null, feedDescription || null, feedImageUrl || null, expiration]
-    );
-    const result = database.exec('SELECT * FROM rss_gifts WHERE id = ?', [id]);
-    return rowToObject<RssGift>(result[0].columns, result[0].values[0]);
-  });
+  database.prepare(
+    `INSERT INTO rss_gifts (id, claim_token, feed_url, feed_title, feed_description, feed_image_url, status, expires_at)
+     VALUES (?, ?, ?, ?, ?, ?, 'ready', ?)`
+  ).run(id, claimToken, feedUrl, feedTitle || null, feedDescription || null, feedImageUrl || null, expiration);
+
+  const row = database.prepare('SELECT * FROM rss_gifts WHERE id = ?').get(id);
+  return rowToObject<RssGift>(row as Record<string, unknown>);
 }
 
 export async function getRssGift(id: string): Promise<RssGift | undefined> {
   await ensureRssGiftTables();
-  const database = await getDb();
-  const result = database.exec('SELECT * FROM rss_gifts WHERE id = ?', [id]);
-  if (result.length === 0 || result[0].values.length === 0) return undefined;
-  return rowToObject<RssGift>(result[0].columns, result[0].values[0]);
+  const database = getDb();
+  const row = database.prepare('SELECT * FROM rss_gifts WHERE id = ?').get(id);
+  if (!row) return undefined;
+  return rowToObject<RssGift>(row as Record<string, unknown>);
 }
 
 export async function getRssGiftByToken(claimToken: string): Promise<RssGift | undefined> {
   await ensureRssGiftTables();
-  const database = await getDb();
-  const result = database.exec('SELECT * FROM rss_gifts WHERE claim_token = ?', [claimToken]);
-  if (result.length === 0 || result[0].values.length === 0) return undefined;
-  return rowToObject<RssGift>(result[0].columns, result[0].values[0]);
+  const database = getDb();
+  const row = database.prepare('SELECT * FROM rss_gifts WHERE claim_token = ?').get(claimToken);
+  if (!row) return undefined;
+  return rowToObject<RssGift>(row as Record<string, unknown>);
 }
 
 export async function markRssGiftClaimed(id: string): Promise<void> {
-  return withDb(async (database) => {
-    database.run(
-      `UPDATE rss_gifts SET status = 'claimed', claimed_at = datetime('now') WHERE id = ?`,
-      [id]
-    );
-  });
+  const database = getDb();
+  database.prepare(
+    `UPDATE rss_gifts SET status = 'claimed', claimed_at = datetime('now') WHERE id = ?`
+  ).run(id);
 }
 
 export async function createRssGiftArticle(
@@ -1375,51 +1250,45 @@ export async function createRssGiftArticle(
   hashtags?: string[]
 ): Promise<RssGiftArticle> {
   await ensureRssGiftTables();
+  const database = getDb();
 
-  return withDb(async (database) => {
-    database.run(
-      `INSERT INTO rss_gift_articles (rss_gift_id, title, summary, content_markdown, published_at, link, image_url, blossom_image_url, hashtags, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready')`,
-      [
-        rssGiftId,
-        title,
-        summary || null,
-        contentMarkdown,
-        publishedAt || null,
-        link || null,
-        imageUrl || null,
-        blossomImageUrl || null,
-        hashtags ? JSON.stringify(hashtags) : null
-      ]
-    );
+  database.prepare(
+    `INSERT INTO rss_gift_articles (rss_gift_id, title, summary, content_markdown, published_at, link, image_url, blossom_image_url, hashtags, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready')`
+  ).run(
+    rssGiftId,
+    title,
+    summary || null,
+    contentMarkdown,
+    publishedAt || null,
+    link || null,
+    imageUrl || null,
+    blossomImageUrl || null,
+    hashtags ? JSON.stringify(hashtags) : null
+  );
 
-    // Get the last inserted article
-    const result = database.exec(
-      'SELECT * FROM rss_gift_articles WHERE rss_gift_id = ? ORDER BY id DESC LIMIT 1',
-      [rssGiftId]
-    );
-    return rowToObject<RssGiftArticle>(result[0].columns, result[0].values[0]);
-  });
+  // Get the last inserted article
+  const row = database.prepare(
+    'SELECT * FROM rss_gift_articles WHERE rss_gift_id = ? ORDER BY id DESC LIMIT 1'
+  ).get(rssGiftId);
+  return rowToObject<RssGiftArticle>(row as Record<string, unknown>);
 }
 
 export async function getRssGiftArticles(rssGiftId: string): Promise<RssGiftArticle[]> {
   await ensureRssGiftTables();
-  const database = await getDb();
-  const result = database.exec(
-    'SELECT * FROM rss_gift_articles WHERE rss_gift_id = ? ORDER BY id',
-    [rssGiftId]
-  );
-  if (result.length === 0) return [];
-  return result[0].values.map(row => rowToObject<RssGiftArticle>(result[0].columns, row));
+  const database = getDb();
+  const rows = database.prepare(
+    'SELECT * FROM rss_gift_articles WHERE rss_gift_id = ? ORDER BY id'
+  ).all(rssGiftId);
+  return rows.map(row => rowToObject<RssGiftArticle>(row as Record<string, unknown>));
 }
 
 export async function updateRssGiftArticleStatus(
   articleId: number,
   status: RssGiftArticle['status']
 ): Promise<void> {
-  return withDb(async (database) => {
-    database.run('UPDATE rss_gift_articles SET status = ? WHERE id = ?', [status, articleId]);
-  });
+  const database = getDb();
+  database.prepare('UPDATE rss_gift_articles SET status = ? WHERE id = ?').run(status, articleId);
 }
 
 export async function getRssGiftByTokenWithArticles(claimToken: string): Promise<{ gift: RssGift; articles: RssGiftArticle[] } | null> {
@@ -1475,16 +1344,16 @@ export interface MigrationArticle {
 }
 
 export async function ensureMigrationTables(): Promise<void> {
-  const database = await getDb();
+  const database = getDb();
 
   // Check if migrations table exists
-  const result = database.exec(
+  const tableExists = database.prepare(
     "SELECT name FROM sqlite_master WHERE type='table' AND name='migrations'"
-  );
+  ).get();
 
-  if (result.length === 0 || result[0].values.length === 0) {
+  if (!tableExists) {
     // Create migrations tables
-    database.run(`
+    database.exec(`
       CREATE TABLE IF NOT EXISTS migrations (
         id TEXT PRIMARY KEY,
         source_handle TEXT NOT NULL,
@@ -1496,7 +1365,7 @@ export async function ensureMigrationTables(): Promise<void> {
       )
     `);
 
-    database.run(`
+    database.exec(`
       CREATE TABLE IF NOT EXISTS migration_posts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         migration_id TEXT NOT NULL,
@@ -1512,7 +1381,7 @@ export async function ensureMigrationTables(): Promise<void> {
       )
     `);
 
-    database.run(`
+    database.exec(`
       CREATE TABLE IF NOT EXISTS migration_articles (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         migration_id TEXT NOT NULL,
@@ -1532,11 +1401,9 @@ export async function ensureMigrationTables(): Promise<void> {
       )
     `);
 
-    database.run('CREATE INDEX IF NOT EXISTS idx_migrations_status ON migrations(status)');
-    database.run('CREATE INDEX IF NOT EXISTS idx_migration_posts_migration_id ON migration_posts(migration_id)');
-    database.run('CREATE INDEX IF NOT EXISTS idx_migration_articles_migration_id ON migration_articles(migration_id)');
-
-    saveDb(database);
+    database.exec('CREATE INDEX IF NOT EXISTS idx_migrations_status ON migrations(status)');
+    database.exec('CREATE INDEX IF NOT EXISTS idx_migration_posts_migration_id ON migration_posts(migration_id)');
+    database.exec('CREATE INDEX IF NOT EXISTS idx_migration_articles_migration_id ON migration_articles(migration_id)');
   }
 }
 
@@ -1567,76 +1434,75 @@ export async function createMigrationWithContent(
   articles: MigrationArticleInput[]
 ): Promise<Migration> {
   await ensureMigrationTables();
+  const database = getDb();
 
-  return withDb(async (database) => {
+  // Use a transaction for atomic creation
+  const transaction = database.transaction(() => {
     // Create the migration
-    database.run(
+    database.prepare(
       `INSERT INTO migrations (id, source_handle, source_type, profile_data)
-       VALUES (?, ?, ?, ?)`,
-      [id, sourceHandle, sourceType, profileData || null]
-    );
+       VALUES (?, ?, ?, ?)`
+    ).run(id, sourceHandle, sourceType, profileData || null);
 
     // Create all posts
+    const insertPost = database.prepare(
+      `INSERT INTO migration_posts (migration_id, post_type, media_items, caption, original_date, thumbnail_url)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    );
     for (const post of posts) {
-      database.run(
-        `INSERT INTO migration_posts (migration_id, post_type, media_items, caption, original_date, thumbnail_url)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [id, post.postType, post.mediaItems, post.caption || null, post.originalDate || null, post.thumbnailUrl || null]
-      );
+      insertPost.run(id, post.postType, post.mediaItems, post.caption || null, post.originalDate || null, post.thumbnailUrl || null);
     }
 
     // Create all articles
+    const insertArticle = database.prepare(
+      `INSERT INTO migration_articles (migration_id, title, summary, content_markdown, published_at, link, image_url, hashtags, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')`
+    );
     for (const article of articles) {
-      database.run(
-        `INSERT INTO migration_articles (migration_id, title, summary, content_markdown, published_at, link, image_url, hashtags, status)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
-        [
-          id,
-          article.title,
-          article.summary || null,
-          article.contentMarkdown,
-          article.publishedAt || null,
-          article.link || null,
-          article.imageUrl || null,
-          article.hashtags ? JSON.stringify(article.hashtags) : null
-        ]
+      insertArticle.run(
+        id,
+        article.title,
+        article.summary || null,
+        article.contentMarkdown,
+        article.publishedAt || null,
+        article.link || null,
+        article.imageUrl || null,
+        article.hashtags ? JSON.stringify(article.hashtags) : null
       );
     }
 
     // Return the migration we just created
-    const result = database.exec('SELECT * FROM migrations WHERE id = ?', [id]);
-    return rowToObject<Migration>(result[0].columns, result[0].values[0]);
+    return database.prepare('SELECT * FROM migrations WHERE id = ?').get(id);
   });
+
+  const row = transaction();
+  return rowToObject<Migration>(row as Record<string, unknown>);
 }
 
 export async function getMigration(id: string): Promise<Migration | undefined> {
   await ensureMigrationTables();
-  const database = await getDb();
-  const result = database.exec('SELECT * FROM migrations WHERE id = ?', [id]);
-  if (result.length === 0 || result[0].values.length === 0) return undefined;
-  return rowToObject<Migration>(result[0].columns, result[0].values[0]);
+  const database = getDb();
+  const row = database.prepare('SELECT * FROM migrations WHERE id = ?').get(id);
+  if (!row) return undefined;
+  return rowToObject<Migration>(row as Record<string, unknown>);
 }
 
 export async function getMigrationPosts(migrationId: string): Promise<MigrationPost[]> {
   await ensureMigrationTables();
-  const database = await getDb();
-  const result = database.exec(
-    'SELECT * FROM migration_posts WHERE migration_id = ? ORDER BY id',
-    [migrationId]
-  );
-  if (result.length === 0) return [];
-  return result[0].values.map(row => rowToObject<MigrationPost>(result[0].columns, row));
+  const database = getDb();
+  const rows = database.prepare(
+    'SELECT * FROM migration_posts WHERE migration_id = ? ORDER BY id'
+  ).all(migrationId);
+  return rows.map(row => rowToObject<MigrationPost>(row as Record<string, unknown>));
 }
 
 export async function getMigrationArticles(migrationId: string): Promise<MigrationArticle[]> {
   await ensureMigrationTables();
-  const database = await getDb();
-  const result = database.exec(
-    'SELECT * FROM migration_articles WHERE migration_id = ? ORDER BY id',
-    [migrationId]
-  );
-  if (result.length === 0) return [];
-  return result[0].values.map(row => rowToObject<MigrationArticle>(result[0].columns, row));
+  const database = getDb();
+  const rows = database.prepare(
+    'SELECT * FROM migration_articles WHERE migration_id = ? ORDER BY id'
+  ).all(migrationId);
+  return rows.map(row => rowToObject<MigrationArticle>(row as Record<string, unknown>));
 }
 
 export async function getMigrationWithContent(migrationId: string): Promise<{
@@ -1653,28 +1519,24 @@ export async function getMigrationWithContent(migrationId: string): Promise<{
 }
 
 export async function updateMigrationStatus(id: string, status: Migration['status']): Promise<void> {
-  return withDb(async (database) => {
-    database.run(
-      "UPDATE migrations SET status = ?, updated_at = datetime('now') WHERE id = ?",
-      [status, id]
-    );
-  });
+  const database = getDb();
+  database.prepare(
+    "UPDATE migrations SET status = ?, updated_at = datetime('now') WHERE id = ?"
+  ).run(status, id);
 }
 
 export async function updateMigrationPostStatus(
   postId: number,
   status: MigrationPost['status']
 ): Promise<void> {
-  return withDb(async (database) => {
-    database.run('UPDATE migration_posts SET status = ? WHERE id = ?', [status, postId]);
-  });
+  const database = getDb();
+  database.prepare('UPDATE migration_posts SET status = ? WHERE id = ?').run(status, postId);
 }
 
 export async function updateMigrationArticleStatus(
   articleId: number,
   status: MigrationArticle['status']
 ): Promise<void> {
-  return withDb(async (database) => {
-    database.run('UPDATE migration_articles SET status = ? WHERE id = ?', [status, articleId]);
-  });
+  const database = getDb();
+  database.prepare('UPDATE migration_articles SET status = ? WHERE id = ?').run(status, articleId);
 }

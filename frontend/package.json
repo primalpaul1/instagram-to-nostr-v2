@@ -12,6 +12,7 @@
     "@sveltejs/adapter-node": "^5.0.0",
     "@sveltejs/kit": "^2.0.0",
     "@sveltejs/vite-plugin-svelte": "^4.0.0",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/qrcode": "^1.5.5",
     "svelte": "^5.0.0",
     "typescript": "^5.0.0",
@@ -20,9 +21,9 @@
   "dependencies": {
     "@noble/hashes": "^1.8.0",
     "@noble/secp256k1": "^2.0.0",
+    "better-sqlite3": "^12.6.2",
     "nostr-tools": "^2.10.0",
     "qrcode": "^1.5.4",
-    "sql.js": "^1.10.0",
     "ws": "^8.18.0"
   },
   "type": "module"
