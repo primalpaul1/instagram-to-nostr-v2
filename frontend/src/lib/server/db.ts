@@ -1316,7 +1316,7 @@ export interface Migration {
 export interface MigrationPost {
   id: number;
   migration_id: string;
-  post_type: 'reel' | 'image' | 'carousel' | 'video';
+  post_type: 'reel' | 'image' | 'carousel' | 'video' | 'text';
   caption: string | null;
   original_date: string | null;
   media_items: string;  // JSON string
@@ -1369,7 +1369,7 @@ export async function ensureMigrationTables(): Promise<void> {
       CREATE TABLE IF NOT EXISTS migration_posts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         migration_id TEXT NOT NULL,
-        post_type TEXT NOT NULL CHECK (post_type IN ('reel', 'image', 'carousel', 'video')),
+        post_type TEXT NOT NULL CHECK (post_type IN ('reel', 'image', 'carousel', 'video', 'text')),
         caption TEXT,
         original_date TEXT,
         media_items TEXT NOT NULL,
@@ -1408,7 +1408,7 @@ export async function ensureMigrationTables(): Promise<void> {
 }
 
 export interface MigrationPostInput {
-  postType: 'reel' | 'image' | 'carousel' | 'video';
+  postType: 'reel' | 'image' | 'carousel' | 'video' | 'text';
   mediaItems: string;  // JSON string
   caption?: string;
   originalDate?: string;

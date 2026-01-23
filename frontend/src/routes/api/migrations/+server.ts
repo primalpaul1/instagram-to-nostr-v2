@@ -18,7 +18,7 @@ interface MediaItemInput {
 
 interface PostInput {
   id: string;
-  post_type: 'reel' | 'image' | 'carousel' | 'video';
+  post_type: 'reel' | 'image' | 'carousel' | 'video' | 'text';
   caption?: string;
   original_date?: string;
   thumbnail_url?: string;
@@ -68,7 +68,7 @@ export const POST: RequestHandler = async ({ request }) => {
   try {
     const body = await request.json();
     const { sourceType, sourceHandle, posts, articles, profile, feed } = body as {
-      sourceType: 'instagram' | 'tiktok' | 'rss';
+      sourceType: 'instagram' | 'tiktok' | 'rss' | 'twitter';
       sourceHandle: string;
       posts?: PostInput[];
       articles?: ArticleInput[];
@@ -85,9 +85,9 @@ export const POST: RequestHandler = async ({ request }) => {
     }
 
     // Validate content based on source type
-    if ((sourceType === 'instagram' || sourceType === 'tiktok') && (!posts || posts.length === 0)) {
+    if ((sourceType === 'instagram' || sourceType === 'tiktok' || sourceType === 'twitter') && (!posts || posts.length === 0)) {
       return json(
-        { message: 'Posts are required for Instagram/TikTok migrations' },
+        { message: 'Posts are required for Instagram/TikTok/Twitter migrations' },
         { status: 400 }
       );
     }
