@@ -44,11 +44,10 @@ export function createConnectionURI(
   params.append('image', 'https://ownyourposts.com/logo.png');
 
   // Only include callback for mobile deep link button, not QR codes
-  // Use the current origin (works for both local dev and production)
   // Primal will redirect back to this URL after user approves
   if (includeCallback && typeof window !== 'undefined') {
-    // Use origin (e.g., https://ownyourposts.com) - simple and clean
-    params.append('callback', window.location.origin);
+    // Use a dedicated callback path (like ZapTrax's /remoteloginsuccess)
+    params.append('callback', `${window.location.origin}/login-callback`);
   }
 
   return `nostrconnect://${localPubkey}?${params.toString()}`;

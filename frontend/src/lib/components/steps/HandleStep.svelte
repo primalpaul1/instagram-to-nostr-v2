@@ -38,9 +38,59 @@
   let connectionError = '';
   let pendingConnection: NIP46Connection | null = null;
 
+  // Mobile detection (like ZapTrax)
+  let isMobile = false;
+
+  function detectMobile(): boolean {
+    if (typeof navigator === 'undefined') return false;
+    return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  }
+
+  // Handle "Open Signer App" button click - save credentials before redirect
+  function handleOpenSignerApp() {
+    if (!localKeypair || !connectionSecret) return;
+
+    // Save credentials for callback recovery
+    localStorage.setItem('nip46_pending_main', JSON.stringify({
+      localSecretKey: localKeypair.secretKey,
+      localPublicKey: localKeypair.publicKey,
+      secret: connectionSecret,
+      timestamp: Date.now()
+    }));
+
+    // Redirect to signer app
+    window.location.href = mobileConnectionURI;
+  }
+
   onMount(async () => {
-    // Always start fresh
-    localStorage.removeItem('nip46_pending_main');
+    isMobile = detectMobile();
+
+    // Check for callback recovery (mobile redirect flow)
+    const pending = localStorage.getItem('nip46_pending_main');
+    if (pending) {
+      try {
+        const data = JSON.parse(pending);
+        const age = Date.now() - (data.timestamp || 0);
+        const FIVE_MINUTES = 5 * 60 * 1000;
+
+        if (age < FIVE_MINUTES) {
+          // Recent - try to recover the connection
+          console.log('[NIP46] Recovering from mobile redirect...');
+          localKeypair = { secretKey: data.localSecretKey, publicKey: data.localPublicKey };
+          connectionSecret = data.secret;
+          connectionURI = createConnectionURI(data.localPublicKey, data.secret, false);
+          mobileConnectionURI = createConnectionURI(data.localPublicKey, data.secret, true);
+          connectionStatus = 'waiting';
+          qrCodeDataUrl = await generateQRCode(connectionURI);
+          waitForPrimalConnection();
+          return;
+        }
+      } catch {
+        // Invalid data, ignore
+      }
+      localStorage.removeItem('nip46_pending_main');
+    }
+
     await initNIP46Connection();
   });
 
@@ -470,29 +520,34 @@
           <button class="retry-btn" on:click={retryConnection}>Try Again</button>
         </div>
       {:else if qrCodeDataUrl}
-        <!-- Login with Primal button for mobile (includes callback for redirect) -->
-        <a
-          href={mobileConnectionURI}
-          class="primal-login-btn"
-          aria-label="Login with Primal"
-        >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
-          </svg>
-          Log in with Primal
-        </a>
-
-        <div class="qr-divider">
-          <span>or scan QR code</span>
-        </div>
-
-        <div class="qr-wrapper">
-          <img src={qrCodeDataUrl} alt="Scan with Primal" class="qr-code" />
-        </div>
-        <div class="waiting-indicator">
-          <div class="pulse-dot"></div>
-          <span>Waiting for connection...</span>
-        </div>
+        {#if isMobile}
+          <!-- Mobile: Open Signer App button -->
+          <button
+            type="button"
+            class="primal-login-btn"
+            on:click={handleOpenSignerApp}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+              <polyline points="15 3 21 3 21 9"/>
+              <line x1="10" y1="14" x2="21" y2="3"/>
+            </svg>
+            Open Signer App
+          </button>
+          <div class="waiting-indicator">
+            <div class="pulse-dot"></div>
+            <span>Open your signer app to connect</span>
+          </div>
+        {:else}
+          <!-- Desktop: QR code -->
+          <div class="qr-wrapper">
+            <img src={qrCodeDataUrl} alt="Scan with Primal" class="qr-code" />
+          </div>
+          <div class="waiting-indicator">
+            <div class="pulse-dot"></div>
+            <span>Scan with your signer app</span>
+          </div>
+        {/if}
       {:else}
         <div class="loading-state">
           <div class="qr-spinner"></div>
