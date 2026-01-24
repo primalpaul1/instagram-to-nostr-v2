@@ -10,8 +10,15 @@
   onMount(async () => {
     if (!browser) return;
 
+    // Log URL and query params - Primal might include response data
+    debugInfo = `URL: ${window.location.href}\n`;
+    const urlParams = new URLSearchParams(window.location.search);
+    for (const [key, value] of urlParams.entries()) {
+      debugInfo += `Param ${key}: ${value.slice(0, 50)}...\n`;
+    }
+
     const returnUrl = sessionStorage.getItem('nip46_return_url') || '/';
-    debugInfo = `Return URL: ${returnUrl}\n`;
+    debugInfo += `Return URL: ${returnUrl}\n`;
 
     // Mark that callback was received (for debugging)
     sessionStorage.setItem('nip46_callback_received', 'true');
