@@ -41,6 +41,19 @@
   let pendingConnection: NIP46Connection | null = null;
 
   onMount(async () => {
+    // Log URL parameters - Primal might pass pubkey/bunker info in callback
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      console.log('[NIP46] Page loaded, URL:', window.location.href);
+      console.log('[NIP46] URL params:', Object.fromEntries(url.searchParams.entries()));
+
+      // Check for bunker:// or pubkey in URL params (Primal might pass these)
+      const bunkerParam = url.searchParams.get('bunker');
+      const pubkeyParam = url.searchParams.get('pubkey');
+      if (bunkerParam) console.log('[NIP46] Bunker param found:', bunkerParam);
+      if (pubkeyParam) console.log('[NIP46] Pubkey param found:', pubkeyParam);
+    }
+
     // Check for pending NIP-46 connection from iOS Safari redirect
     const pending = localStorage.getItem('nip46_pending_main');
 
