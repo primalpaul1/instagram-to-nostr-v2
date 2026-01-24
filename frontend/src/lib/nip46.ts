@@ -5,6 +5,7 @@
 
 import { generateSecretKey, getPublicKey, nip19, type Event } from 'nostr-tools';
 import { BunkerSigner, parseBunkerInput } from 'nostr-tools/nip46';
+import { Relay } from 'nostr-tools/relay';
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils';
 import QRCode from 'qrcode';
 
@@ -157,4 +158,91 @@ export function closeConnection(connection: NIP46Connection | null): void {
   if (connection?.signer) {
     connection.signer.close();
   }
+}
+
+// NIP-46 NostrConnect event kind
+const NostrConnect = 24133;
+
+/**
+ * Wait for a NIP-46 connection response using a `since` filter.
+ * This is used by the callback page to catch historical responses from Primal
+ * that were sent while iOS had our WebSocket killed.
+ *
+ * Unlike BunkerSigner.fromURI which uses limit:0 (real-time only),
+ * this uses a `since` filter to fetch recent historical events.
+ */
+export async function waitForConnectionResponse(
+  localSecretKey: string,
+  localPublicKey: string,
+  secret: string,
+  timeoutMs: number = 60000
+): Promise<string> {
+  // Dynamic import to avoid SSR issues
+  const { getConversationKey, decrypt: nip44Decrypt } = await import('nostr-tools/nip44');
+
+  const localSecretKeyBytes = hexToBytes(localSecretKey);
+
+  return new Promise(async (resolve, reject) => {
+    let relay: Relay | null = null;
+    let timeoutId: ReturnType<typeof setTimeout>;
+    let resolved = false;
+
+    const cleanup = () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      if (relay) {
+        try { relay.close(); } catch {}
+      }
+    };
+
+    timeoutId = setTimeout(() => {
+      if (!resolved) {
+        cleanup();
+        reject(new Error('Connection timeout'));
+      }
+    }, timeoutMs);
+
+    try {
+      relay = await Relay.connect(NIP46_RELAYS[0]);
+
+      // Use `since` filter to catch historical events (last 2 minutes)
+      // This is the key difference from BunkerSigner.fromURI which uses limit:0
+      const since = Math.floor(Date.now() / 1000) - 120;
+
+      relay.subscribe([
+        {
+          kinds: [NostrConnect],
+          '#p': [localPublicKey],
+          since: since
+        }
+      ], {
+        onevent: async (event: Event) => {
+          if (resolved) return;
+
+          try {
+            // Decrypt the message using NIP-44
+            const conversationKey = getConversationKey(localSecretKeyBytes, event.pubkey);
+            const decrypted = nip44Decrypt(event.content, conversationKey);
+            const response = JSON.parse(decrypted);
+
+            // Check if this is the connection acknowledgment with our secret
+            if (response.result === secret) {
+              resolved = true;
+              cleanup();
+              resolve(event.pubkey);
+              return;
+            }
+          } catch (decryptErr) {
+            // Decryption failed, might be for a different conversation
+            console.debug('Decrypt failed for event:', decryptErr);
+          }
+        },
+        oneose: () => {
+          // EOSE received, keep listening for new events
+        }
+      });
+    } catch (err) {
+      cleanup();
+      reject(err);
+    }
+  });
 }

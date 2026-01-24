@@ -1,11 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { browser } from '$app/environment';
-  import {
-    createConnectionURI,
-    waitForConnection,
-    closeConnection
-  } from '$lib/nip46';
+  import { waitForConnectionResponse } from '$lib/nip46';
 
   let status = 'Connecting to Primal...';
   let error = '';
@@ -46,24 +42,18 @@
     const resultKey = pendingKey.replace('pending', 'connected_pubkey');
 
     try {
-      // Recreate URI (without callback since we're already on callback page)
-      const connectionURI = createConnectionURI(localPublicKey, secret, false);
-
-      // Wait for connection from Primal (shorter timeout - user already approved)
+      // Wait for connection response using `since` filter
+      // This catches historical events that Primal sent while iOS had our WebSocket killed
       status = 'Waiting for Primal...';
-      const connection = await waitForConnection(
+      const remotePubkey = await waitForConnectionResponse(
         localSecretKey,
+        localPublicKey,
         secret,
-        connectionURI,
-        () => { status = 'Waiting for Primal...'; },
         60000 // 1 minute timeout
       );
 
       // Store the remotePubkey for original page
-      sessionStorage.setItem(resultKey, connection.remotePubkey);
-
-      // Close this connection (original page will recreate)
-      closeConnection(connection);
+      sessionStorage.setItem(resultKey, remotePubkey);
 
       status = 'Connected! Redirecting...';
     } catch (err) {
