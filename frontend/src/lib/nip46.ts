@@ -177,8 +177,13 @@ export async function waitForConnectionResponse(
   secret: string,
   timeoutMs: number = 60000
 ): Promise<string> {
+  console.log('[NIP46] waitForConnectionResponse starting');
+  console.log('[NIP46] localPublicKey:', localPublicKey.slice(0, 16) + '...');
+  console.log('[NIP46] secret:', secret.slice(0, 20) + '...');
+
   // Dynamic import to avoid SSR issues
   const { getConversationKey, decrypt: nip44Decrypt } = await import('nostr-tools/nip44');
+  console.log('[NIP46] nip44 imported successfully');
 
   const localSecretKeyBytes = hexToBytes(localSecretKey);
 
@@ -186,6 +191,7 @@ export async function waitForConnectionResponse(
     let relay: Relay | null = null;
     let timeoutId: ReturnType<typeof setTimeout>;
     let resolved = false;
+    let eventCount = 0;
 
     const cleanup = () => {
       if (timeoutId) clearTimeout(timeoutId);
@@ -196,51 +202,68 @@ export async function waitForConnectionResponse(
 
     timeoutId = setTimeout(() => {
       if (!resolved) {
+        console.log('[NIP46] Timeout reached, events received:', eventCount);
         cleanup();
-        reject(new Error('Connection timeout'));
+        reject(new Error(`Connection timeout (received ${eventCount} events)`));
       }
     }, timeoutMs);
 
     try {
+      console.log('[NIP46] Connecting to relay:', NIP46_RELAYS[0]);
       relay = await Relay.connect(NIP46_RELAYS[0]);
+      console.log('[NIP46] Relay connected');
 
       // Use `since` filter to catch historical events (last 2 minutes)
-      // This is the key difference from BunkerSigner.fromURI which uses limit:0
       const since = Math.floor(Date.now() / 1000) - 120;
+      console.log('[NIP46] Subscribing with since:', since, '(now - 120s)');
 
-      relay.subscribe([
-        {
-          kinds: [NostrConnect],
-          '#p': [localPublicKey],
-          since: since
-        }
-      ], {
+      const filter = {
+        kinds: [NostrConnect],
+        '#p': [localPublicKey],
+        since: since
+      };
+      console.log('[NIP46] Filter:', JSON.stringify(filter));
+
+      relay.subscribe([filter], {
         onevent: async (event: Event) => {
+          eventCount++;
+          console.log('[NIP46] Event received #' + eventCount + ':', {
+            pubkey: event.pubkey.slice(0, 16) + '...',
+            created_at: event.created_at,
+            content_length: event.content.length
+          });
+
           if (resolved) return;
 
           try {
             // Decrypt the message using NIP-44
             const conversationKey = getConversationKey(localSecretKeyBytes, event.pubkey);
             const decrypted = nip44Decrypt(event.content, conversationKey);
+            console.log('[NIP46] Decrypted:', decrypted.slice(0, 100) + '...');
+
             const response = JSON.parse(decrypted);
+            console.log('[NIP46] Response result:', response.result?.slice(0, 20) + '...');
 
             // Check if this is the connection acknowledgment with our secret
             if (response.result === secret) {
+              console.log('[NIP46] Secret matched! Remote pubkey:', event.pubkey);
               resolved = true;
               cleanup();
               resolve(event.pubkey);
               return;
+            } else {
+              console.log('[NIP46] Secret mismatch, expected:', secret.slice(0, 20) + '...');
             }
           } catch (decryptErr) {
-            // Decryption failed, might be for a different conversation
-            console.debug('Decrypt failed for event:', decryptErr);
+            console.log('[NIP46] Decrypt/parse failed:', decryptErr);
           }
         },
         oneose: () => {
-          // EOSE received, keep listening for new events
+          console.log('[NIP46] EOSE received, continuing to listen...');
         }
       });
     } catch (err) {
+      console.error('[NIP46] Error:', err);
       cleanup();
       reject(err);
     }

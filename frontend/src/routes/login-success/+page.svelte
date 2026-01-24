@@ -5,11 +5,13 @@
 
   let status = 'Connecting to Primal...';
   let error = '';
+  let debugInfo = '';
 
   onMount(async () => {
     if (!browser) return;
 
     const returnUrl = sessionStorage.getItem('nip46_return_url') || '/';
+    debugInfo = `Return URL: ${returnUrl}\n`;
 
     // Mark that callback was received (for debugging)
     sessionStorage.setItem('nip46_callback_received', 'true');
@@ -25,46 +27,54 @@
         try {
           pendingKey = key;
           pendingData = JSON.parse(data);
+          debugInfo += `Found pending: ${key}\n`;
           break;
         } catch {
-          // Invalid JSON, skip
+          debugInfo += `Invalid JSON for ${key}\n`;
         }
       }
     }
 
     if (!pendingData) {
-      // No pending connection, just redirect
-      window.location.href = returnUrl;
+      debugInfo += 'No pending connection found\n';
+      status = 'No pending connection';
+      // Wait a bit before redirect so user can see status
+      setTimeout(() => {
+        window.location.href = returnUrl;
+      }, 2000);
       return;
     }
 
     const { localSecretKey, localPublicKey, secret } = pendingData;
     const resultKey = pendingKey.replace('pending', 'connected_pubkey');
+    debugInfo += `Local pubkey: ${localPublicKey.slice(0, 16)}...\n`;
+    debugInfo += `Secret: ${secret.slice(0, 20)}...\n`;
 
     try {
-      // Wait for connection response using `since` filter
-      // This catches historical events that Primal sent while iOS had our WebSocket killed
-      status = 'Waiting for Primal...';
+      status = 'Connecting to relay...';
+      debugInfo += 'Calling waitForConnectionResponse...\n';
+
       const remotePubkey = await waitForConnectionResponse(
         localSecretKey,
         localPublicKey,
         secret,
-        60000 // 1 minute timeout
+        60000
       );
 
-      // Store the remotePubkey for original page
+      debugInfo += `Got remotePubkey: ${remotePubkey.slice(0, 16)}...\n`;
       sessionStorage.setItem(resultKey, remotePubkey);
 
       status = 'Connected! Redirecting...';
     } catch (err) {
-      error = err instanceof Error ? err.message : 'Connection failed';
-      // Still redirect - original page can retry
+      const errMsg = err instanceof Error ? err.message : 'Unknown error';
+      error = errMsg;
+      debugInfo += `Error: ${errMsg}\n`;
+      console.error('Connection error:', err);
     }
 
-    // Redirect back
     setTimeout(() => {
       window.location.href = returnUrl;
-    }, 500);
+    }, error ? 2000 : 500);
   });
 </script>
 
@@ -76,6 +86,7 @@
     <div class="spinner"></div>
     <p>{status}</p>
   {/if}
+  <pre class="debug">{debugInfo}</pre>
 </div>
 
 <style>
@@ -103,5 +114,13 @@
   }
   .error {
     color: #ef4444;
+  }
+  .debug {
+    font-size: 0.7rem;
+    color: #666;
+    text-align: left;
+    max-width: 90%;
+    white-space: pre-wrap;
+    word-break: break-all;
   }
 </style>
