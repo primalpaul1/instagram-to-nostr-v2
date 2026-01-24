@@ -8,10 +8,9 @@ import { BunkerSigner, parseBunkerInput } from 'nostr-tools/nip46';
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils';
 import QRCode from 'qrcode';
 
-// Default relays for NIP-46 communication
-// relay.nsec.app is specifically designed for NIP-46 remote signing
+// Default relay for NIP-46 communication
+// Using only Primal's relay since they control both the signer app and relay
 const NIP46_RELAYS = [
-  'wss://relay.nsec.app',
   'wss://relay.primal.net'
 ];
 
