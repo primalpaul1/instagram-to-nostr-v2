@@ -8,10 +8,12 @@ import { BunkerSigner, parseBunkerInput } from 'nostr-tools/nip46';
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils';
 import QRCode from 'qrcode';
 
-// Default relay for NIP-46 communication
-// Using only Primal's relay since they control both the signer app and relay
+// NIP-46 relays - matching xnostr.com's working implementation
 const NIP46_RELAYS = [
-  'wss://relay.primal.net'
+  'wss://relay.bullishbounty.com',
+  'wss://relay.damus.io',
+  'wss://relay.primal.net',
+  'wss://bucket.coracle.social'
 ];
 
 export interface NIP46Connection {
@@ -32,21 +34,22 @@ export function createConnectionURI(
   includeCallback: boolean = false,
   callbackUrl?: string
 ): string {
-  const relayParams = NIP46_RELAYS.map(r => `relay=${encodeURIComponent(r)}`).join('&');
+  const params = new URLSearchParams();
 
-  // App metadata for Primal login screen
-  const appName = 'Own Your Posts';
-  const appUrl = 'https://ownyourposts.com';
-  const appIcon = 'https://ownyourposts.com/logo.png';
+  // Add each relay as separate param (like xnostr does)
+  NIP46_RELAYS.forEach(relay => params.append('relay', relay));
 
-  let uri = `nostrconnect://${localPubkey}?${relayParams}&secret=${secret}&name=${encodeURIComponent(appName)}&url=${encodeURIComponent(appUrl)}&image=${encodeURIComponent(appIcon)}`;
+  params.append('secret', secret);
+  params.append('name', 'Own Your Posts');
+  params.append('url', 'https://ownyourposts.com');
+  params.append('image', 'https://ownyourposts.com/logo.png');
 
   // Only include callback for mobile deep link button, not QR codes
   if (includeCallback && callbackUrl) {
-    uri += `&callback=${encodeURIComponent(callbackUrl)}`;
+    params.append('callback', callbackUrl);
   }
 
-  return uri;
+  return `nostrconnect://${localPubkey}?${params.toString()}`;
 }
 
 /**
