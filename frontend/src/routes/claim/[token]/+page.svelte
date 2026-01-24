@@ -8,6 +8,8 @@
     generateSecret,
     generateLocalKeypair,
     waitForConnection,
+    waitForConnectionResponse,
+    createSignerWithKnownPubkey,
     hexToNpub,
     closeConnection,
     type NIP46Connection
@@ -142,6 +144,52 @@
 
   onMount(async () => {
     await loadProposal();
+
+    // Check for pending NIP-46 connection from iOS Safari redirect
+    const pending = localStorage.getItem('nip46_pending_claim');
+
+    if (pending && step === 'preview') {
+      try {
+        const { localSecretKey, localPublicKey, secret } = JSON.parse(pending);
+
+        connectionStatus = 'waiting';
+        localKeypair = { secretKey: localSecretKey, publicKey: localPublicKey };
+        connectionSecret = secret;
+        connectionURI = createConnectionURI(localPublicKey, secret, false);
+        mobileConnectionURI = createConnectionURI(localPublicKey, secret, true);
+        qrCodeDataUrl = await generateQRCode(connectionURI);
+        step = 'connect';
+
+        try {
+          // Look for historical ACK event with `since` filter
+          const remotePubkey = await waitForConnectionResponse(
+            localSecretKey,
+            localPublicKey,
+            secret,
+            15000
+          );
+
+          // Found the ACK! Create signer with known pubkey
+          const connection = await createSignerWithKnownPubkey(localSecretKey, remotePubkey);
+
+          nip46Connection = connection;
+          connectedPubkey = remotePubkey;
+          connectionStatus = 'connected';
+
+          localStorage.removeItem('nip46_pending_claim');
+
+          // Verify the connected pubkey matches the target
+          await verifyPubkey();
+          return;
+        } catch {
+          // No historical ACK found, continue waiting
+          waitForPrimalConnection();
+        }
+      } catch (err) {
+        console.error('Failed to restore NIP-46 connection:', err);
+        localStorage.removeItem('nip46_pending_claim');
+      }
+    }
   });
 
   onDestroy(() => {
@@ -216,6 +264,15 @@
       // Mobile button URI (with callback - redirects back to this page after approval)
       mobileConnectionURI = createConnectionURI(localKeypair.publicKey, connectionSecret, true);
 
+      // Save credentials for iOS Safari redirect recovery
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('nip46_pending_claim', JSON.stringify({
+          localSecretKey: localKeypair.secretKey,
+          localPublicKey: localKeypair.publicKey,
+          secret: connectionSecret
+        }));
+      }
+
       qrCodeDataUrl = await generateQRCode(connectionURI);
       waitForPrimalConnection();
     } catch (err) {
@@ -238,6 +295,9 @@
       nip46Connection = connection;
       connectedPubkey = connection.remotePubkey;
       connectionStatus = 'connected';
+
+      // Clean up localStorage on successful connection
+      localStorage.removeItem('nip46_pending_claim');
 
       // Verify the connected pubkey matches the target
       await verifyPubkey();

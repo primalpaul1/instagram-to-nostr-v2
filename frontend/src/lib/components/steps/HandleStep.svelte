@@ -7,6 +7,8 @@
     generateSecret,
     generateLocalKeypair,
     waitForConnection,
+    waitForConnectionResponse,
+    createSignerWithKnownPubkey,
     hexToNpub,
     closeConnection,
     type NIP46Connection
@@ -39,8 +41,53 @@
   let pendingConnection: NIP46Connection | null = null;
 
   onMount(async () => {
-    // Just initialize and wait - iOS might resume this page with WebSocket still connected
-    await initNIP46Connection();
+    // Check for pending NIP-46 connection from iOS Safari redirect
+    const pending = localStorage.getItem('nip46_pending_main');
+
+    if (pending) {
+      try {
+        const { localSecretKey, localPublicKey, secret } = JSON.parse(pending);
+
+        // Try to find the ACK using `since` filter (catches historical events)
+        connectionStatus = 'waiting';
+        localKeypair = { secretKey: localSecretKey, publicKey: localPublicKey };
+        connectionSecret = secret;
+        connectionURI = createConnectionURI(localPublicKey, secret, false);
+        mobileConnectionURI = createConnectionURI(localPublicKey, secret, true);
+        qrCodeDataUrl = await generateQRCode(connectionURI);
+
+        try {
+          // Look for historical ACK event with `since` filter
+          const remotePubkey = await waitForConnectionResponse(
+            localSecretKey,
+            localPublicKey,
+            secret,
+            15000 // 15 second timeout
+          );
+
+          // Found the ACK! Create signer with known pubkey
+          const connection = await createSignerWithKnownPubkey(localSecretKey, remotePubkey);
+
+          pendingConnection = connection;
+          connectionStatus = 'connected';
+          wizard.setAuthMode('nip46');
+          wizard.setNIP46Connection(connection, remotePubkey);
+
+          localStorage.removeItem('nip46_pending_main');
+          return;
+        } catch {
+          // No historical ACK found, continue waiting for new connection
+          // This is normal if user hasn't approved yet or ACK expired
+          waitForPrimalConnection();
+        }
+      } catch (err) {
+        console.error('Failed to restore NIP-46 connection:', err);
+        localStorage.removeItem('nip46_pending_main');
+        await initNIP46Connection();
+      }
+    } else {
+      await initNIP46Connection();
+    }
   });
 
   onDestroy(() => {
@@ -61,6 +108,15 @@
       connectionURI = createConnectionURI(localKeypair.publicKey, connectionSecret, false);
       // Mobile button URI (with callback - redirects back to this page after approval)
       mobileConnectionURI = createConnectionURI(localKeypair.publicKey, connectionSecret, true);
+
+      // Save credentials for iOS Safari redirect recovery
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('nip46_pending_main', JSON.stringify({
+          localSecretKey: localKeypair.secretKey,
+          localPublicKey: localKeypair.publicKey,
+          secret: connectionSecret
+        }));
+      }
 
       qrCodeDataUrl = await generateQRCode(connectionURI);
 
@@ -84,6 +140,9 @@
 
       pendingConnection = connection;
       connectionStatus = 'connected';
+
+      // Clean up localStorage on successful connection
+      localStorage.removeItem('nip46_pending_main');
 
       wizard.setAuthMode('nip46');
       wizard.setNIP46Connection(connection, connection.remotePubkey);

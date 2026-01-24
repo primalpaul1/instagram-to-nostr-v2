@@ -3,10 +3,14 @@
  * Handles QR code generation and remote signing via Primal wallet.
  */
 
-import { generateSecretKey, getPublicKey, nip19 } from 'nostr-tools';
+import { generateSecretKey, getPublicKey, nip19, type Event } from 'nostr-tools';
 import { BunkerSigner } from 'nostr-tools/nip46';
+import { Relay } from 'nostr-tools/relay';
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils';
 import QRCode from 'qrcode';
+
+// NIP-46 NostrConnect event kind
+const NostrConnect = 24133;
 
 // NIP-46 relay - using relay.primal.net like Primal's own web app
 const NIP46_RELAYS = [
@@ -157,5 +161,101 @@ export function closeConnection(connection: NIP46Connection | null): void {
   if (connection?.signer) {
     connection.signer.close();
   }
+}
+
+/**
+ * Wait for a NIP-46 connection response using a `since` filter.
+ * This catches historical ACK events that BunkerSigner.fromURI misses
+ * (it uses limit:0 which only gets real-time events).
+ *
+ * Used after iOS Safari redirect when the original WebSocket was killed.
+ */
+export async function waitForConnectionResponse(
+  localSecretKey: string,
+  localPublicKey: string,
+  secret: string,
+  timeoutMs: number = 30000
+): Promise<string> {
+  const { getConversationKey, decrypt: nip44Decrypt } = await import('nostr-tools/nip44');
+
+  const localSecretKeyBytes = hexToBytes(localSecretKey);
+
+  return new Promise(async (resolve, reject) => {
+    let relay: Relay | null = null;
+    let timeoutId: ReturnType<typeof setTimeout>;
+    let resolved = false;
+
+    const cleanup = () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      if (relay) {
+        try { relay.close(); } catch {}
+      }
+    };
+
+    timeoutId = setTimeout(() => {
+      if (!resolved) {
+        cleanup();
+        reject(new Error('Connection timeout'));
+      }
+    }, timeoutMs);
+
+    try {
+      relay = await Relay.connect(NIP46_RELAYS[0]);
+
+      // Use `since` filter to catch historical events (last 2 minutes)
+      const since = Math.floor(Date.now() / 1000) - 120;
+
+      relay.subscribe([{
+        kinds: [NostrConnect],
+        '#p': [localPublicKey],
+        since: since
+      }], {
+        onevent: async (event: Event) => {
+          if (resolved) return;
+
+          try {
+            const conversationKey = getConversationKey(localSecretKeyBytes, event.pubkey);
+            const decrypted = nip44Decrypt(event.content, conversationKey);
+            const response = JSON.parse(decrypted);
+
+            // Check if this is the connection ACK with our secret
+            if (response.result === secret) {
+              resolved = true;
+              cleanup();
+              resolve(event.pubkey);
+            }
+          } catch {
+            // Decryption failed, not our response
+          }
+        }
+      });
+    } catch (err) {
+      cleanup();
+      reject(err);
+    }
+  });
+}
+
+/**
+ * Create a BunkerSigner when we already know the remote pubkey.
+ * Used after recovering connection from iOS Safari redirect.
+ */
+export async function createSignerWithKnownPubkey(
+  localSecretKey: string,
+  remotePubkey: string
+): Promise<NIP46Connection> {
+  const localSecretKeyBytes = hexToBytes(localSecretKey);
+
+  // Create BunkerSigner directly with known remote pubkey
+  const signer = new BunkerSigner(localSecretKeyBytes, remotePubkey, NIP46_RELAYS);
+
+  // Connect to relay (this doesn't wait for ACK since we already have remote pubkey)
+  await signer.connect();
+
+  return {
+    signer,
+    remotePubkey,
+    localSecretKey
+  };
 }
 
