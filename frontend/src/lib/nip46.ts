@@ -164,6 +164,114 @@ export function closeConnection(connection: NIP46Connection | null): void {
 const NostrConnect = 24133;
 
 /**
+ * Sign an event directly using NIP-46 protocol without pre-established BunkerSigner.
+ * Uses stored credentials from localStorage.
+ */
+export async function signEventDirect(
+  eventToSign: Omit<Event, 'sig'>,
+  timeoutMs: number = 30000
+): Promise<Event> {
+  const credentialsJson = localStorage.getItem('nip46_credentials');
+  if (!credentialsJson) {
+    throw new Error('No NIP-46 credentials found');
+  }
+
+  const { localSecretKey, remotePubkey } = JSON.parse(credentialsJson);
+  const localSecretKeyBytes = hexToBytes(localSecretKey);
+  const localPublicKey = getPublicKey(localSecretKeyBytes);
+
+  const { getConversationKey, encrypt: nip44Encrypt, decrypt: nip44Decrypt } = await import('nostr-tools/nip44');
+  const { finalizeEvent } = await import('nostr-tools');
+
+  const conversationKey = getConversationKey(localSecretKeyBytes, remotePubkey);
+
+  // Create sign_event request
+  const requestId = `sign-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const request = {
+    id: requestId,
+    method: 'sign_event',
+    params: [JSON.stringify(eventToSign)]
+  };
+
+  const encryptedRequest = nip44Encrypt(JSON.stringify(request), conversationKey);
+
+  // Create and sign the request event
+  const requestEvent = finalizeEvent({
+    kind: NostrConnect,
+    created_at: Math.floor(Date.now() / 1000),
+    tags: [['p', remotePubkey]],
+    content: encryptedRequest
+  }, localSecretKeyBytes);
+
+  return new Promise(async (resolve, reject) => {
+    let relay: Relay | null = null;
+    let timeoutId: ReturnType<typeof setTimeout>;
+    let resolved = false;
+
+    const cleanup = () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      if (relay) {
+        try { relay.close(); } catch {}
+      }
+    };
+
+    timeoutId = setTimeout(() => {
+      if (!resolved) {
+        cleanup();
+        reject(new Error('Sign request timeout'));
+      }
+    }, timeoutMs);
+
+    try {
+      relay = await Relay.connect(NIP46_RELAYS[0]);
+
+      // Subscribe for response
+      const since = Math.floor(Date.now() / 1000) - 10;
+      relay.subscribe([{
+        kinds: [NostrConnect],
+        authors: [remotePubkey],
+        '#p': [localPublicKey],
+        since
+      }], {
+        onevent: async (event: Event) => {
+          if (resolved) return;
+
+          try {
+            const decrypted = nip44Decrypt(event.content, conversationKey);
+            const response = JSON.parse(decrypted);
+
+            if (response.id === requestId) {
+              resolved = true;
+              cleanup();
+
+              if (response.error) {
+                reject(new Error(response.error));
+              } else {
+                // Response contains the signed event
+                const signedEvent = typeof response.result === 'string'
+                  ? JSON.parse(response.result)
+                  : response.result;
+                resolve(signedEvent);
+              }
+            }
+          } catch (err) {
+            // Decryption failed, not our response
+          }
+        }
+      });
+
+      // Publish the request
+      await relay.publish(requestEvent);
+      console.log('[NIP46] Sign request published');
+
+    } catch (err) {
+      cleanup();
+      reject(err);
+    }
+  });
+}
+
+/**
  * Wait for a NIP-46 connection response using a `since` filter.
  * This is used by the callback page to catch historical responses from Primal
  * that were sent while iOS had our WebSocket killed.
