@@ -26,13 +26,11 @@ export interface NIP46Connection {
  * Generate a nostrconnect:// URI for QR code display.
  * User scans this with Primal to establish connection.
  * @param includeCallback - Whether to include callback URL (only for mobile deep link, not QR codes)
- * @param callbackUrl - URL to redirect back to after approval
  */
 export function createConnectionURI(
   localPubkey: string,
   secret: string,
-  includeCallback: boolean = false,
-  callbackUrl?: string
+  includeCallback: boolean = false
 ): string {
   const params = new URLSearchParams();
 
@@ -45,8 +43,10 @@ export function createConnectionURI(
   params.append('image', 'https://ownyourposts.com/logo.png');
 
   // Only include callback for mobile deep link button, not QR codes
-  if (includeCallback && callbackUrl) {
-    params.append('callback', callbackUrl);
+  // Use dedicated lightweight callback page (like Zappix) for iOS Safari compatibility
+  if (includeCallback && typeof window !== 'undefined') {
+    const origin = window.location.origin;
+    params.append('callback', `${origin}/login-success`);
   }
 
   return `nostrconnect://${localPubkey}?${params.toString()}`;

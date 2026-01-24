@@ -299,8 +299,8 @@
       connectionSecret = generateSecret();
 
       connectionURI = createConnectionURI(localKeypair.publicKey, connectionSecret, false);
-      const callbackUrl = typeof window !== 'undefined' ? window.location.href : undefined;
-      mobileConnectionURI = createConnectionURI(localKeypair.publicKey, connectionSecret, true, callbackUrl);
+      // Mobile button URI (with callback - redirects back after approval via /login-success)
+      mobileConnectionURI = createConnectionURI(localKeypair.publicKey, connectionSecret, true);
 
       // Save connection state for redirect recovery (articles saved separately in proceedToConnect)
       if (typeof window !== 'undefined') {
@@ -574,7 +574,7 @@
         localKeypair = { secretKey: localSecretKey, publicKey: localPublicKey };
         connectionSecret = secret;
         connectionURI = createConnectionURI(localPublicKey, secret, false);
-        mobileConnectionURI = createConnectionURI(localPublicKey, secret, true, window.location.href);
+        mobileConnectionURI = createConnectionURI(localPublicKey, secret, true);
         qrCodeDataUrl = await generateQRCode(connectionURI);
         connectionStatus = 'waiting';
         waitForPrimalConnection();
@@ -669,7 +669,7 @@
                 <button class="retry-btn" on:click={retryConnection}>Try Again</button>
               </div>
             {:else if qrCodeDataUrl}
-              <a href={mobileConnectionURI} class="primal-login-btn">
+              <a href={mobileConnectionURI} class="primal-login-btn" on:click={() => sessionStorage.setItem('nip46_return_url', window.location.href)}>
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
                   <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
                 </svg>
@@ -831,7 +831,7 @@
               <button class="retry-btn" on:click={retryConnection}>Try Again</button>
             </div>
           {:else if qrCodeDataUrl}
-            <a href={mobileConnectionURI} class="primal-login-btn">
+            <a href={mobileConnectionURI} class="primal-login-btn" on:click={() => sessionStorage.setItem('nip46_return_url', window.location.href)}>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
               </svg>
