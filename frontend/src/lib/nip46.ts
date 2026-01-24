@@ -164,7 +164,7 @@ export function closeConnection(connection: NIP46Connection | null): void {
 }
 
 /**
- * Wait for a NIP-46 connection response using a `since` filter.
+ * Wait for a NIP-46 connection response using `limit: 1` filter.
  * This catches historical ACK events that BunkerSigner.fromURI misses
  * (it uses limit:0 which only gets real-time events).
  *
@@ -180,10 +180,14 @@ export async function waitForConnectionResponse(
 
   const localSecretKeyBytes = hexToBytes(localSecretKey);
 
+  console.log('[NIP46-Recovery] Starting waitForConnectionResponse');
+  console.log('[NIP46-Recovery] Looking for secret:', secret.slice(0, 20) + '...');
+
   return new Promise(async (resolve, reject) => {
     let relay: Relay | null = null;
     let timeoutId: ReturnType<typeof setTimeout>;
     let resolved = false;
+    let eventCount = 0;
 
     const cleanup = () => {
       if (timeoutId) clearTimeout(timeoutId);
@@ -194,6 +198,7 @@ export async function waitForConnectionResponse(
 
     timeoutId = setTimeout(() => {
       if (!resolved) {
+        console.log('[NIP46-Recovery] Timeout after', eventCount, 'events');
         cleanup();
         reject(new Error('Connection timeout'));
       }
@@ -201,8 +206,10 @@ export async function waitForConnectionResponse(
 
     try {
       relay = await Relay.connect(NIP46_RELAYS[0]);
+      console.log('[NIP46-Recovery] Connected to relay');
 
-      // Use `since` filter to catch historical events (last 2 minutes)
+      // Use since filter to catch events from last 2 minutes
+      // Don't use limit:1 so we can see all recent events and find the right one
       const since = Math.floor(Date.now() / 1000) - 120;
 
       relay.subscribe([{
@@ -211,25 +218,36 @@ export async function waitForConnectionResponse(
         since: since
       }], {
         onevent: async (event: Event) => {
+          eventCount++;
+          console.log('[NIP46-Recovery] Event #' + eventCount, 'from:', event.pubkey.slice(0, 16) + '...');
+
           if (resolved) return;
 
           try {
             const conversationKey = getConversationKey(localSecretKeyBytes, event.pubkey);
             const decrypted = nip44Decrypt(event.content, conversationKey);
+            console.log('[NIP46-Recovery] Decrypted:', decrypted.slice(0, 100));
             const response = JSON.parse(decrypted);
+            console.log('[NIP46-Recovery] Response result:', response.result?.toString().slice(0, 30));
 
-            // Check if this is the connection ACK with our secret
-            if (response.result === secret) {
+            // Check if this is the connection ACK
+            // Primal sends either the secret back or "ack" as acknowledgment
+            if (response.result === secret || response.result === 'ack') {
+              console.log('[NIP46-Recovery] SUCCESS! Found matching ACK');
               resolved = true;
               cleanup();
               resolve(event.pubkey);
             }
-          } catch {
-            // Decryption failed, not our response
+          } catch (err) {
+            console.log('[NIP46-Recovery] Decrypt failed:', err);
           }
+        },
+        oneose: () => {
+          console.log('[NIP46-Recovery] EOSE received, got', eventCount, 'events');
         }
       });
     } catch (err) {
+      console.error('[NIP46-Recovery] Error:', err);
       cleanup();
       reject(err);
     }
