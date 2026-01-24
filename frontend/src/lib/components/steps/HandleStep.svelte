@@ -508,7 +508,7 @@
   </form>
 
   <div class="divider">
-    <span>or connect your Nostr identity</span>
+    <span>Already on Nostr? Connect below first!</span>
   </div>
 
   <div class="primal-section">
@@ -1098,6 +1098,7 @@
     width: 24px;
     height: 24px;
     flex-shrink: 0;
+    border-radius: 50%;
   }
 
   .qr-divider {
