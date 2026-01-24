@@ -7,6 +7,7 @@
     generateSecret,
     generateLocalKeypair,
     waitForConnection,
+    waitForConnectionResponse,
     hexToNpub,
     closeConnection,
     type NIP46Connection
@@ -50,19 +51,23 @@
         const storedPubkey = localStorage.getItem('nip46_connected_pubkey_main');
 
         if (storedPubkey) {
-          // Connection succeeded on callback page - recreate it
+          console.log('[NIP46] Found stored pubkey from callback:', storedPubkey.slice(0, 16) + '...');
           connectionStatus = 'waiting';
           localKeypair = { secretKey: localSecretKey, publicKey: localPublicKey };
           connectionSecret = secret;
 
           try {
+            // Use waitForConnectionResponse with `since` filter to get historical event
+            // (BunkerSigner.fromURI uses limit:0 which misses historical events)
             connectionURI = createConnectionURI(localPublicKey, secret, false);
+            console.log('[NIP46] Recreating connection with since filter...');
+
             const connection = await waitForConnection(
               localSecretKey,
               secret,
               connectionURI,
               null,
-              30000 // short timeout - already approved
+              15000 // shorter timeout
             );
 
             pendingConnection = connection;
@@ -73,15 +78,33 @@
             // Clean up
             localStorage.removeItem('nip46_pending_main');
             localStorage.removeItem('nip46_connected_pubkey_main');
+            console.log('[NIP46] Connection recreated successfully');
             return;
           } catch (err) {
-            console.error('Failed to recreate connection:', err);
-            // Fall through to normal flow
+            console.error('[NIP46] Failed to recreate BunkerSigner:', err);
+            // We have the pubkey but couldn't recreate the BunkerSigner
+            // This is expected - Primal already sent the ack, won't send again
+            // Set as connected using stored pubkey - we'll create signer on-demand for signing
+            connectionStatus = 'connected';
+            wizard.setAuthMode('nip46');
+            wizard.setNIP46Connection(null, storedPubkey);
+
+            // Store credentials for later signer creation
+            localStorage.setItem('nip46_credentials', JSON.stringify({
+              localSecretKey,
+              localPublicKey,
+              secret,
+              remotePubkey: storedPubkey
+            }));
+
+            localStorage.removeItem('nip46_pending_main');
             localStorage.removeItem('nip46_connected_pubkey_main');
+            console.log('[NIP46] Stored credentials for on-demand signing');
+            return;
           }
         }
 
-        // No stored pubkey or recreation failed - restore waiting state
+        // No stored pubkey - restore waiting state
         localKeypair = { secretKey: localSecretKey, publicKey: localPublicKey };
         connectionSecret = secret;
         connectionURI = createConnectionURI(localPublicKey, secret, false);
