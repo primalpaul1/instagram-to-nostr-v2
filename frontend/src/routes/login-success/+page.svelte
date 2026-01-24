@@ -13,8 +13,10 @@
     // Log URL and query params - Primal might include response data
     debugInfo = `URL: ${window.location.href}\n`;
     const urlParams = new URLSearchParams(window.location.search);
+    const allParams: Record<string, string> = {};
     for (const [key, value] of urlParams.entries()) {
-      debugInfo += `Param ${key}: ${value.slice(0, 50)}...\n`;
+      allParams[key] = value;
+      debugInfo += `Param ${key}: ${value.slice(0, 50)}${value.length > 50 ? '...' : ''}\n`;
     }
 
     const returnUrl = localStorage.getItem('nip46_return_url') || '/';
@@ -22,6 +24,12 @@
 
     // Mark that callback was received (for debugging)
     localStorage.setItem('nip46_callback_received', 'true');
+
+    // Check if Primal passed pubkey directly in URL params
+    const pubkeyFromUrl = allParams['pubkey'] || allParams['remote_pubkey'] || allParams['npub'];
+    if (pubkeyFromUrl) {
+      debugInfo += `Got pubkey from URL: ${pubkeyFromUrl.slice(0, 20)}...\n`;
+    }
 
     // Find which pending connection we have
     const pendingKeys = ['nip46_pending_main', 'nip46_pending', 'nip46_pending_rss'];
@@ -45,7 +53,6 @@
     if (!pendingData) {
       debugInfo += 'No pending connection found\n';
       status = 'No pending connection';
-      // Wait a bit before redirect so user can see status
       setTimeout(() => {
         window.location.href = returnUrl;
       }, 2000);
@@ -57,15 +64,27 @@
     debugInfo += `Local pubkey: ${localPublicKey.slice(0, 16)}...\n`;
     debugInfo += `Secret: ${secret.slice(0, 20)}...\n`;
 
+    // If Primal passed pubkey in URL, use that directly
+    if (pubkeyFromUrl) {
+      debugInfo += 'Using pubkey from URL params\n';
+      localStorage.setItem(resultKey, pubkeyFromUrl);
+      status = 'Connected! Redirecting...';
+      setTimeout(() => {
+        window.location.href = returnUrl;
+      }, 500);
+      return;
+    }
+
+    // Otherwise try to get response from relay (with shorter timeout)
     try {
-      status = 'Connecting to relay...';
-      debugInfo += 'Calling waitForConnectionResponse...\n';
+      status = 'Waiting for Primal response...';
+      debugInfo += 'Connecting to relay...\n';
 
       const remotePubkey = await waitForConnectionResponse(
         localSecretKey,
         localPublicKey,
         secret,
-        60000
+        15000  // 15 second timeout - if Primal approved, response should be there
       );
 
       debugInfo += `Got remotePubkey: ${remotePubkey.slice(0, 16)}...\n`;
@@ -76,12 +95,13 @@
       const errMsg = err instanceof Error ? err.message : 'Unknown error';
       error = errMsg;
       debugInfo += `Error: ${errMsg}\n`;
+      debugInfo += 'Redirecting anyway - original page will retry\n';
       console.error('Connection error:', err);
     }
 
     setTimeout(() => {
       window.location.href = returnUrl;
-    }, error ? 2000 : 500);
+    }, error ? 1500 : 500);
   });
 </script>
 

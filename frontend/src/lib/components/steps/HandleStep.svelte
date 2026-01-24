@@ -107,31 +107,43 @@
 
   async function initNIP46Connection() {
     try {
+      console.log('[NIP46] Initializing connection...');
       connectionStatus = 'waiting';
       connectionError = '';
+
+      console.log('[NIP46] Generating keypair...');
       localKeypair = generateLocalKeypair();
+      console.log('[NIP46] Keypair generated:', localKeypair.publicKey.slice(0, 16) + '...');
+
+      console.log('[NIP46] Generating secret...');
       connectionSecret = generateSecret();
+      console.log('[NIP46] Secret generated:', connectionSecret.slice(0, 20) + '...');
 
       // QR code URI (no callback - for desktop scanning)
+      console.log('[NIP46] Creating connection URIs...');
       connectionURI = createConnectionURI(localKeypair.publicKey, connectionSecret, false);
-
-      // Mobile button URI (with callback - redirects back after approval via /login-success)
       mobileConnectionURI = createConnectionURI(localKeypair.publicKey, connectionSecret, true);
+      console.log('[NIP46] URIs created');
 
       // Save connection state for redirect recovery
       if (typeof window !== 'undefined') {
+        console.log('[NIP46] Saving to localStorage...');
         localStorage.setItem('nip46_pending_main', JSON.stringify({
           localSecretKey: localKeypair.secretKey,
           localPublicKey: localKeypair.publicKey,
           secret: connectionSecret
         }));
-        // Store return URL now (on:click may not fire before iOS switches apps)
         localStorage.setItem('nip46_return_url', window.location.href);
+        console.log('[NIP46] Saved to localStorage');
       }
 
+      console.log('[NIP46] Generating QR code...');
       qrCodeDataUrl = await generateQRCode(connectionURI);
+      console.log('[NIP46] QR code generated, length:', qrCodeDataUrl.length);
+
       waitForPrimalConnection();
     } catch (err) {
+      console.error('[NIP46] Init error:', err);
       connectionStatus = 'error';
       connectionError = err instanceof Error ? err.message : 'Failed to initialize';
     }
