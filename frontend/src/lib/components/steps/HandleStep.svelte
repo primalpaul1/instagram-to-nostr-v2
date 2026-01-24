@@ -7,6 +7,7 @@
     generateSecret,
     generateLocalKeypair,
     waitForConnection,
+    createSignerWithKnownPubkey,
     hexToNpub,
     closeConnection,
     type NIP46Connection
@@ -65,31 +66,39 @@
   onMount(async () => {
     isMobile = detectMobile();
 
-    // Check for callback recovery (mobile redirect flow)
-    const pending = localStorage.getItem('nip46_pending_main');
-    if (pending) {
+    // Check for successful connection from callback page
+    const connected = localStorage.getItem('nip46_connected');
+    if (connected) {
       try {
-        const data = JSON.parse(pending);
+        const data = JSON.parse(connected);
         const age = Date.now() - (data.timestamp || 0);
         const FIVE_MINUTES = 5 * 60 * 1000;
 
         if (age < FIVE_MINUTES) {
-          // Recent - try to recover the connection
-          console.log('[NIP46] Recovering from mobile redirect...');
-          localKeypair = { secretKey: data.localSecretKey, publicKey: data.localPublicKey };
-          connectionSecret = data.secret;
-          connectionURI = createConnectionURI(data.localPublicKey, data.secret, false);
-          mobileConnectionURI = createConnectionURI(data.localPublicKey, data.secret, true);
+          console.log('[NIP46] Restoring connection from callback...');
           connectionStatus = 'waiting';
-          qrCodeDataUrl = await generateQRCode(connectionURI);
-          waitForPrimalConnection();
+
+          // Recreate the signer with the saved credentials
+          const connection = await createSignerWithKnownPubkey(data.localSecretKey, data.remotePubkey);
+
+          pendingConnection = connection;
+          connectionStatus = 'connected';
+
+          wizard.setAuthMode('nip46');
+          wizard.setNIP46Connection(connection, data.remotePubkey);
+
+          localStorage.removeItem('nip46_connected');
+          console.log('[NIP46] Connection restored successfully!');
           return;
         }
-      } catch {
-        // Invalid data, ignore
+      } catch (err) {
+        console.error('[NIP46] Failed to restore connection:', err);
       }
-      localStorage.removeItem('nip46_pending_main');
+      localStorage.removeItem('nip46_connected');
     }
+
+    // Clean up any stale pending data
+    localStorage.removeItem('nip46_pending_main');
 
     await initNIP46Connection();
   });

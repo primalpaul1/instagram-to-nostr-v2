@@ -1,11 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { browser } from '$app/environment';
-  import {
-    waitForConnectionResponse,
-    createSignerWithKnownPubkey
-  } from '$lib/nip46';
-  import { wizard } from '$lib/stores/wizard';
+  import { waitForConnectionResponse } from '$lib/nip46';
 
   let status: 'checking' | 'success' | 'timeout' | 'error' = 'checking';
   let errorMessage = '';
@@ -51,22 +47,22 @@
 
       console.log('[Callback] Found ACK! Remote pubkey:', remotePubkey.slice(0, 16) + '...');
 
-      // Create the signer connection
-      const connection = await createSignerWithKnownPubkey(data.localSecretKey, remotePubkey);
+      // Save the successful connection for the main page to restore
+      localStorage.setItem('nip46_connected', JSON.stringify({
+        localSecretKey: data.localSecretKey,
+        remotePubkey: remotePubkey,
+        timestamp: Date.now()
+      }));
 
-      // Store connection in wizard
-      wizard.setAuthMode('nip46');
-      wizard.setNIP46Connection(connection, remotePubkey);
-
-      // Clean up
+      // Clean up pending state
       localStorage.removeItem('nip46_pending_main');
 
       status = 'success';
 
-      // Redirect to home after brief success message
+      // Redirect to home - main page will restore the connection
       setTimeout(() => {
         window.location.href = '/';
-      }, 1500);
+      }, 1000);
 
     } catch (err) {
       console.error('[Callback] Error:', err);
