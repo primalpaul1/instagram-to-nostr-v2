@@ -8,9 +8,9 @@ import { BunkerSigner, parseBunkerInput } from 'nostr-tools/nip46';
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils';
 import QRCode from 'qrcode';
 
-// NIP-46 relay - using relay.nsec.app like Zappix for iOS compatibility
+// NIP-46 relay - using relay.primal.net like Primal's own web app
 const NIP46_RELAYS = [
-  'wss://relay.nsec.app'
+  'wss://relay.primal.net'
 ];
 
 export interface NIP46Connection {
@@ -65,12 +65,14 @@ export async function generateQRCode(uri: string): Promise<string> {
 
 /**
  * Generate a random secret for NIP-46 connection.
- * Using 8 hex chars (like Zappix) for shorter URI - sufficient for short-lived connection.
+ * Using UUID-style format like Primal's web app: sec-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
  */
 export function generateSecret(): string {
-  const bytes = new Uint8Array(4);
+  const bytes = new Uint8Array(16);
   crypto.getRandomValues(bytes);
-  return bytesToHex(bytes);
+  const hex = bytesToHex(bytes);
+  // Format as UUID-style: sec-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+  return `sec-${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20,32)}`;
 }
 
 /**
