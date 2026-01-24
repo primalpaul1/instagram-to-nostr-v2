@@ -17,11 +17,11 @@
       debugInfo += `Param ${key}: ${value.slice(0, 50)}...\n`;
     }
 
-    const returnUrl = sessionStorage.getItem('nip46_return_url') || '/';
+    const returnUrl = localStorage.getItem('nip46_return_url') || '/';
     debugInfo += `Return URL: ${returnUrl}\n`;
 
     // Mark that callback was received (for debugging)
-    sessionStorage.setItem('nip46_callback_received', 'true');
+    localStorage.setItem('nip46_callback_received', 'true');
 
     // Find which pending connection we have
     const pendingKeys = ['nip46_pending_main', 'nip46_pending', 'nip46_pending_rss'];
@@ -29,7 +29,7 @@
     let pendingData: { localSecretKey: string; localPublicKey: string; secret: string } | null = null;
 
     for (const key of pendingKeys) {
-      const data = sessionStorage.getItem(key);
+      const data = localStorage.getItem(key);
       if (data) {
         try {
           pendingKey = key;
@@ -69,7 +69,7 @@
       );
 
       debugInfo += `Got remotePubkey: ${remotePubkey.slice(0, 16)}...\n`;
-      sessionStorage.setItem(resultKey, remotePubkey);
+      localStorage.setItem(resultKey, remotePubkey);
 
       status = 'Connected! Redirecting...';
     } catch (err) {

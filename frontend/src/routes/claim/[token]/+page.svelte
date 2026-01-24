@@ -144,13 +144,13 @@
     await loadProposal();
 
     // Check for pending NIP-46 connection from redirect
-    const pending = sessionStorage.getItem('nip46_pending');
+    const pending = localStorage.getItem('nip46_pending');
     if (pending && step === 'preview') {
       try {
         const { localSecretKey, localPublicKey, secret } = JSON.parse(pending);
 
         // Check if callback page already connected for us
-        const storedPubkey = sessionStorage.getItem('nip46_connected_pubkey');
+        const storedPubkey = localStorage.getItem('nip46_connected_pubkey');
 
         if (storedPubkey) {
           // Connection succeeded on callback page - recreate it
@@ -174,8 +174,8 @@
             connectionStatus = 'connected';
 
             // Clean up
-            sessionStorage.removeItem('nip46_pending');
-            sessionStorage.removeItem('nip46_connected_pubkey');
+            localStorage.removeItem('nip46_pending');
+            localStorage.removeItem('nip46_connected_pubkey');
 
             // Verify the connected pubkey matches the target
             await verifyPubkey();
@@ -183,7 +183,7 @@
           } catch (err) {
             console.error('Failed to recreate connection:', err);
             // Fall through to normal flow
-            sessionStorage.removeItem('nip46_connected_pubkey');
+            localStorage.removeItem('nip46_connected_pubkey');
           }
         }
 
@@ -199,8 +199,8 @@
         waitForPrimalConnection();
       } catch (err) {
         console.error('Failed to restore NIP-46 connection:', err);
-        sessionStorage.removeItem('nip46_pending');
-        sessionStorage.removeItem('nip46_connected_pubkey');
+        localStorage.removeItem('nip46_pending');
+        localStorage.removeItem('nip46_connected_pubkey');
       }
     }
   });
@@ -279,13 +279,13 @@
 
       // Save connection state for redirect recovery
       if (typeof window !== 'undefined') {
-        sessionStorage.setItem('nip46_pending', JSON.stringify({
+        localStorage.setItem('nip46_pending', JSON.stringify({
           localSecretKey: localKeypair.secretKey,
           localPublicKey: localKeypair.publicKey,
           secret: connectionSecret
         }));
         // Store return URL now (on:click may not fire before iOS switches apps)
-        sessionStorage.setItem('nip46_return_url', window.location.href);
+        localStorage.setItem('nip46_return_url', window.location.href);
       }
 
       qrCodeDataUrl = await generateQRCode(connectionURI);
@@ -312,7 +312,7 @@
       connectionStatus = 'connected';
 
       // Clear pending connection state
-      sessionStorage.removeItem('nip46_pending');
+      localStorage.removeItem('nip46_pending');
 
       // Verify the connected pubkey matches the target
       await verifyPubkey();
@@ -952,7 +952,7 @@
               href={mobileConnectionURI}
               class="primal-login-btn"
               aria-label="Login with Primal"
-              on:click={() => sessionStorage.setItem('nip46_return_url', window.location.href)}
+              on:click={() => localStorage.setItem('nip46_return_url', window.location.href)}
             >
               <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>

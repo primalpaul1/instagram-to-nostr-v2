@@ -157,7 +157,7 @@
     publishedEvents = [];
     // Clear any pending connection state
     if (typeof window !== 'undefined') {
-      sessionStorage.removeItem('nip46_pending_rss');
+      localStorage.removeItem('nip46_pending_rss');
     }
   }
 
@@ -278,9 +278,9 @@
     }
 
     step = 'connect';
-    // Connection is already initialized on page load, just update sessionStorage with articles
+    // Connection is already initialized on page load, just update localStorage with articles
     if (typeof window !== 'undefined' && localKeypair) {
-      sessionStorage.setItem('nip46_pending_rss', JSON.stringify({
+      localStorage.setItem('nip46_pending_rss', JSON.stringify({
         localSecretKey: localKeypair.secretKey,
         localPublicKey: localKeypair.publicKey,
         secret: connectionSecret,
@@ -289,7 +289,7 @@
         feedUrl: feedUrl
       }));
       // Store return URL now (on:click may not fire before iOS switches apps)
-      sessionStorage.setItem('nip46_return_url', window.location.href);
+      localStorage.setItem('nip46_return_url', window.location.href);
     }
   }
 
@@ -306,7 +306,7 @@
 
       // Save connection state for redirect recovery (articles saved separately in proceedToConnect)
       if (typeof window !== 'undefined') {
-        sessionStorage.setItem('nip46_pending_rss', JSON.stringify({
+        localStorage.setItem('nip46_pending_rss', JSON.stringify({
           localSecretKey: localKeypair.secretKey,
           localPublicKey: localKeypair.publicKey,
           secret: connectionSecret,
@@ -315,7 +315,7 @@
           feedUrl: feedUrl
         }));
         // Store return URL now (on:click may not fire before iOS switches apps)
-        sessionStorage.setItem('nip46_return_url', window.location.href);
+        localStorage.setItem('nip46_return_url', window.location.href);
       }
 
       qrCodeDataUrl = await generateQRCode(connectionURI);
@@ -340,7 +340,7 @@
       nip46Connection = connection;
       nip46Pubkey = connection.remotePubkey;
       connectionStatus = 'connected';
-      sessionStorage.removeItem('nip46_pending_rss');
+      localStorage.removeItem('nip46_pending_rss');
     } catch (err) {
       connectionStatus = 'error';
       connectionError = err instanceof Error ? err.message : 'Connection failed';
@@ -560,7 +560,7 @@
 
   onMount(async () => {
     // Check for pending NIP-46 connection from redirect
-    const pending = sessionStorage.getItem('nip46_pending_rss');
+    const pending = localStorage.getItem('nip46_pending_rss');
     if (pending) {
       try {
         const data = JSON.parse(pending);
@@ -575,7 +575,7 @@
         }
 
         // Check if callback page already connected for us
-        const storedPubkey = sessionStorage.getItem('nip46_connected_pubkey_rss');
+        const storedPubkey = localStorage.getItem('nip46_connected_pubkey_rss');
 
         if (storedPubkey) {
           // Connection succeeded on callback page - recreate it
@@ -600,13 +600,13 @@
             qrCodeDataUrl = await generateQRCode(connectionURI);
 
             // Clean up
-            sessionStorage.removeItem('nip46_pending_rss');
-            sessionStorage.removeItem('nip46_connected_pubkey_rss');
+            localStorage.removeItem('nip46_pending_rss');
+            localStorage.removeItem('nip46_connected_pubkey_rss');
             return;
           } catch (err) {
             console.error('Failed to recreate connection:', err);
             // Fall through to normal flow
-            sessionStorage.removeItem('nip46_connected_pubkey_rss');
+            localStorage.removeItem('nip46_connected_pubkey_rss');
           }
         }
 
@@ -620,8 +620,8 @@
         waitForPrimalConnection();
       } catch (err) {
         console.error('Failed to restore NIP-46 connection:', err);
-        sessionStorage.removeItem('nip46_pending_rss');
-        sessionStorage.removeItem('nip46_connected_pubkey_rss');
+        localStorage.removeItem('nip46_pending_rss');
+        localStorage.removeItem('nip46_connected_pubkey_rss');
         // Initialize fresh connection
         await initNIP46Connection();
       }
@@ -710,7 +710,7 @@
                 <button class="retry-btn" on:click={retryConnection}>Try Again</button>
               </div>
             {:else if qrCodeDataUrl}
-              <a href={mobileConnectionURI} class="primal-login-btn" on:click={() => sessionStorage.setItem('nip46_return_url', window.location.href)}>
+              <a href={mobileConnectionURI} class="primal-login-btn" on:click={() => localStorage.setItem('nip46_return_url', window.location.href)}>
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
                   <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
                 </svg>
@@ -872,7 +872,7 @@
               <button class="retry-btn" on:click={retryConnection}>Try Again</button>
             </div>
           {:else if qrCodeDataUrl}
-            <a href={mobileConnectionURI} class="primal-login-btn" on:click={() => sessionStorage.setItem('nip46_return_url', window.location.href)}>
+            <a href={mobileConnectionURI} class="primal-login-btn" on:click={() => localStorage.setItem('nip46_return_url', window.location.href)}>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
               </svg>
