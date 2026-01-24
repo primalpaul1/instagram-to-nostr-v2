@@ -288,19 +288,15 @@ export function createLongFormContentEvent(
 
 /**
  * Sign an event using NIP-46 connection.
- * Falls back to direct signing if connection is null but credentials are stored.
  */
 export async function signWithNIP46(
   connection: NIP46Connection | null,
   event: Omit<Event, 'sig'>
 ): Promise<Event> {
-  if (connection?.signer) {
-    return await connection.signer.signEvent(event as Event);
+  if (!connection?.signer) {
+    throw new Error('No NIP-46 connection available for signing');
   }
-
-  // Fall back to direct signing using stored credentials
-  const { signEventDirect } = await import('$lib/nip46');
-  return await signEventDirect(event);
+  return await connection.signer.signEvent(event as Event);
 }
 
 /**

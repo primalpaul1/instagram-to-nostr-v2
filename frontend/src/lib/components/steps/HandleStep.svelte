@@ -7,7 +7,6 @@
     generateSecret,
     generateLocalKeypair,
     waitForConnection,
-    waitForConnectionResponse,
     hexToNpub,
     closeConnection,
     type NIP46Connection
@@ -40,85 +39,7 @@
   let pendingConnection: NIP46Connection | null = null;
 
   onMount(async () => {
-    // Check for pending NIP-46 connection from redirect
-    const pending = localStorage.getItem('nip46_pending_main');
-
-    if (pending) {
-      try {
-        const { localSecretKey, localPublicKey, secret } = JSON.parse(pending);
-
-        // Check if callback page already connected for us
-        const storedPubkey = localStorage.getItem('nip46_connected_pubkey_main');
-
-        if (storedPubkey) {
-          console.log('[NIP46] Found stored pubkey from callback:', storedPubkey.slice(0, 16) + '...');
-          connectionStatus = 'waiting';
-          localKeypair = { secretKey: localSecretKey, publicKey: localPublicKey };
-          connectionSecret = secret;
-
-          try {
-            // Use waitForConnectionResponse with `since` filter to get historical event
-            // (BunkerSigner.fromURI uses limit:0 which misses historical events)
-            connectionURI = createConnectionURI(localPublicKey, secret, false);
-            console.log('[NIP46] Recreating connection with since filter...');
-
-            const connection = await waitForConnection(
-              localSecretKey,
-              secret,
-              connectionURI,
-              null,
-              15000 // shorter timeout
-            );
-
-            pendingConnection = connection;
-            connectionStatus = 'connected';
-            wizard.setAuthMode('nip46');
-            wizard.setNIP46Connection(connection, storedPubkey);
-
-            // Clean up
-            localStorage.removeItem('nip46_pending_main');
-            localStorage.removeItem('nip46_connected_pubkey_main');
-            console.log('[NIP46] Connection recreated successfully');
-            return;
-          } catch (err) {
-            console.error('[NIP46] Failed to recreate BunkerSigner:', err);
-            // We have the pubkey but couldn't recreate the BunkerSigner
-            // This is expected - Primal already sent the ack, won't send again
-            // Set as connected using stored pubkey - we'll create signer on-demand for signing
-            connectionStatus = 'connected';
-            wizard.setAuthMode('nip46');
-            wizard.setNIP46Connection(null, storedPubkey);
-
-            // Store credentials for later signer creation
-            localStorage.setItem('nip46_credentials', JSON.stringify({
-              localSecretKey,
-              localPublicKey,
-              secret,
-              remotePubkey: storedPubkey
-            }));
-
-            localStorage.removeItem('nip46_pending_main');
-            localStorage.removeItem('nip46_connected_pubkey_main');
-            console.log('[NIP46] Stored credentials for on-demand signing');
-            return;
-          }
-        }
-
-        // No stored pubkey - restore waiting state
-        localKeypair = { secretKey: localSecretKey, publicKey: localPublicKey };
-        connectionSecret = secret;
-        connectionURI = createConnectionURI(localPublicKey, secret, false);
-        mobileConnectionURI = createConnectionURI(localPublicKey, secret, true);
-        qrCodeDataUrl = await generateQRCode(connectionURI);
-        connectionStatus = 'waiting';
-        waitForPrimalConnection();
-        return;
-      } catch (err) {
-        console.error('Failed to restore NIP-46 connection:', err);
-        localStorage.removeItem('nip46_pending_main');
-        localStorage.removeItem('nip46_connected_pubkey_main');
-      }
-    }
+    // Just initialize and wait - iOS might resume this page with WebSocket still connected
     await initNIP46Connection();
   });
 
@@ -130,43 +51,21 @@
 
   async function initNIP46Connection() {
     try {
-      console.log('[NIP46] Initializing connection...');
       connectionStatus = 'waiting';
       connectionError = '';
 
-      console.log('[NIP46] Generating keypair...');
       localKeypair = generateLocalKeypair();
-      console.log('[NIP46] Keypair generated:', localKeypair.publicKey.slice(0, 16) + '...');
-
-      console.log('[NIP46] Generating secret...');
       connectionSecret = generateSecret();
-      console.log('[NIP46] Secret generated:', connectionSecret.slice(0, 20) + '...');
 
       // QR code URI (no callback - for desktop scanning)
-      console.log('[NIP46] Creating connection URIs...');
       connectionURI = createConnectionURI(localKeypair.publicKey, connectionSecret, false);
+      // Mobile button URI (with callback - redirects back to this page after approval)
       mobileConnectionURI = createConnectionURI(localKeypair.publicKey, connectionSecret, true);
-      console.log('[NIP46] URIs created');
 
-      // Save connection state for redirect recovery
-      if (typeof window !== 'undefined') {
-        console.log('[NIP46] Saving to localStorage...');
-        localStorage.setItem('nip46_pending_main', JSON.stringify({
-          localSecretKey: localKeypair.secretKey,
-          localPublicKey: localKeypair.publicKey,
-          secret: connectionSecret
-        }));
-        localStorage.setItem('nip46_return_url', window.location.href);
-        console.log('[NIP46] Saved to localStorage');
-      }
-
-      console.log('[NIP46] Generating QR code...');
       qrCodeDataUrl = await generateQRCode(connectionURI);
-      console.log('[NIP46] QR code generated, length:', qrCodeDataUrl.length);
 
       waitForPrimalConnection();
     } catch (err) {
-      console.error('[NIP46] Init error:', err);
       connectionStatus = 'error';
       connectionError = err instanceof Error ? err.message : 'Failed to initialize';
     }
@@ -185,9 +84,6 @@
 
       pendingConnection = connection;
       connectionStatus = 'connected';
-
-      // Clear pending connection state
-      localStorage.removeItem('nip46_pending_main');
 
       wizard.setAuthMode('nip46');
       wizard.setNIP46Connection(connection, connection.remotePubkey);
@@ -574,7 +470,6 @@
           href={mobileConnectionURI}
           class="primal-login-btn"
           aria-label="Login with Primal"
-          on:click={() => localStorage.setItem('nip46_return_url', window.location.href)}
         >
           <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
             <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>

@@ -142,67 +142,6 @@
 
   onMount(async () => {
     await loadProposal();
-
-    // Check for pending NIP-46 connection from redirect
-    const pending = localStorage.getItem('nip46_pending');
-    if (pending && step === 'preview') {
-      try {
-        const { localSecretKey, localPublicKey, secret } = JSON.parse(pending);
-
-        // Check if callback page already connected for us
-        const storedPubkey = localStorage.getItem('nip46_connected_pubkey');
-
-        if (storedPubkey) {
-          // Connection succeeded on callback page - recreate it
-          connectionStatus = 'waiting';
-          localKeypair = { secretKey: localSecretKey, publicKey: localPublicKey };
-          connectionSecret = secret;
-          step = 'connect';
-
-          try {
-            connectionURI = createConnectionURI(localPublicKey, secret, false);
-            const connection = await waitForConnection(
-              localSecretKey,
-              secret,
-              connectionURI,
-              null,
-              30000 // short timeout - already approved
-            );
-
-            nip46Connection = connection;
-            connectedPubkey = storedPubkey;
-            connectionStatus = 'connected';
-
-            // Clean up
-            localStorage.removeItem('nip46_pending');
-            localStorage.removeItem('nip46_connected_pubkey');
-
-            // Verify the connected pubkey matches the target
-            await verifyPubkey();
-            return;
-          } catch (err) {
-            console.error('Failed to recreate connection:', err);
-            // Fall through to normal flow
-            localStorage.removeItem('nip46_connected_pubkey');
-          }
-        }
-
-        // No stored pubkey or recreation failed - restore waiting state
-        localKeypair = { secretKey: localSecretKey, publicKey: localPublicKey };
-        connectionSecret = secret;
-        connectionURI = createConnectionURI(localPublicKey, secret, false);
-        mobileConnectionURI = createConnectionURI(localPublicKey, secret, true);
-        qrCodeDataUrl = await generateQRCode(connectionURI);
-        connectionStatus = 'waiting';
-        // Go to connect step to show waiting UI
-        step = 'connect';
-        waitForPrimalConnection();
-      } catch (err) {
-        console.error('Failed to restore NIP-46 connection:', err);
-        localStorage.removeItem('nip46_pending');
-        localStorage.removeItem('nip46_connected_pubkey');
-      }
-    }
   });
 
   onDestroy(() => {
@@ -274,19 +213,8 @@
       // QR code URI (no callback - for desktop scanning)
       connectionURI = createConnectionURI(localKeypair.publicKey, connectionSecret, false);
 
-      // Mobile button URI (with callback - redirects back after approval via /login-success)
+      // Mobile button URI (with callback - redirects back to this page after approval)
       mobileConnectionURI = createConnectionURI(localKeypair.publicKey, connectionSecret, true);
-
-      // Save connection state for redirect recovery
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('nip46_pending', JSON.stringify({
-          localSecretKey: localKeypair.secretKey,
-          localPublicKey: localKeypair.publicKey,
-          secret: connectionSecret
-        }));
-        // Store return URL now (on:click may not fire before iOS switches apps)
-        localStorage.setItem('nip46_return_url', window.location.href);
-      }
 
       qrCodeDataUrl = await generateQRCode(connectionURI);
       waitForPrimalConnection();
@@ -310,9 +238,6 @@
       nip46Connection = connection;
       connectedPubkey = connection.remotePubkey;
       connectionStatus = 'connected';
-
-      // Clear pending connection state
-      localStorage.removeItem('nip46_pending');
 
       // Verify the connected pubkey matches the target
       await verifyPubkey();
@@ -952,8 +877,7 @@
               href={mobileConnectionURI}
               class="primal-login-btn"
               aria-label="Login with Primal"
-              on:click={() => localStorage.setItem('nip46_return_url', window.location.href)}
-            >
+                          >
               <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
               </svg>
