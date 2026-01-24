@@ -279,17 +279,17 @@ export async function createSignerWithKnownPubkey(
 ): Promise<NIP46Connection> {
   const localSecretKeyBytes = hexToBytes(localSecretKey);
 
-  // Create BunkerPointer object - BunkerSigner expects this format
+  // Create BunkerPointer object - the format expected by fromBunker
   const bunkerPointer = {
     pubkey: remotePubkey,
     relays: NIP46_RELAYS
   };
 
-  // Create BunkerSigner with proper BunkerPointer
-  const signer = new BunkerSigner(localSecretKeyBytes, bunkerPointer);
+  // Use fromBunker static method which properly sets up bp and subscription
+  // This is required because the constructor doesn't set this.bp
+  const signer = BunkerSigner.fromBunker(localSecretKeyBytes, bunkerPointer, {});
 
-  // Connect to relay (this doesn't wait for ACK since we already have remote pubkey)
-  await signer.connect();
+  // Connection is already established (we received the ACK), so we're ready to use
 
   return {
     signer,
