@@ -27,11 +27,13 @@ export interface NIP46Connection {
  * Generate a nostrconnect:// URI for QR code display.
  * User scans this with Primal to establish connection.
  * @param includeCallback - Whether to include callback URL (only for mobile deep link, not QR codes)
+ * @param callbackPath - Optional specific path for callback (defaults to '/')
  */
 export function createConnectionURI(
   localPubkey: string,
   secret: string,
-  includeCallback: boolean = false
+  includeCallback: boolean = false,
+  callbackPath: string = '/'
 ): string {
   const params = new URLSearchParams();
 
@@ -44,10 +46,13 @@ export function createConnectionURI(
   params.append('image', 'https://ownyourposts.com/logo.png');
 
   // Only include callback for mobile deep link button, not QR codes
-  // Point callback back to current page - iOS Safari might resume the existing page
-  // with WebSocket still connected, allowing BunkerSigner to receive the ACK
-  if (includeCallback && typeof window !== 'undefined') {
-    params.append('callback', window.location.href);
+  // Use clean canonical URL as Primal team advised: "&callback=https://yourapp.com"
+  // This brings user back to app immediately after remote session is initiated
+  if (includeCallback) {
+    // Use production URL for callback - Primal needs a clean URL to redirect to
+    const baseUrl = 'https://ownyourposts.com';
+    const callback = callbackPath === '/' ? baseUrl : `${baseUrl}${callbackPath}`;
+    params.append('callback', callback);
   }
 
   return `nostrconnect://${localPubkey}?${params.toString()}`;
@@ -164,7 +169,7 @@ export function closeConnection(connection: NIP46Connection | null): void {
 }
 
 /**
- * Wait for a NIP-46 connection response using `limit: 1` filter.
+ * Wait for a NIP-46 connection response using `since` filter.
  * This catches historical ACK events that BunkerSigner.fromURI misses
  * (it uses limit:0 which only gets real-time events).
  *
@@ -181,7 +186,9 @@ export async function waitForConnectionResponse(
   const localSecretKeyBytes = hexToBytes(localSecretKey);
 
   console.log('[NIP46-Recovery] Starting waitForConnectionResponse');
+  console.log('[NIP46-Recovery] Local pubkey:', localPublicKey.slice(0, 16) + '...');
   console.log('[NIP46-Recovery] Looking for secret:', secret.slice(0, 20) + '...');
+  console.log('[NIP46-Recovery] Timeout:', timeoutMs, 'ms');
 
   return new Promise(async (resolve, reject) => {
     let relay: Relay | null = null;
@@ -198,19 +205,22 @@ export async function waitForConnectionResponse(
 
     timeoutId = setTimeout(() => {
       if (!resolved) {
-        console.log('[NIP46-Recovery] Timeout after', eventCount, 'events');
+        console.log('[NIP46-Recovery] Timeout after', eventCount, 'events checked');
         cleanup();
-        reject(new Error('Connection timeout'));
+        reject(new Error('Connection timeout - no ACK found'));
       }
     }, timeoutMs);
 
     try {
+      console.log('[NIP46-Recovery] Connecting to relay:', NIP46_RELAYS[0]);
       relay = await Relay.connect(NIP46_RELAYS[0]);
       console.log('[NIP46-Recovery] Connected to relay');
 
-      // Use since filter to catch events from last 2 minutes
-      // Don't use limit:1 so we can see all recent events and find the right one
-      const since = Math.floor(Date.now() / 1000) - 120;
+      // Use since filter to catch events from last 5 minutes
+      // Extend window in case of slow relay response
+      const since = Math.floor(Date.now() / 1000) - 300;
+
+      console.log('[NIP46-Recovery] Subscribing with since:', since, '(5 min ago)');
 
       relay.subscribe([{
         kinds: [NostrConnect],
@@ -219,35 +229,44 @@ export async function waitForConnectionResponse(
       }], {
         onevent: async (event: Event) => {
           eventCount++;
-          console.log('[NIP46-Recovery] Event #' + eventCount, 'from:', event.pubkey.slice(0, 16) + '...');
+          console.log('[NIP46-Recovery] Event #' + eventCount, 'from:', event.pubkey.slice(0, 16) + '...', 'at:', new Date(event.created_at * 1000).toISOString());
 
           if (resolved) return;
 
           try {
             const conversationKey = getConversationKey(localSecretKeyBytes, event.pubkey);
             const decrypted = nip44Decrypt(event.content, conversationKey);
-            console.log('[NIP46-Recovery] Decrypted:', decrypted.slice(0, 100));
+            console.log('[NIP46-Recovery] Decrypted content:', decrypted.slice(0, 150));
             const response = JSON.parse(decrypted);
-            console.log('[NIP46-Recovery] Response result:', response.result?.toString().slice(0, 30));
+            console.log('[NIP46-Recovery] Response:', JSON.stringify(response).slice(0, 100));
 
             // Check if this is the connection ACK
-            // Primal sends either the secret back or "ack" as acknowledgment
-            if (response.result === secret || response.result === 'ack') {
-              console.log('[NIP46-Recovery] SUCCESS! Found matching ACK');
+            // Primal may send: the exact secret, "ack", or the response may contain other fields
+            // Be more lenient in accepting the connection
+            const result = response.result;
+            if (result === secret || result === 'ack' || result === true || result === 'true') {
+              console.log('[NIP46-Recovery] SUCCESS! Found matching ACK, result:', result);
               resolved = true;
               cleanup();
               resolve(event.pubkey);
+            } else if (response.error) {
+              console.log('[NIP46-Recovery] Error response:', response.error);
+            } else {
+              console.log('[NIP46-Recovery] Non-matching result:', result);
             }
           } catch (err) {
-            console.log('[NIP46-Recovery] Decrypt failed:', err);
+            // Decryption failure might mean this event is from a different session
+            console.log('[NIP46-Recovery] Decrypt failed (might be from different session):', err);
           }
         },
         oneose: () => {
-          console.log('[NIP46-Recovery] EOSE received, got', eventCount, 'events');
+          console.log('[NIP46-Recovery] EOSE received after', eventCount, 'events');
+          // After EOSE, if we haven't found the ACK, keep subscription open
+          // in case it arrives later (real-time)
         }
       });
     } catch (err) {
-      console.error('[NIP46-Recovery] Error:', err);
+      console.error('[NIP46-Recovery] Connection error:', err);
       cleanup();
       reject(err);
     }

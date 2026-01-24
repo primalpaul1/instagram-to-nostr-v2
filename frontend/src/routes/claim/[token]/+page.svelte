@@ -156,17 +156,18 @@
         localKeypair = { secretKey: localSecretKey, publicKey: localPublicKey };
         connectionSecret = secret;
         connectionURI = createConnectionURI(localPublicKey, secret, false);
-        mobileConnectionURI = createConnectionURI(localPublicKey, secret, true);
+        mobileConnectionURI = createConnectionURI(localPublicKey, secret, true, `/claim/${token}`);
         qrCodeDataUrl = await generateQRCode(connectionURI);
         step = 'connect';
 
+        console.log('[NIP46] Claim page - looking for historical ACK...');
         try {
           // Look for historical ACK event with `since` filter
           const remotePubkey = await waitForConnectionResponse(
             localSecretKey,
             localPublicKey,
             secret,
-            15000
+            30000 // 30 second timeout
           );
 
           // Found the ACK! Create signer with known pubkey
@@ -262,7 +263,7 @@
       connectionURI = createConnectionURI(localKeypair.publicKey, connectionSecret, false);
 
       // Mobile button URI (with callback - redirects back to this page after approval)
-      mobileConnectionURI = createConnectionURI(localKeypair.publicKey, connectionSecret, true);
+      mobileConnectionURI = createConnectionURI(localKeypair.publicKey, connectionSecret, true, `/claim/${token}`);
 
       // Save credentials for iOS Safari redirect recovery
       if (typeof window !== 'undefined') {
@@ -271,6 +272,7 @@
           localPublicKey: localKeypair.publicKey,
           secret: connectionSecret
         }));
+        console.log('[NIP46] Claim page - stored pending credentials');
       }
 
       qrCodeDataUrl = await generateQRCode(connectionURI);

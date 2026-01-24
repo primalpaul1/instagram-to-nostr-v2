@@ -299,7 +299,7 @@
 
       connectionURI = createConnectionURI(localKeypair.publicKey, connectionSecret, false);
       // Mobile button URI (with callback - redirects back to this page after approval)
-      mobileConnectionURI = createConnectionURI(localKeypair.publicKey, connectionSecret, true);
+      mobileConnectionURI = createConnectionURI(localKeypair.publicKey, connectionSecret, true, '/rss');
 
       // Save credentials for iOS Safari redirect recovery
       if (typeof window !== 'undefined') {
@@ -311,6 +311,7 @@
           feedMeta: feedMeta,
           feedUrl: feedUrl
         }));
+        console.log('[NIP46] RSS page - stored pending credentials');
       }
 
       qrCodeDataUrl = await generateQRCode(connectionURI);
@@ -576,16 +577,17 @@
         localKeypair = { secretKey: localSecretKey, publicKey: localPublicKey };
         connectionSecret = secret;
         connectionURI = createConnectionURI(localPublicKey, secret, false);
-        mobileConnectionURI = createConnectionURI(localPublicKey, secret, true);
+        mobileConnectionURI = createConnectionURI(localPublicKey, secret, true, '/rss');
         qrCodeDataUrl = await generateQRCode(connectionURI);
 
+        console.log('[NIP46] RSS page - looking for historical ACK...');
         try {
           // Look for historical ACK event with `since` filter
           const remotePubkey = await waitForConnectionResponse(
             localSecretKey,
             localPublicKey,
             secret,
-            15000
+            30000 // 30 second timeout
           );
 
           // Found the ACK! Create signer with known pubkey
