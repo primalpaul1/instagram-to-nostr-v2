@@ -40,11 +40,48 @@
 
   onMount(async () => {
     // Check for pending NIP-46 connection from redirect
-    const pendingConnection = sessionStorage.getItem('nip46_pending_main');
-    if (pendingConnection) {
+    const pending = sessionStorage.getItem('nip46_pending_main');
+
+    if (pending) {
       try {
-        const { localSecretKey, localPublicKey, secret } = JSON.parse(pendingConnection);
-        // Restore connection state and resume waiting
+        const { localSecretKey, localPublicKey, secret } = JSON.parse(pending);
+
+        // Check if callback page already connected for us
+        const storedPubkey = sessionStorage.getItem('nip46_connected_pubkey_main');
+
+        if (storedPubkey) {
+          // Connection succeeded on callback page - recreate it
+          connectionStatus = 'waiting';
+          localKeypair = { secretKey: localSecretKey, publicKey: localPublicKey };
+          connectionSecret = secret;
+
+          try {
+            connectionURI = createConnectionURI(localPublicKey, secret, false);
+            const connection = await waitForConnection(
+              localSecretKey,
+              secret,
+              connectionURI,
+              null,
+              30000 // short timeout - already approved
+            );
+
+            pendingConnection = connection;
+            connectionStatus = 'connected';
+            wizard.setAuthMode('nip46');
+            wizard.setNIP46Connection(connection, storedPubkey);
+
+            // Clean up
+            sessionStorage.removeItem('nip46_pending_main');
+            sessionStorage.removeItem('nip46_connected_pubkey_main');
+            return;
+          } catch (err) {
+            console.error('Failed to recreate connection:', err);
+            // Fall through to normal flow
+            sessionStorage.removeItem('nip46_connected_pubkey_main');
+          }
+        }
+
+        // No stored pubkey or recreation failed - restore waiting state
         localKeypair = { secretKey: localSecretKey, publicKey: localPublicKey };
         connectionSecret = secret;
         connectionURI = createConnectionURI(localPublicKey, secret, false);
@@ -56,6 +93,7 @@
       } catch (err) {
         console.error('Failed to restore NIP-46 connection:', err);
         sessionStorage.removeItem('nip46_pending_main');
+        sessionStorage.removeItem('nip46_connected_pubkey_main');
       }
     }
     await initNIP46Connection();

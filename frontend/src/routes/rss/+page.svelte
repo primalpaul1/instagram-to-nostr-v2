@@ -574,7 +574,43 @@
           step = 'select';
         }
 
-        // Restore connection state and resume waiting
+        // Check if callback page already connected for us
+        const storedPubkey = sessionStorage.getItem('nip46_connected_pubkey_rss');
+
+        if (storedPubkey) {
+          // Connection succeeded on callback page - recreate it
+          connectionStatus = 'waiting';
+          localKeypair = { secretKey: localSecretKey, publicKey: localPublicKey };
+          connectionSecret = secret;
+
+          try {
+            connectionURI = createConnectionURI(localPublicKey, secret, false);
+            const connection = await waitForConnection(
+              localSecretKey,
+              secret,
+              connectionURI,
+              null,
+              30000 // short timeout - already approved
+            );
+
+            nip46Connection = connection;
+            nip46Pubkey = storedPubkey;
+            connectionStatus = 'connected';
+            mobileConnectionURI = createConnectionURI(localPublicKey, secret, true);
+            qrCodeDataUrl = await generateQRCode(connectionURI);
+
+            // Clean up
+            sessionStorage.removeItem('nip46_pending_rss');
+            sessionStorage.removeItem('nip46_connected_pubkey_rss');
+            return;
+          } catch (err) {
+            console.error('Failed to recreate connection:', err);
+            // Fall through to normal flow
+            sessionStorage.removeItem('nip46_connected_pubkey_rss');
+          }
+        }
+
+        // No stored pubkey or recreation failed - restore waiting state
         localKeypair = { secretKey: localSecretKey, publicKey: localPublicKey };
         connectionSecret = secret;
         connectionURI = createConnectionURI(localPublicKey, secret, false);
@@ -585,6 +621,7 @@
       } catch (err) {
         console.error('Failed to restore NIP-46 connection:', err);
         sessionStorage.removeItem('nip46_pending_rss');
+        sessionStorage.removeItem('nip46_connected_pubkey_rss');
         // Initialize fresh connection
         await initNIP46Connection();
       }
