@@ -8,12 +8,9 @@ import { BunkerSigner, parseBunkerInput } from 'nostr-tools/nip46';
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils';
 import QRCode from 'qrcode';
 
-// NIP-46 relays - matching xnostr.com's working implementation
+// NIP-46 relay - using relay.nsec.app like Zappix for iOS compatibility
 const NIP46_RELAYS = [
-  'wss://relay.bullishbounty.com',
-  'wss://relay.damus.io',
-  'wss://relay.primal.net',
-  'wss://bucket.coracle.social'
+  'wss://relay.nsec.app'
 ];
 
 export interface NIP46Connection {
