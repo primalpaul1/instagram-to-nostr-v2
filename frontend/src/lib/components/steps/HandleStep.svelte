@@ -7,8 +7,6 @@
     generateSecret,
     generateLocalKeypair,
     waitForConnection,
-    waitForConnectionResponse,
-    createSignerWithKnownPubkey,
     hexToNpub,
     closeConnection,
     type NIP46Connection
@@ -41,54 +39,8 @@
   let pendingConnection: NIP46Connection | null = null;
 
   onMount(async () => {
-    // Check for pending connection from mobile redirect (within last 2 minutes)
-    const pending = localStorage.getItem('nip46_pending_main');
-    if (pending) {
-      try {
-        const data = JSON.parse(pending);
-        const age = Date.now() - (data.timestamp || 0);
-        const TWO_MINUTES = 2 * 60 * 1000;
-
-        if (age < TWO_MINUTES) {
-          // Recent pending connection - try to recover (mobile redirect flow)
-          console.log('[NIP46] Recent pending connection found, attempting recovery...');
-          connectionStatus = 'waiting';
-          localKeypair = { secretKey: data.localSecretKey, publicKey: data.localPublicKey };
-          connectionSecret = data.secret;
-          connectionURI = createConnectionURI(data.localPublicKey, data.secret, false);
-          mobileConnectionURI = createConnectionURI(data.localPublicKey, data.secret, true);
-          qrCodeDataUrl = await generateQRCode(connectionURI);
-
-          try {
-            const remotePubkey = await waitForConnectionResponse(
-              data.localSecretKey,
-              data.localPublicKey,
-              data.secret,
-              15000 // 15 second timeout
-            );
-
-            console.log('[NIP46] Recovery successful! Remote pubkey:', remotePubkey.slice(0, 16) + '...');
-            const connection = await createSignerWithKnownPubkey(data.localSecretKey, remotePubkey);
-            pendingConnection = connection;
-            connectionStatus = 'connected';
-            wizard.setAuthMode('nip46');
-            wizard.setNIP46Connection(connection, remotePubkey);
-            localStorage.removeItem('nip46_pending_main');
-            return;
-          } catch {
-            // Recovery failed, fall through to fresh connection
-            console.log('[NIP46] Recovery failed, starting fresh connection');
-          }
-        } else {
-          console.log('[NIP46] Stale pending connection, ignoring');
-        }
-      } catch {
-        // Invalid data
-      }
-      localStorage.removeItem('nip46_pending_main');
-    }
-
-    // Initialize a fresh NIP-46 connection
+    // Always start fresh
+    localStorage.removeItem('nip46_pending_main');
     await initNIP46Connection();
   });
 
@@ -111,16 +63,6 @@
       // Mobile button URI (with callback - redirects back to home page after approval)
       // Use clean base URL as Primal team advised - they will redirect user back immediately
       mobileConnectionURI = createConnectionURI(localKeypair.publicKey, connectionSecret, true);
-
-      // Save credentials with timestamp for mobile redirect recovery
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('nip46_pending_main', JSON.stringify({
-          localSecretKey: localKeypair.secretKey,
-          localPublicKey: localKeypair.publicKey,
-          secret: connectionSecret,
-          timestamp: Date.now()
-        }));
-      }
 
       qrCodeDataUrl = await generateQRCode(connectionURI);
 
