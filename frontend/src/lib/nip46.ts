@@ -68,11 +68,12 @@ export async function generateQRCode(uri: string): Promise<string> {
 
 /**
  * Generate a random secret for NIP-46 connection.
+ * Using 8 hex chars (like Zappix) for shorter URI - sufficient for short-lived connection.
  */
 export function generateSecret(): string {
-  const bytes = new Uint8Array(16);
+  const bytes = new Uint8Array(4);
   crypto.getRandomValues(bytes);
-  return 'sec-' + bytesToHex(bytes);
+  return bytesToHex(bytes);
 }
 
 /**
