@@ -288,6 +288,8 @@
         feedMeta: feedMeta,
         feedUrl: feedUrl
       }));
+      // Store return URL now (on:click may not fire before iOS switches apps)
+      sessionStorage.setItem('nip46_return_url', window.location.href);
     }
   }
 
@@ -312,6 +314,8 @@
           feedMeta: feedMeta,
           feedUrl: feedUrl
         }));
+        // Store return URL now (on:click may not fire before iOS switches apps)
+        sessionStorage.setItem('nip46_return_url', window.location.href);
       }
 
       qrCodeDataUrl = await generateQRCode(connectionURI);
