@@ -536,11 +536,7 @@
             class="primal-login-btn"
             on:click={handleOpenSignerApp}
           >
-            <svg width="22" height="22" viewBox="0 0 100 100" fill="currentColor">
-              <circle cx="50" cy="50" r="45" fill="none" stroke="currentColor" stroke-width="8"/>
-              <circle cx="50" cy="50" r="25" fill="none" stroke="currentColor" stroke-width="8"/>
-              <circle cx="50" cy="50" r="8"/>
-            </svg>
+            <img src="/primal-logo.png" alt="Primal" class="primal-logo" />
             Log in with Primal
           </button>
         {:else}
@@ -1095,6 +1091,12 @@
   }
 
   .primal-login-btn svg {
+    flex-shrink: 0;
+  }
+
+  .primal-logo {
+    width: 24px;
+    height: 24px;
     flex-shrink: 0;
   }
 
