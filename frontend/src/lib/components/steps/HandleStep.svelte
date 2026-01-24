@@ -54,7 +54,7 @@
         localKeypair = { secretKey: localSecretKey, publicKey: localPublicKey };
         connectionSecret = secret;
         connectionURI = createConnectionURI(localPublicKey, secret, false);
-        mobileConnectionURI = createConnectionURI(localPublicKey, secret, true, '/');
+        mobileConnectionURI = createConnectionURI(localPublicKey, secret, true);
         qrCodeDataUrl = await generateQRCode(connectionURI);
 
         try {
@@ -113,7 +113,7 @@
       connectionURI = createConnectionURI(localKeypair.publicKey, connectionSecret, false);
       // Mobile button URI (with callback - redirects back to home page after approval)
       // Use clean base URL as Primal team advised - they will redirect user back immediately
-      mobileConnectionURI = createConnectionURI(localKeypair.publicKey, connectionSecret, true, '/');
+      mobileConnectionURI = createConnectionURI(localKeypair.publicKey, connectionSecret, true);
 
       // Save credentials for iOS Safari redirect recovery
       if (typeof window !== 'undefined') {

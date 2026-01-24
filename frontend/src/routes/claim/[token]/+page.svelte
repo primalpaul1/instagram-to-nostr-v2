@@ -156,7 +156,7 @@
         localKeypair = { secretKey: localSecretKey, publicKey: localPublicKey };
         connectionSecret = secret;
         connectionURI = createConnectionURI(localPublicKey, secret, false);
-        mobileConnectionURI = createConnectionURI(localPublicKey, secret, true, `/claim/${token}`);
+        mobileConnectionURI = createConnectionURI(localPublicKey, secret, true);
         qrCodeDataUrl = await generateQRCode(connectionURI);
         step = 'connect';
 
@@ -263,7 +263,7 @@
       connectionURI = createConnectionURI(localKeypair.publicKey, connectionSecret, false);
 
       // Mobile button URI (with callback - redirects back to this page after approval)
-      mobileConnectionURI = createConnectionURI(localKeypair.publicKey, connectionSecret, true, `/claim/${token}`);
+      mobileConnectionURI = createConnectionURI(localKeypair.publicKey, connectionSecret, true);
 
       // Save credentials for iOS Safari redirect recovery
       if (typeof window !== 'undefined') {

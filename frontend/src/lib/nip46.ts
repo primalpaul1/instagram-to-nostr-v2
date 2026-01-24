@@ -27,13 +27,11 @@ export interface NIP46Connection {
  * Generate a nostrconnect:// URI for QR code display.
  * User scans this with Primal to establish connection.
  * @param includeCallback - Whether to include callback URL (only for mobile deep link, not QR codes)
- * @param callbackPath - Optional specific path for callback (defaults to '/')
  */
 export function createConnectionURI(
   localPubkey: string,
   secret: string,
-  includeCallback: boolean = false,
-  callbackPath: string = '/'
+  includeCallback: boolean = false
 ): string {
   const params = new URLSearchParams();
 
@@ -46,13 +44,11 @@ export function createConnectionURI(
   params.append('image', 'https://ownyourposts.com/logo.png');
 
   // Only include callback for mobile deep link button, not QR codes
-  // Use clean canonical URL as Primal team advised: "&callback=https://yourapp.com"
-  // This brings user back to app immediately after remote session is initiated
-  if (includeCallback) {
-    // Use production URL for callback - Primal needs a clean URL to redirect to
-    const baseUrl = 'https://ownyourposts.com';
-    const callback = callbackPath === '/' ? baseUrl : `${baseUrl}${callbackPath}`;
-    params.append('callback', callback);
+  // Use the current origin (works for both local dev and production)
+  // Primal will redirect back to this URL after user approves
+  if (includeCallback && typeof window !== 'undefined') {
+    // Use origin (e.g., https://ownyourposts.com) - simple and clean
+    params.append('callback', window.location.origin);
   }
 
   return `nostrconnect://${localPubkey}?${params.toString()}`;
