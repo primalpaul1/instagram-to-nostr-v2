@@ -530,23 +530,19 @@
         </div>
       {:else if qrCodeDataUrl}
         {#if isMobile}
-          <!-- Mobile: Open Signer App button -->
+          <!-- Mobile: Log in with Primal button -->
           <button
             type="button"
             class="primal-login-btn"
             on:click={handleOpenSignerApp}
           >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
-              <polyline points="15 3 21 3 21 9"/>
-              <line x1="10" y1="14" x2="21" y2="3"/>
+            <svg width="22" height="22" viewBox="0 0 100 100" fill="currentColor">
+              <circle cx="50" cy="50" r="45" fill="none" stroke="currentColor" stroke-width="8"/>
+              <circle cx="50" cy="50" r="25" fill="none" stroke="currentColor" stroke-width="8"/>
+              <circle cx="50" cy="50" r="8"/>
             </svg>
-            Open Signer App
+            Log in with Primal
           </button>
-          <div class="waiting-indicator">
-            <div class="pulse-dot"></div>
-            <span>Open your signer app to connect</span>
-          </div>
         {:else}
           <!-- Desktop: QR code -->
           <div class="qr-wrapper">
@@ -886,6 +882,22 @@
     align-items: center;
     min-height: 240px;
     justify-content: center;
+  }
+
+  /* Tighter mobile layout */
+  @media (max-width: 480px) {
+    .primal-section {
+      padding: 1rem;
+    }
+
+    .qr-container {
+      min-height: auto;
+      padding: 0.5rem 0;
+    }
+
+    .mobile-waiting {
+      margin-top: 0.75rem;
+    }
   }
 
   .qr-wrapper {
