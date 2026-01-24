@@ -41,71 +41,55 @@
   let pendingConnection: NIP46Connection | null = null;
 
   onMount(async () => {
-    // Log URL parameters - Primal might pass pubkey/bunker info in callback
-    if (typeof window !== 'undefined') {
-      const url = new URL(window.location.href);
-      console.log('[NIP46] Page loaded, URL:', window.location.href);
-      console.log('[NIP46] URL params:', Object.fromEntries(url.searchParams.entries()));
-
-      // Check for bunker:// or pubkey in URL params (Primal might pass these)
-      const bunkerParam = url.searchParams.get('bunker');
-      const pubkeyParam = url.searchParams.get('pubkey');
-      if (bunkerParam) console.log('[NIP46] Bunker param found:', bunkerParam);
-      if (pubkeyParam) console.log('[NIP46] Pubkey param found:', pubkeyParam);
-    }
-
-    // Check for pending NIP-46 connection from iOS Safari redirect
+    // Check for pending connection from mobile redirect (within last 2 minutes)
     const pending = localStorage.getItem('nip46_pending_main');
-
     if (pending) {
-      console.log('[NIP46] Found pending connection, attempting recovery...');
       try {
-        const { localSecretKey, localPublicKey, secret } = JSON.parse(pending);
+        const data = JSON.parse(pending);
+        const age = Date.now() - (data.timestamp || 0);
+        const TWO_MINUTES = 2 * 60 * 1000;
 
-        // Try to find the ACK using `since` filter (catches historical events)
-        connectionStatus = 'waiting';
-        localKeypair = { secretKey: localSecretKey, publicKey: localPublicKey };
-        connectionSecret = secret;
-        connectionURI = createConnectionURI(localPublicKey, secret, false);
-        mobileConnectionURI = createConnectionURI(localPublicKey, secret, true);
-        qrCodeDataUrl = await generateQRCode(connectionURI);
+        if (age < TWO_MINUTES) {
+          // Recent pending connection - try to recover (mobile redirect flow)
+          console.log('[NIP46] Recent pending connection found, attempting recovery...');
+          connectionStatus = 'waiting';
+          localKeypair = { secretKey: data.localSecretKey, publicKey: data.localPublicKey };
+          connectionSecret = data.secret;
+          connectionURI = createConnectionURI(data.localPublicKey, data.secret, false);
+          mobileConnectionURI = createConnectionURI(data.localPublicKey, data.secret, true);
+          qrCodeDataUrl = await generateQRCode(connectionURI);
 
-        try {
-          console.log('[NIP46] Looking for historical ACK event...');
-          // Look for historical ACK event with `since` filter
-          // Use longer timeout (30s) to give relay time to return stored events
-          const remotePubkey = await waitForConnectionResponse(
-            localSecretKey,
-            localPublicKey,
-            secret,
-            30000 // 30 second timeout for recovery
-          );
+          try {
+            const remotePubkey = await waitForConnectionResponse(
+              data.localSecretKey,
+              data.localPublicKey,
+              data.secret,
+              15000 // 15 second timeout
+            );
 
-          console.log('[NIP46] Found ACK! Remote pubkey:', remotePubkey.slice(0, 16) + '...');
-          // Found the ACK! Create signer with known pubkey
-          const connection = await createSignerWithKnownPubkey(localSecretKey, remotePubkey);
-
-          pendingConnection = connection;
-          connectionStatus = 'connected';
-          wizard.setAuthMode('nip46');
-          wizard.setNIP46Connection(connection, remotePubkey);
-
-          localStorage.removeItem('nip46_pending_main');
-          return;
-        } catch (err) {
-          // No historical ACK found, continue waiting for new connection
-          // This is normal if user hasn't approved yet or ACK expired
-          console.log('[NIP46] No historical ACK found, waiting for new connection...', err);
-          waitForPrimalConnection();
+            console.log('[NIP46] Recovery successful! Remote pubkey:', remotePubkey.slice(0, 16) + '...');
+            const connection = await createSignerWithKnownPubkey(data.localSecretKey, remotePubkey);
+            pendingConnection = connection;
+            connectionStatus = 'connected';
+            wizard.setAuthMode('nip46');
+            wizard.setNIP46Connection(connection, remotePubkey);
+            localStorage.removeItem('nip46_pending_main');
+            return;
+          } catch {
+            // Recovery failed, fall through to fresh connection
+            console.log('[NIP46] Recovery failed, starting fresh connection');
+          }
+        } else {
+          console.log('[NIP46] Stale pending connection, ignoring');
         }
-      } catch (err) {
-        console.error('[NIP46] Failed to restore connection:', err);
-        localStorage.removeItem('nip46_pending_main');
-        await initNIP46Connection();
+      } catch {
+        // Invalid data
       }
-    } else {
-      await initNIP46Connection();
+      localStorage.removeItem('nip46_pending_main');
     }
+
+    // Initialize a fresh NIP-46 connection
+    await initNIP46Connection();
   });
 
   onDestroy(() => {
@@ -128,15 +112,14 @@
       // Use clean base URL as Primal team advised - they will redirect user back immediately
       mobileConnectionURI = createConnectionURI(localKeypair.publicKey, connectionSecret, true);
 
-      // Save credentials for iOS Safari redirect recovery
+      // Save credentials with timestamp for mobile redirect recovery
       if (typeof window !== 'undefined') {
         localStorage.setItem('nip46_pending_main', JSON.stringify({
           localSecretKey: localKeypair.secretKey,
           localPublicKey: localKeypair.publicKey,
-          secret: connectionSecret
+          secret: connectionSecret,
+          timestamp: Date.now()
         }));
-        console.log('[NIP46] Stored pending connection credentials');
-        console.log('[NIP46] Mobile URI:', mobileConnectionURI);
       }
 
       qrCodeDataUrl = await generateQRCode(connectionURI);
