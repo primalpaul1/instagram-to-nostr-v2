@@ -33,14 +33,13 @@ export function createConnectionURI(
   callbackUrl?: string
 ): string {
   const relayParams = NIP46_RELAYS.map(r => `relay=${encodeURIComponent(r)}`).join('&');
-  const perms = 'sign_event:0,sign_event:1,sign_event:24242,sign_event:30023';
 
   // App metadata for Primal login screen
   const appName = 'Own Your Posts';
   const appUrl = 'https://ownyourposts.com';
   const appIcon = 'https://ownyourposts.com/logo.png';
 
-  let uri = `nostrconnect://${localPubkey}?${relayParams}&secret=${secret}&name=${encodeURIComponent(appName)}&url=${encodeURIComponent(appUrl)}&image=${encodeURIComponent(appIcon)}&perms=${encodeURIComponent(perms)}`;
+  let uri = `nostrconnect://${localPubkey}?${relayParams}&secret=${secret}&name=${encodeURIComponent(appName)}&url=${encodeURIComponent(appUrl)}&image=${encodeURIComponent(appIcon)}`;
 
   // Only include callback for mobile deep link button, not QR codes
   if (includeCallback && callbackUrl) {
@@ -68,9 +67,9 @@ export async function generateQRCode(uri: string): Promise<string> {
  * Generate a random secret for NIP-46 connection.
  */
 export function generateSecret(): string {
-  const bytes = new Uint8Array(32);
+  const bytes = new Uint8Array(16);
   crypto.getRandomValues(bytes);
-  return bytesToHex(bytes);
+  return 'sec-' + bytesToHex(bytes);
 }
 
 /**
