@@ -167,23 +167,40 @@ export async function waitForConnection(
               console.log('[NIP46-QR] SUCCESS! Got ACK from:', event.pubkey.slice(0, 16) + '...');
 
               resolved = true;
-              cleanup();
 
-              // The event.pubkey is the remote signer's pubkey (user's Nostr pubkey)
-              const remotePubkey = event.pubkey;
+              // event.pubkey is the BUNKER's pubkey (signing service), not necessarily the user's pubkey
+              const bunkerPubkey = event.pubkey;
+              console.log('[NIP46-QR] Bunker pubkey:', bunkerPubkey.slice(0, 16) + '...');
 
-              // Create BunkerSigner with known pubkey (ZapTrax-style)
+              // Create BunkerSigner with the bunker pubkey
               const bunkerPointer = {
-                pubkey: remotePubkey,
+                pubkey: bunkerPubkey,
                 relays: NIP46_RELAYS
               };
               const signer = BunkerSigner.fromBunker(localSecretKeyBytes, bunkerPointer, {});
 
-              resolve({
-                signer,
-                remotePubkey,
-                localSecretKey
-              });
+              // Now get the ACTUAL user pubkey via NIP-46 RPC
+              console.log('[NIP46-QR] Getting actual user pubkey via getPublicKey()...');
+              try {
+                const userPubkey = await signer.getPublicKey();
+                console.log('[NIP46-QR] User pubkey:', userPubkey.slice(0, 16) + '...');
+
+                cleanup();
+                resolve({
+                  signer,
+                  remotePubkey: userPubkey,
+                  localSecretKey
+                });
+              } catch (err) {
+                console.error('[NIP46-QR] getPublicKey() failed:', err);
+                // Fall back to bunker pubkey if getPublicKey fails
+                cleanup();
+                resolve({
+                  signer,
+                  remotePubkey: bunkerPubkey,
+                  localSecretKey
+                });
+              }
             }
           } catch (err) {
             console.log('[NIP46-QR] Failed to decrypt event:', err);
