@@ -9,9 +9,14 @@
   onMount(async () => {
     if (!browser) return;
 
+    console.log('[Callback] Page loaded');
+    console.log('[Callback] All localStorage keys:', Object.keys(localStorage));
+
     const pending = localStorage.getItem('nip46_pending_main');
+    console.log('[Callback] nip46_pending_main:', pending ? 'exists' : 'null');
 
     if (!pending) {
+      console.log('[Callback] ERROR: No pending connection found');
       status = 'error';
       errorMessage = 'No pending connection found';
       setTimeout(() => {
@@ -37,6 +42,8 @@
 
       // Try to find the ACK from the signer
       console.log('[Callback] Looking for connection ACK...');
+      console.log('[Callback] Using localPublicKey:', data.localPublicKey);
+      console.log('[Callback] Using secret:', data.secret);
 
       const remotePubkey = await waitForConnectionResponse(
         data.localSecretKey,

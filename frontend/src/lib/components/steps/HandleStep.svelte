@@ -65,14 +65,21 @@
 
   onMount(async () => {
     isMobile = detectMobile();
+    console.log('[HandleStep] onMount, isMobile:', isMobile);
+    console.log('[HandleStep] All localStorage keys:', Object.keys(localStorage));
 
     // Check for successful connection from callback page
     const connected = localStorage.getItem('nip46_connected');
+    console.log('[HandleStep] nip46_connected:', connected ? JSON.parse(connected) : 'null');
+
     if (connected) {
       try {
         const data = JSON.parse(connected);
         const age = Date.now() - (data.timestamp || 0);
         const FIVE_MINUTES = 5 * 60 * 1000;
+
+        console.log('[HandleStep] Connection age:', age, 'ms, valid:', age < FIVE_MINUTES);
+        console.log('[HandleStep] remotePubkey from storage:', data.remotePubkey);
 
         if (age < FIVE_MINUTES) {
           console.log('[NIP46] Restoring connection from callback...');
