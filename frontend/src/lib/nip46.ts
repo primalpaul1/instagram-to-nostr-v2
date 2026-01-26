@@ -265,6 +265,7 @@ export function closeConnection(connection: NIP46Connection | null): void {
  * (it uses limit:0 which only gets real-time events).
  *
  * Used after iOS Safari redirect when the original WebSocket was killed.
+ * Returns the actual USER pubkey (not the bunker pubkey).
  */
 export async function waitForConnectionResponse(
   localSecretKey: string,
@@ -345,9 +346,35 @@ export async function waitForConnectionResponse(
             const result = response.result;
             if (result === secret || result === 'ack' || result === true || result === 'true') {
               console.log('[NIP46-Recovery] SUCCESS! Found matching ACK, result:', result);
+
               resolved = true;
-              cleanup();
-              resolve(event.pubkey);
+
+              // event.pubkey is the BUNKER's pubkey (signing service), not the user's pubkey
+              const bunkerPubkey = event.pubkey;
+              console.log('[NIP46-Recovery] Bunker pubkey:', bunkerPubkey.slice(0, 16) + '...');
+
+              // Create BunkerSigner with the bunker pubkey to get actual user pubkey
+              const bunkerPointer = {
+                pubkey: bunkerPubkey,
+                relays: NIP46_RELAYS
+              };
+              const signer = BunkerSigner.fromBunker(localSecretKeyBytes, bunkerPointer, {});
+
+              // Get the ACTUAL user pubkey via NIP-46 RPC
+              console.log('[NIP46-Recovery] Getting actual user pubkey via getPublicKey()...');
+              try {
+                const userPubkey = await signer.getPublicKey();
+                console.log('[NIP46-Recovery] User pubkey:', userPubkey.slice(0, 16) + '...');
+                signer.close();
+                cleanup();
+                resolve(userPubkey);
+              } catch (err) {
+                console.error('[NIP46-Recovery] getPublicKey() failed:', err);
+                // Fall back to bunker pubkey if getPublicKey fails
+                signer.close();
+                cleanup();
+                resolve(bunkerPubkey);
+              }
             } else if (response.error) {
               console.log('[NIP46-Recovery] Error response:', response.error);
             } else {
