@@ -66,9 +66,11 @@
 
       status = 'success';
 
-      // Redirect to home - main page will restore the connection
+      // Redirect back to original page (claim page or home)
+      const returnUrl = data.returnUrl || '/';
+      console.log('[Callback] Redirecting to:', returnUrl);
       setTimeout(() => {
-        window.location.href = '/';
+        window.location.href = returnUrl;
       }, 1000);
 
     } catch (err) {

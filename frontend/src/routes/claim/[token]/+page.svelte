@@ -308,7 +308,8 @@
           localSecretKey: localKeypair.secretKey,
           localPublicKey: localKeypair.publicKey,
           secret: connectionSecret,
-          timestamp: Date.now()
+          timestamp: Date.now(),
+          returnUrl: window.location.pathname
         }));
         console.log('[NIP46] Claim page - stored pending credentials');
       }
