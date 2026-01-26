@@ -265,14 +265,14 @@ export function closeConnection(connection: NIP46Connection | null): void {
  * (it uses limit:0 which only gets real-time events).
  *
  * Used after iOS Safari redirect when the original WebSocket was killed.
- * Returns the actual USER pubkey (not the bunker pubkey).
+ * Returns both the bunker pubkey (for signer) and user pubkey (for verification).
  */
 export async function waitForConnectionResponse(
   localSecretKey: string,
   localPublicKey: string,
   secret: string,
   timeoutMs: number = 30000
-): Promise<string> {
+): Promise<{ userPubkey: string; bunkerPubkey: string }> {
   const { getConversationKey, decrypt: nip44Decrypt } = await import('nostr-tools/nip44');
 
   const localSecretKeyBytes = hexToBytes(localSecretKey);
@@ -367,13 +367,13 @@ export async function waitForConnectionResponse(
                 console.log('[NIP46-Recovery] User pubkey:', userPubkey.slice(0, 16) + '...');
                 signer.close();
                 cleanup();
-                resolve(userPubkey);
+                resolve({ userPubkey, bunkerPubkey });
               } catch (err) {
                 console.error('[NIP46-Recovery] getPublicKey() failed:', err);
                 // Fall back to bunker pubkey if getPublicKey fails
                 signer.close();
                 cleanup();
-                resolve(bunkerPubkey);
+                resolve({ userPubkey: bunkerPubkey, bunkerPubkey });
               }
             } else if (response.error) {
               console.log('[NIP46-Recovery] Error response:', response.error);
@@ -400,18 +400,19 @@ export async function waitForConnectionResponse(
 }
 
 /**
- * Create a BunkerSigner when we already know the remote pubkey.
+ * Create a BunkerSigner when we already know the bunker pubkey.
  * Used after recovering connection from iOS Safari redirect.
+ * @param bunkerPubkey - The bunker's pubkey (signing service), NOT the user's pubkey
  */
 export async function createSignerWithKnownPubkey(
   localSecretKey: string,
-  remotePubkey: string
+  bunkerPubkey: string
 ): Promise<NIP46Connection> {
   const localSecretKeyBytes = hexToBytes(localSecretKey);
 
   // Create BunkerPointer object - the format expected by fromBunker
   const bunkerPointer = {
-    pubkey: remotePubkey,
+    pubkey: bunkerPubkey,
     relays: NIP46_RELAYS
   };
 
@@ -423,7 +424,7 @@ export async function createSignerWithKnownPubkey(
 
   return {
     signer,
-    remotePubkey,
+    remotePubkey: bunkerPubkey,
     localSecretKey
   };
 }

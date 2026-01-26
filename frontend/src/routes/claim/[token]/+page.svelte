@@ -162,11 +162,14 @@
           connectionStatus = 'waiting';
           step = 'connect';
 
-          // Recreate the signer with the saved credentials
-          const connection = await createSignerWithKnownPubkey(data.localSecretKey, data.remotePubkey);
+          // Recreate the signer with the bunker pubkey (NOT the user pubkey)
+          const bunkerPubkey = data.bunkerPubkey || data.remotePubkey; // Fall back for old format
+          const userPubkey = data.userPubkey || data.remotePubkey; // Fall back for old format
+
+          const connection = await createSignerWithKnownPubkey(data.localSecretKey, bunkerPubkey);
 
           nip46Connection = connection;
-          connectedPubkey = data.remotePubkey;
+          connectedPubkey = userPubkey; // Use user pubkey for verification
           connectionStatus = 'connected';
 
           localStorage.removeItem('nip46_connected');
@@ -200,18 +203,18 @@
         console.log('[NIP46] Claim page - looking for historical ACK...');
         try {
           // Look for historical ACK event with `since` filter
-          const remotePubkey = await waitForConnectionResponse(
+          const result = await waitForConnectionResponse(
             localSecretKey,
             localPublicKey,
             secret,
             30000 // 30 second timeout
           );
 
-          // Found the ACK! Create signer with known pubkey
-          const connection = await createSignerWithKnownPubkey(localSecretKey, remotePubkey);
+          // Found the ACK! Create signer with bunker pubkey
+          const connection = await createSignerWithKnownPubkey(localSecretKey, result.bunkerPubkey);
 
           nip46Connection = connection;
-          connectedPubkey = remotePubkey;
+          connectedPubkey = result.userPubkey; // Use user pubkey for verification
           connectionStatus = 'connected';
 
           localStorage.removeItem('nip46_pending_main');

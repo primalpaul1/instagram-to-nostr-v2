@@ -45,19 +45,22 @@
       console.log('[Callback] Using localPublicKey:', data.localPublicKey);
       console.log('[Callback] Using secret:', data.secret);
 
-      const remotePubkey = await waitForConnectionResponse(
+      const result = await waitForConnectionResponse(
         data.localSecretKey,
         data.localPublicKey,
         data.secret,
         20000 // 20 second timeout
       );
 
-      console.log('[Callback] Found ACK! Remote pubkey:', remotePubkey.slice(0, 16) + '...');
+      console.log('[Callback] Found ACK! User pubkey:', result.userPubkey.slice(0, 16) + '...');
+      console.log('[Callback] Bunker pubkey:', result.bunkerPubkey.slice(0, 16) + '...');
 
       // Save the successful connection for the main page to restore
+      // IMPORTANT: Save both bunkerPubkey (for signer) and userPubkey (for verification)
       localStorage.setItem('nip46_connected', JSON.stringify({
         localSecretKey: data.localSecretKey,
-        remotePubkey: remotePubkey,
+        bunkerPubkey: result.bunkerPubkey,  // For creating the signer
+        userPubkey: result.userPubkey,       // For verification
         timestamp: Date.now()
       }));
 
