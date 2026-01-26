@@ -145,8 +145,45 @@
   onMount(async () => {
     await loadProposal();
 
+    // Check for successful connection from callback page (mobile flow)
+    const connected = localStorage.getItem('nip46_connected');
+    console.log('[Claim] nip46_connected:', connected ? 'exists' : 'null');
+
+    if (connected && step === 'preview') {
+      try {
+        const data = JSON.parse(connected);
+        const age = Date.now() - (data.timestamp || 0);
+        const FIVE_MINUTES = 5 * 60 * 1000;
+
+        console.log('[Claim] Connection age:', age, 'ms, valid:', age < FIVE_MINUTES);
+
+        if (age < FIVE_MINUTES) {
+          console.log('[NIP46] Claim page - restoring connection from callback...');
+          connectionStatus = 'waiting';
+          step = 'connect';
+
+          // Recreate the signer with the saved credentials
+          const connection = await createSignerWithKnownPubkey(data.localSecretKey, data.remotePubkey);
+
+          nip46Connection = connection;
+          connectedPubkey = data.remotePubkey;
+          connectionStatus = 'connected';
+
+          localStorage.removeItem('nip46_connected');
+          console.log('[NIP46] Claim page - connection restored successfully!');
+
+          // Verify the connected pubkey matches the target
+          await verifyPubkey();
+          return;
+        }
+      } catch (err) {
+        console.error('[NIP46] Claim page - failed to restore connection:', err);
+      }
+      localStorage.removeItem('nip46_connected');
+    }
+
     // Check for pending NIP-46 connection from iOS Safari redirect
-    const pending = localStorage.getItem('nip46_pending_claim');
+    const pending = localStorage.getItem('nip46_pending_main');
 
     if (pending && step === 'preview') {
       try {
@@ -177,7 +214,7 @@
           connectedPubkey = remotePubkey;
           connectionStatus = 'connected';
 
-          localStorage.removeItem('nip46_pending_claim');
+          localStorage.removeItem('nip46_pending_main');
 
           // Verify the connected pubkey matches the target
           await verifyPubkey();
@@ -188,7 +225,7 @@
         }
       } catch (err) {
         console.error('Failed to restore NIP-46 connection:', err);
-        localStorage.removeItem('nip46_pending_claim');
+        localStorage.removeItem('nip46_pending_main');
       }
     }
   });
@@ -267,10 +304,11 @@
 
       // Save credentials for iOS Safari redirect recovery
       if (typeof window !== 'undefined') {
-        localStorage.setItem('nip46_pending_claim', JSON.stringify({
+        localStorage.setItem('nip46_pending_main', JSON.stringify({
           localSecretKey: localKeypair.secretKey,
           localPublicKey: localKeypair.publicKey,
-          secret: connectionSecret
+          secret: connectionSecret,
+          timestamp: Date.now()
         }));
         console.log('[NIP46] Claim page - stored pending credentials');
       }
@@ -299,7 +337,7 @@
       connectionStatus = 'connected';
 
       // Clean up localStorage on successful connection
-      localStorage.removeItem('nip46_pending_claim');
+      localStorage.removeItem('nip46_pending_main');
 
       // Verify the connected pubkey matches the target
       await verifyPubkey();
