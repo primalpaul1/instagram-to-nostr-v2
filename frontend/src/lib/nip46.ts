@@ -100,38 +100,105 @@ export async function waitForConnection(
   onConnecting?: () => void,
   timeoutMs: number = 300000 // 5 minutes
 ): Promise<NIP46Connection> {
-  const localSecretKeyBytes = hexToBytes(localSecretKey);
+  const { getConversationKey, decrypt: nip44Decrypt } = await import('nostr-tools/nip44');
 
-  console.log('[NIP46-QR] Starting waitForConnection');
-  console.log('[NIP46-QR] Connection URI:', connectionURI.slice(0, 100) + '...');
+  const localSecretKeyBytes = hexToBytes(localSecretKey);
+  const localPublicKey = getPublicKey(localSecretKeyBytes);
+
+  console.log('[NIP46-QR] Starting waitForConnection (ZapTrax-style)');
+  console.log('[NIP46-QR] Local pubkey:', localPublicKey.slice(0, 16) + '...');
   console.log('[NIP46-QR] Timeout:', timeoutMs, 'ms');
 
   onConnecting?.();
 
-  try {
-    // Use BunkerSigner.fromURI which handles waiting for the connection
-    console.log('[NIP46-QR] Calling BunkerSigner.fromURI...');
-    const signer = await BunkerSigner.fromURI(
-      localSecretKeyBytes,
-      connectionURI,
-      {}, // params
-      timeoutMs
-    );
+  return new Promise(async (resolve, reject) => {
+    let relay: Relay | null = null;
+    let timeoutId: ReturnType<typeof setTimeout>;
+    let resolved = false;
 
-    console.log('[NIP46-QR] BunkerSigner created, getting public key...');
-    // Get the remote pubkey from the signer
-    const remotePubkey = await signer.getPublicKey();
-    console.log('[NIP46-QR] Got remote pubkey:', remotePubkey.slice(0, 16) + '...');
-
-    return {
-      signer,
-      remotePubkey,
-      localSecretKey
+    const cleanup = () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      if (relay) {
+        try { relay.close(); } catch {}
+      }
     };
-  } catch (err) {
-    console.error('[NIP46-QR] Error in waitForConnection:', err);
-    throw err;
-  }
+
+    timeoutId = setTimeout(() => {
+      if (!resolved) {
+        console.log('[NIP46-QR] Timeout waiting for connection');
+        cleanup();
+        reject(new Error('Connection timeout'));
+      }
+    }, timeoutMs);
+
+    try {
+      console.log('[NIP46-QR] Connecting to relay:', NIP46_RELAYS[0]);
+      relay = await Relay.connect(NIP46_RELAYS[0]);
+      console.log('[NIP46-QR] Connected to relay, subscribing...');
+
+      // Subscribe to NIP-46 events tagged to our local pubkey
+      relay.subscribe([{
+        kinds: [NostrConnect],
+        '#p': [localPublicKey],
+        limit: 0 // Only real-time events
+      }], {
+        onevent: async (event: Event) => {
+          console.log('[NIP46-QR] Event received from:', event.pubkey.slice(0, 16) + '...');
+
+          if (resolved) return;
+
+          // Verify #p tag
+          const pTags = event.tags.filter(t => t[0] === 'p').map(t => t[1]);
+          if (!pTags.includes(localPublicKey)) {
+            console.log('[NIP46-QR] Event not tagged to us, skipping');
+            return;
+          }
+
+          try {
+            // Decrypt the response
+            const conversationKey = getConversationKey(localSecretKeyBytes, event.pubkey);
+            const decrypted = nip44Decrypt(event.content, conversationKey);
+            console.log('[NIP46-QR] Decrypted:', decrypted.slice(0, 100));
+
+            const response = JSON.parse(decrypted);
+
+            // Check if this is the connection ACK
+            if (response.result === secret || response.result === 'ack' || response.result === true) {
+              console.log('[NIP46-QR] SUCCESS! Got ACK from:', event.pubkey.slice(0, 16) + '...');
+
+              resolved = true;
+              cleanup();
+
+              // The event.pubkey is the remote signer's pubkey (user's Nostr pubkey)
+              const remotePubkey = event.pubkey;
+
+              // Create BunkerSigner with known pubkey (ZapTrax-style)
+              const bunkerPointer = {
+                pubkey: remotePubkey,
+                relays: NIP46_RELAYS
+              };
+              const signer = BunkerSigner.fromBunker(localSecretKeyBytes, bunkerPointer, {});
+
+              resolve({
+                signer,
+                remotePubkey,
+                localSecretKey
+              });
+            }
+          } catch (err) {
+            console.log('[NIP46-QR] Failed to decrypt event:', err);
+          }
+        },
+        oneose: () => {
+          console.log('[NIP46-QR] EOSE received, waiting for real-time events...');
+        }
+      });
+    } catch (err) {
+      console.error('[NIP46-QR] Connection error:', err);
+      cleanup();
+      reject(err);
+    }
+  });
 }
 
 /**
