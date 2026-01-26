@@ -102,24 +102,36 @@ export async function waitForConnection(
 ): Promise<NIP46Connection> {
   const localSecretKeyBytes = hexToBytes(localSecretKey);
 
+  console.log('[NIP46-QR] Starting waitForConnection');
+  console.log('[NIP46-QR] Connection URI:', connectionURI.slice(0, 100) + '...');
+  console.log('[NIP46-QR] Timeout:', timeoutMs, 'ms');
+
   onConnecting?.();
 
-  // Use BunkerSigner.fromURI which handles waiting for the connection
-  const signer = await BunkerSigner.fromURI(
-    localSecretKeyBytes,
-    connectionURI,
-    {}, // params
-    timeoutMs
-  );
+  try {
+    // Use BunkerSigner.fromURI which handles waiting for the connection
+    console.log('[NIP46-QR] Calling BunkerSigner.fromURI...');
+    const signer = await BunkerSigner.fromURI(
+      localSecretKeyBytes,
+      connectionURI,
+      {}, // params
+      timeoutMs
+    );
 
-  // Get the remote pubkey from the signer
-  const remotePubkey = await signer.getPublicKey();
+    console.log('[NIP46-QR] BunkerSigner created, getting public key...');
+    // Get the remote pubkey from the signer
+    const remotePubkey = await signer.getPublicKey();
+    console.log('[NIP46-QR] Got remote pubkey:', remotePubkey.slice(0, 16) + '...');
 
-  return {
-    signer,
-    remotePubkey,
-    localSecretKey
-  };
+    return {
+      signer,
+      remotePubkey,
+      localSecretKey
+    };
+  } catch (err) {
+    console.error('[NIP46-QR] Error in waitForConnection:', err);
+    throw err;
+  }
 }
 
 /**

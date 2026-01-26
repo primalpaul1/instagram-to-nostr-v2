@@ -142,6 +142,9 @@
   async function waitForPrimalConnection() {
     if (!localKeypair || !connectionURI) return;
 
+    console.log('[HandleStep] waitForPrimalConnection starting...');
+    console.log('[HandleStep] localPublicKey:', localKeypair.publicKey);
+
     try {
       const connection = await waitForConnection(
         localKeypair.secretKey,
@@ -149,6 +152,9 @@
         connectionURI,
         () => { connectionStatus = 'waiting'; }
       );
+
+      console.log('[HandleStep] Connection established!');
+      console.log('[HandleStep] remotePubkey:', connection.remotePubkey);
 
       pendingConnection = connection;
       connectionStatus = 'connected';
