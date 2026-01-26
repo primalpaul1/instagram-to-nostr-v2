@@ -228,6 +228,14 @@ export async function waitForConnectionResponse(
 
           if (resolved) return;
 
+          // VERIFY: Event must be tagged to OUR localPublicKey
+          // Don't trust relay filtering - verify the #p tag explicitly
+          const pTags = event.tags.filter(t => t[0] === 'p').map(t => t[1]);
+          if (!pTags.includes(localPublicKey)) {
+            console.log('[NIP46-Recovery] Event not tagged to our pubkey, skipping');
+            return;
+          }
+
           try {
             const conversationKey = getConversationKey(localSecretKeyBytes, event.pubkey);
             const decrypted = nip44Decrypt(event.content, conversationKey);
