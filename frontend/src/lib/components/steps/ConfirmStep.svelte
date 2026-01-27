@@ -27,7 +27,56 @@
 
     try {
       if (isNip46Mode) {
-        wizard.setStep('progress-nip46');
+        // Create self-proposal for async flow
+        const selectedPostsData = $selectedPosts.map(p => ({
+          id: p.id,
+          post_type: p.post_type,
+          caption: p.caption,
+          original_date: p.original_date,
+          thumbnail_url: p.thumbnail_url,
+          media_items: p.media_items
+        }));
+
+        const selectedArticlesData = $selectedArticles.map(a => ({
+          title: a.title,
+          summary: a.summary,
+          content_markdown: a.content_markdown,
+          published_at: a.published_at,
+          link: a.link,
+          image_url: a.image_url,
+          hashtags: a.hashtags
+        }));
+
+        const userNpub = hexToNpub($wizard.nip46Pubkey!);
+
+        const response = await fetch('/api/proposals', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            handle: $wizard.handle,
+            targetNpub: userNpub,
+            preparedByNpub: userNpub, // Same = self-proposal
+            posts: isArticlesMode ? [] : selectedPostsData,
+            articles: isArticlesMode ? selectedArticlesData : [],
+            profile: $wizard.profile,
+            proposal_type: $wizard.contentType,
+            feed: $wizard.feedInfo ? {
+              url: $wizard.handle,
+              title: $wizard.feedInfo.title,
+              description: $wizard.feedInfo.description,
+              image_url: $wizard.feedInfo.image_url
+            } : undefined
+          })
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.message || 'Failed to create proposal');
+        }
+
+        const data = await response.json();
+        wizard.setProposalToken(data.claimToken, data.claimUrl);
+        wizard.setStep('proposal-created');
       } else if (isArticlesMode) {
         // Articles are published directly from ProgressStep, no job needed
         wizard.setStep('progress');
@@ -193,16 +242,6 @@
         <li>Publish to Nostr relays</li>
       {/if}
     </ul>
-    {#if isNip46Mode}
-      <div class="warning-note">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
-          <line x1="12" y1="9" x2="12" y2="13"/>
-          <line x1="12" y1="17" x2="12.01" y2="17"/>
-        </svg>
-        <span>Keep this tab open during publishing</span>
-      </div>
-    {/if}
   </div>
 
   <div class="actions">

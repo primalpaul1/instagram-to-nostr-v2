@@ -6,6 +6,7 @@
   import ConfirmStep from '$lib/components/steps/ConfirmStep.svelte';
   import ProgressStep from '$lib/components/steps/ProgressStep.svelte';
   import ProgressStepNIP46 from '$lib/components/steps/ProgressStepNIP46.svelte';
+  import ProposalCreatedStep from '$lib/components/steps/ProposalCreatedStep.svelte';
   import CompleteStep from '$lib/components/steps/CompleteStep.svelte';
   import { wizard } from '$lib/stores/wizard';
 </script>
@@ -23,6 +24,8 @@
     <ProgressStep />
   {:else if $wizard.step === 'progress-nip46'}
     <ProgressStepNIP46 />
+  {:else if $wizard.step === 'proposal-created'}
+    <ProposalCreatedStep />
   {:else if $wizard.step === 'complete'}
     <CompleteStep />
   {/if}

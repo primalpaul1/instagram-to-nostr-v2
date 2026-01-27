@@ -140,6 +140,11 @@
   $: completedCount = completedPostCount + completedArticleCount;
   $: progressPercent = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
 
+  // Detect self-proposals (user prepared their own content)
+  $: isSelfProposal = proposal?.prepared_by
+    ? proposal.prepared_by.npub === proposal.targetNpub
+    : false;
+
   const token = $page.params.token;
 
   onMount(async () => {
@@ -753,7 +758,7 @@
 
     {:else if step === 'preview' && proposal}
       <div class="preview-step">
-        {#if proposal.prepared_by}
+        {#if proposal.prepared_by && !isSelfProposal}
           <div class="prepared-by">
             {#if proposal.prepared_by.picture}
               <img src={proposal.prepared_by.picture} alt="" class="prepared-by-pic" />
@@ -770,21 +775,35 @@
         {/if}
         <div class="gift-icon">
           <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="20 12 20 22 4 22 4 12"/>
-            <rect x="2" y="7" width="20" height="5"/>
-            <line x1="12" y1="22" x2="12" y2="7"/>
-            <path d="M12 7H7.5a2.5 2.5 0 010-5C11 2 12 7 12 7z"/>
-            <path d="M12 7h4.5a2.5 2.5 0 000-5C13 2 12 7 12 7z"/>
+            {#if isSelfProposal}
+              <path d="M20 6L9 17l-5-5"/>
+            {:else}
+              <polyline points="20 12 20 22 4 22 4 12"/>
+              <rect x="2" y="7" width="20" height="5"/>
+              <line x1="12" y1="22" x2="12" y2="7"/>
+              <path d="M12 7H7.5a2.5 2.5 0 010-5C11 2 12 7 12 7z"/>
+              <path d="M12 7h4.5a2.5 2.5 0 000-5C13 2 12 7 12 7z"/>
+            {/if}
           </svg>
         </div>
-        <h2>Your Content is Ready!</h2>
+        <h2>{isSelfProposal ? 'Your Content is Ready!' : 'Your Content is Ready!'}</h2>
         <p class="subtitle">
-          {#if proposal.proposal_type === 'articles'}
-            Someone prepared your RSS content for Nostr
-          {:else if proposal.proposal_type === 'combined'}
-            Someone prepared your @{proposal.handle} posts + articles for Nostr
+          {#if isSelfProposal}
+            {#if proposal.proposal_type === 'articles'}
+              Your articles are ready to publish to Nostr
+            {:else if proposal.proposal_type === 'combined'}
+              Your @{proposal.handle} posts + articles are ready to publish
+            {:else}
+              Your @{proposal.handle} content is ready to publish
+            {/if}
           {:else}
-            Someone prepared your @{proposal.handle} content for Nostr
+            {#if proposal.proposal_type === 'articles'}
+              Someone prepared your RSS content for Nostr
+            {:else if proposal.proposal_type === 'combined'}
+              Someone prepared your @{proposal.handle} posts + articles for Nostr
+            {:else}
+              Someone prepared your @{proposal.handle} content for Nostr
+            {/if}
           {/if}
         </p>
 
@@ -943,14 +962,18 @@
         {/if}
 
         <button class="primary-btn" on:click={startConnect}>
-          Connect Primal to Claim
+          {isSelfProposal ? 'Connect Primal to Publish' : 'Connect Primal to Claim'}
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M5 12h14M12 5l7 7-7 7"/>
           </svg>
         </button>
 
         <p class="disclaimer">
-          You'll sign this content with Primal. Only the account matching the target npub can claim it.
+          {#if isSelfProposal}
+            Connect with Primal to sign and publish your content to Nostr.
+          {:else}
+            You'll sign this content with Primal. Only the account matching the target npub can claim it.
+          {/if}
         </p>
       </div>
 

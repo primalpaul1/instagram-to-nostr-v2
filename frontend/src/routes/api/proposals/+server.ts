@@ -1,6 +1,7 @@
 import { json } from '@sveltejs/kit';
 import { createProposalWithContent, type ProposalPostInput, type ProposalArticleInput } from '$lib/server/db';
 import { npubToHex } from '$lib/nip46';
+import { sendClaimLinkDM } from '$lib/server/nostr-dm';
 import type { RequestHandler } from './$types';
 
 function generateId(): string {
@@ -251,6 +252,14 @@ export const POST: RequestHandler = async ({ request, url }) => {
     // Build the claim URL
     const baseUrl = url.origin || 'https://ownyourposts.com';
     const claimUrl = `${baseUrl}/claim/${claimToken}`;
+
+    // Send DM notification for self-proposals (fire and forget)
+    if (preparedByNpub && preparedByNpub === targetNpub) {
+      console.log('[Proposals API] Self-proposal detected, sending DM notification');
+      sendClaimLinkDM(targetPubkeyHex, claimUrl).catch(err => {
+        console.error('[Proposals API] DM send error (non-blocking):', err);
+      });
+    }
 
     console.log('[Proposals API] Success! proposalId:', proposalId, 'claimUrl:', claimUrl);
     return json({

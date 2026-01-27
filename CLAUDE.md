@@ -122,6 +122,7 @@ cd frontend && npm run build
 | `CONCURRENCY` | worker | `3` |
 | `MAX_RETRIES` | worker | `3` |
 | `NOSTR_RELAYS` | worker | `wss://relay.primal.net,wss://relay.damus.io,wss://nos.lol` |
+| `NOSTR_SERVICE_NSEC` | frontend | (none) - Optional nsec for service account DM notifications |
 
 ## Database Schema
 

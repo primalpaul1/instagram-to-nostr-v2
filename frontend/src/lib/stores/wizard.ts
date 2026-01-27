@@ -8,6 +8,7 @@ export type WizardStep =
   | 'confirm'
   | 'progress'
   | 'progress-nip46'
+  | 'proposal-created'
   | 'complete';
 
 export type AuthMode = 'generate' | 'nip46';
@@ -99,6 +100,8 @@ export interface WizardState {
   profile: ProfileInfo | null;
   jobId: string | null;
   migrationId: string | null;  // For client-side signing flow
+  proposalToken: string | null;  // For async self-proposal flow
+  proposalClaimUrl: string | null;  // Full claim URL for self-proposal
   error: string | null;
   loading: boolean;
   authMode: AuthMode;
@@ -134,6 +137,8 @@ const initialState: WizardState = {
   profile: null,
   jobId: null,
   migrationId: null,
+  proposalToken: null,
+  proposalClaimUrl: null,
   error: null,
   loading: false,
   authMode: 'generate',
@@ -158,6 +163,8 @@ function createWizardStore() {
     setSourceType: (sourceType: 'instagram' | 'tiktok' | 'twitter' | 'rss' | null) => update(s => ({ ...s, sourceType })),
     setProfile: (profile: ProfileInfo | null) => update(s => ({ ...s, profile })),
     setMigrationId: (migrationId: string | null) => update(s => ({ ...s, migrationId })),
+    setProposalToken: (proposalToken: string | null, proposalClaimUrl: string | null = null) =>
+      update(s => ({ ...s, proposalToken, proposalClaimUrl })),
     // Toggle video (backwards compatibility)
     toggleVideo: (url: string) => update(s => ({
       ...s,
