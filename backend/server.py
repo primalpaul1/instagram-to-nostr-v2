@@ -1044,9 +1044,20 @@ def html_to_markdown(html: str, base_url: str = '') -> tuple[str, list[str]]:
             # Remove images with no valid URL (broken placeholders)
             img.decompose()
 
-    # Remove unwanted elements
-    for elem in soup.find_all(['script', 'style', 'iframe', 'noscript']):
+    # Remove unwanted elements (but preserve iframe sources as links)
+    for elem in soup.find_all(['script', 'style', 'noscript']):
         elem.decompose()
+
+    # Convert iframes to links (preserves embedded content URLs)
+    for iframe in soup.find_all('iframe'):
+        src = iframe.get('src', '')
+        if src:
+            # Create a link to the embedded content
+            link = soup.new_tag('a', href=src)
+            link.string = src
+            iframe.replace_with(link)
+        else:
+            iframe.decompose()
 
     # Convert to Markdown
     markdown = md(
