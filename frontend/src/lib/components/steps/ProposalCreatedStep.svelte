@@ -64,19 +64,19 @@
     </p>
   </div>
 
-  <div class="info-card">
-    <div class="info-header">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <circle cx="12" cy="12" r="10"/>
-        <path d="M12 16v-4M12 8h.01"/>
-      </svg>
-      <span>What happens next</span>
-    </div>
-    <ul class="info-list">
-      <li>Your content is uploading in the background</li>
-      <li>You can close this tab - you'll get a DM with the link</li>
-      <li>When ready, visit your claim link to sign and publish</li>
-    </ul>
+  <button class="primary-btn" on:click={goToClaimPage}>
+    Go to Claim Page
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M5 12h14M12 5l7 7-7 7"/>
+    </svg>
+  </button>
+
+  <div class="dm-notice">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+      <polyline points="22,6 12,13 2,6"/>
+    </svg>
+    <span>We'll send you a Nostr DM with this link as a backup</span>
   </div>
 
   <div class="claim-url-card">
@@ -105,21 +105,6 @@
       </button>
     </div>
     <p class="url-hint">Save this link - you'll need it to complete your migration</p>
-  </div>
-
-  <button class="primary-btn" on:click={goToClaimPage}>
-    Go to Claim Page
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-      <path d="M5 12h14M12 5l7 7-7 7"/>
-    </svg>
-  </button>
-
-  <div class="dm-notice">
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-      <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
-      <polyline points="22,6 12,13 2,6"/>
-    </svg>
-    <span>We'll send you a Nostr DM with this link as a backup</span>
   </div>
 
   <button class="secondary-btn" on:click={handleStartOver}>
@@ -173,36 +158,6 @@
     color: var(--text-secondary);
     font-size: 0.9375rem;
     line-height: 1.5;
-  }
-
-  .info-card {
-    background: rgba(var(--accent-rgb), 0.08);
-    border: 1px solid rgba(var(--accent-rgb), 0.2);
-    border-radius: 0.875rem;
-    padding: 1.25rem;
-    margin-bottom: 1.5rem;
-    text-align: left;
-  }
-
-  .info-header {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    color: var(--accent);
-    font-size: 0.875rem;
-    font-weight: 600;
-    margin-bottom: 0.75rem;
-  }
-
-  .info-list {
-    margin: 0;
-    padding-left: 1.5rem;
-    color: var(--text-secondary);
-    font-size: 0.8125rem;
-  }
-
-  .info-list li {
-    padding: 0.25rem 0;
   }
 
   .claim-url-card {

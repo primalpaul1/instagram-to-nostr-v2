@@ -300,8 +300,8 @@
                       });
                     }
                   }
-                  // Skip KeysStep for generate mode, go directly to videos
-                  wizard.setStep($wizard.authMode === 'nip46' ? 'keys' : 'videos');
+                  // Always go directly to videos step
+                  wizard.setStep('videos');
                   await tick();
                   return;
                 } else {
@@ -319,8 +319,8 @@
                     wizard.setProfile(data.profile);
                   }
                 }
-                // Skip KeysStep for generate mode, go directly to videos
-                wizard.setStep($wizard.authMode === 'nip46' ? 'keys' : 'videos');
+                // Always go directly to videos step
+                wizard.setStep('videos');
                 return;
               }
             } catch (parseErr) {
@@ -384,8 +384,8 @@
         wizard.setProfile(fetchedProfile);
       }
     }
-    // Skip KeysStep for generate mode, go directly to videos
-    wizard.setStep($wizard.authMode === 'nip46' ? 'keys' : 'videos');
+    // Always go directly to videos step
+    wizard.setStep('videos');
   }
 </script>
 

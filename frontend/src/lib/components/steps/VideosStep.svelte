@@ -2,6 +2,7 @@
   import { onDestroy } from 'svelte';
   import { wizard, reelPosts, imagePosts, selectedPosts, selectedPostsCount, selectedArticles, selectedArticlesCount, setMediaCache, getMediaCache } from '$lib/stores/wizard';
   import type { PostInfo, MediaItemInfo, ArticleInfo } from '$lib/stores/wizard';
+  import { hexToNpub } from '$lib/nip46';
 
   let isCreatingMigration = false;
 
@@ -80,18 +81,85 @@
     wizard.setStep('handle');
   }
 
-  function handleContinue() {
+  async function handleContinue() {
     const count = $wizard.contentType === 'articles' ? $selectedArticlesCount : totalSelectedCount;
     if (count === 0) return;
 
-    // For NIP-46 mode, go to confirm to create self-proposal
+    // For NIP-46 mode, create proposal directly and go to proposal-created
     if ($wizard.authMode === 'nip46') {
-      wizard.setStep('confirm');
+      await handleCreateProposal();
       return;
     }
 
     // For generate mode, create migration and go to progress
     handleClaimPosts();
+  }
+
+  async function handleCreateProposal() {
+    if (isCreatingMigration) return;
+
+    isCreatingMigration = true;
+    wizard.setLoading(true);
+    wizard.setError(null);
+
+    try {
+      const isArticlesMode = $wizard.contentType === 'articles';
+
+      const selectedPostsData = $selectedPosts.map(p => ({
+        id: p.id,
+        post_type: p.post_type,
+        caption: p.caption,
+        original_date: p.original_date,
+        thumbnail_url: p.thumbnail_url,
+        media_items: p.media_items
+      }));
+
+      const selectedArticlesData = $selectedArticles.map(a => ({
+        title: a.title,
+        summary: a.summary,
+        content_markdown: a.content_markdown,
+        published_at: a.published_at,
+        link: a.link,
+        image_url: a.image_url,
+        hashtags: a.hashtags
+      }));
+
+      const userNpub = hexToNpub($wizard.nip46Pubkey!);
+
+      const response = await fetch('/api/proposals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          handle: $wizard.handle,
+          targetNpub: userNpub,
+          preparedByNpub: userNpub, // Same = self-proposal
+          posts: isArticlesMode ? [] : selectedPostsData,
+          articles: isArticlesMode ? selectedArticlesData : [],
+          profile: $wizard.profile,
+          proposal_type: $wizard.contentType,
+          feed: $wizard.feedInfo ? {
+            url: $wizard.handle,
+            title: $wizard.feedInfo.title,
+            description: $wizard.feedInfo.description,
+            image_url: $wizard.feedInfo.image_url
+          } : undefined
+        })
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to create proposal');
+      }
+
+      const data = await response.json();
+      wizard.setProposalToken(data.claimToken, data.claimUrl);
+      wizard.setStep('proposal-created');
+    } catch (err) {
+      wizard.setError(err instanceof Error ? err.message : 'An error occurred');
+    } finally {
+      isCreatingMigration = false;
+      wizard.setLoading(false);
+    }
   }
 
   async function handleClaimPosts() {
@@ -358,7 +426,7 @@
           <div class="btn-spinner"></div>
           Creating migration...
         {:else if $wizard.authMode === 'nip46'}
-          Publish {$selectedArticlesCount} Article{$selectedArticlesCount !== 1 ? 's' : ''}
+          Prepare {$selectedArticlesCount} Article{$selectedArticlesCount !== 1 ? 's' : ''}
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M5 12h14M12 5l7 7-7 7"/>
           </svg>
@@ -465,7 +533,7 @@
           <div class="btn-spinner"></div>
           Creating migration...
         {:else if $wizard.authMode === 'nip46'}
-          Publish {totalSelectedCount} Tweet{totalSelectedCount !== 1 ? 's' : ''}
+          Prepare {totalSelectedCount} Tweet{totalSelectedCount !== 1 ? 's' : ''}
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M5 12h14M12 5l7 7-7 7"/>
           </svg>
@@ -617,7 +685,7 @@
           <div class="btn-spinner"></div>
           Creating migration...
         {:else if $wizard.authMode === 'nip46'}
-          Publish {totalSelectedCount} Post{totalSelectedCount !== 1 ? 's' : ''}
+          Prepare {totalSelectedCount} Post{totalSelectedCount !== 1 ? 's' : ''}
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M5 12h14M12 5l7 7-7 7"/>
           </svg>
