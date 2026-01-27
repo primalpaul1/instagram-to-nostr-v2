@@ -56,7 +56,8 @@
       localSecretKey: localKeypair.secretKey,
       localPublicKey: localKeypair.publicKey,
       secret: connectionSecret,
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      returnUrl: window.location.pathname
     }));
 
     // Redirect to signer app
