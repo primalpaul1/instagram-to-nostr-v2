@@ -80,20 +80,25 @@
         const FIVE_MINUTES = 5 * 60 * 1000;
 
         console.log('[HandleStep] Connection age:', age, 'ms, valid:', age < FIVE_MINUTES);
-        console.log('[HandleStep] remotePubkey from storage:', data.remotePubkey);
+        console.log('[HandleStep] bunkerPubkey from storage:', data.bunkerPubkey);
+        console.log('[HandleStep] userPubkey from storage:', data.userPubkey);
 
         if (age < FIVE_MINUTES) {
           console.log('[NIP46] Restoring connection from callback...');
           connectionStatus = 'waiting';
 
+          // Support both new format (bunkerPubkey/userPubkey) and old format (remotePubkey)
+          const bunkerPubkey = data.bunkerPubkey || data.remotePubkey;
+          const userPubkey = data.userPubkey || data.remotePubkey;
+
           // Recreate the signer with the saved credentials
-          const connection = await createSignerWithKnownPubkey(data.localSecretKey, data.remotePubkey);
+          const connection = await createSignerWithKnownPubkey(data.localSecretKey, bunkerPubkey);
 
           pendingConnection = connection;
           connectionStatus = 'connected';
 
           wizard.setAuthMode('nip46');
-          wizard.setNIP46Connection(connection, data.remotePubkey);
+          wizard.setNIP46Connection(connection, userPubkey);
 
           localStorage.removeItem('nip46_connected');
           console.log('[NIP46] Connection restored successfully!');

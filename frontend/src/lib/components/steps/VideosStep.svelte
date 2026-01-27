@@ -84,9 +84,9 @@
     const count = $wizard.contentType === 'articles' ? $selectedArticlesCount : totalSelectedCount;
     if (count === 0) return;
 
-    // For NIP-46 mode, go directly to progress-nip46 (skip confirm)
+    // For NIP-46 mode, go to confirm to create self-proposal
     if ($wizard.authMode === 'nip46') {
-      wizard.setStep('progress-nip46');
+      wizard.setStep('confirm');
       return;
     }
 
