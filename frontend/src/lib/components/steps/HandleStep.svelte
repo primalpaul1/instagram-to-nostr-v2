@@ -871,10 +871,7 @@
   }
 
   .primal-section {
-    background: var(--bg-tertiary);
-    border: 1px solid var(--border);
-    border-radius: 0.875rem;
-    padding: 1.25rem;
+    padding: 0;
   }
 
   .primal-header {
@@ -901,13 +898,9 @@
 
   /* Tighter mobile layout */
   @media (max-width: 480px) {
-    .primal-section {
-      padding: 1rem;
-    }
-
     .qr-container {
       min-height: auto;
-      padding: 0.5rem 0;
+      padding: 0;
     }
 
     .mobile-waiting {
@@ -1085,24 +1078,23 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 0.75rem;
+    gap: 0.5rem;
     width: 100%;
-    padding: 0.875rem 1.25rem;
+    padding: 0.875rem 1.5rem;
     background: linear-gradient(135deg, #8B5CF6 0%, #A855F7 50%, #D946EF 100%);
     border: none;
     border-radius: 0.75rem;
     color: white;
-    font-size: 0.9375rem;
+    font-size: 1rem;
     font-weight: 600;
     cursor: pointer;
     text-decoration: none;
     transition: all 0.2s ease;
-    box-shadow: 0 4px 14px rgba(139, 92, 246, 0.4);
   }
 
   .primal-login-btn:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 20px rgba(139, 92, 246, 0.5);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 20px rgba(139, 92, 246, 0.4);
   }
 
   .primal-login-btn:active {
