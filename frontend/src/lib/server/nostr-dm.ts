@@ -83,10 +83,10 @@ export async function sendClaimLinkDM(
 
     const message = `Your content is being prepared for Nostr!
 
-When it's ready, claim it here:
+When it's ready, copy this link and paste it on the web:
 ${claimUrl}
 
-This usually takes just a few minutes.
+This takes a few minutes to upload and only seconds to sign.
 
 - OwnYourPosts.com`;
 
