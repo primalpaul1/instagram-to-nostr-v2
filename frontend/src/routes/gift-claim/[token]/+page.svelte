@@ -16,7 +16,7 @@
   } from '$lib/signing';
   import FollowPacks from '$lib/components/FollowPacks.svelte';
 
-  type PageStep = 'loading' | 'preview' | 'publishing' | 'error';
+  type PageStep = 'loading' | 'preparing' | 'preview' | 'publishing' | 'error';
 
   interface GiftPost {
     id: number;
@@ -134,6 +134,11 @@
     autoFollowSuggestedAccounts();
   }
 
+  // Preparing state (gift still being processed by worker)
+  let preparingTotal = 0;
+  let preparingReady = 0;
+  let preparingPollInterval: ReturnType<typeof setInterval> | null = null;
+
   // Resume state - track how many were already published
   let alreadyPublishedCount = 0;
   let isResuming = false;
@@ -202,6 +207,7 @@
 
   onDestroy(() => {
     if (sayingInterval) clearInterval(sayingInterval);
+    if (preparingPollInterval) clearInterval(preparingPollInterval);
   });
 
   function generateKeypair(): Keypair {
@@ -247,8 +253,23 @@
       }
 
       if (data.status === 'pending' || data.status === 'processing') {
-        error = 'This gift is still being prepared. Please check back in a few minutes.';
-        step = 'error';
+        // Show preparing UI and poll for updates
+        gift = {
+          ...data,
+          posts: data.posts || [],
+          articles: data.articles || [],
+          suggested_follows: data.suggested_follows || []
+        };
+
+        // Count total and ready items
+        const allPosts = data.posts || [];
+        const allArticles = data.articles || [];
+        preparingTotal = allPosts.length + allArticles.length;
+        preparingReady = allPosts.filter((p: any) => p.status === 'ready' || p.status === 'published').length
+          + allArticles.filter((a: any) => a.status === 'ready' || a.status === 'published').length;
+
+        step = 'preparing';
+        startPreparingPoll();
         return;
       }
 
@@ -269,6 +290,48 @@
       error = err instanceof Error ? err.message : 'Failed to load gift';
       step = 'error';
     }
+  }
+
+  function startPreparingPoll() {
+    if (preparingPollInterval) clearInterval(preparingPollInterval);
+    preparingPollInterval = setInterval(async () => {
+      try {
+        const response = await fetch(`/api/gifts/${token}`);
+        if (!response.ok) return;
+        const data = await response.json();
+
+        const allPosts = data.posts || [];
+        const allArticles = data.articles || [];
+        preparingTotal = allPosts.length + allArticles.length;
+        preparingReady = allPosts.filter((p: any) => p.status === 'ready' || p.status === 'published').length
+          + allArticles.filter((a: any) => a.status === 'ready' || a.status === 'published').length;
+
+        if (data.status === 'ready' || data.status === 'claimed') {
+          // Gift is ready, stop polling and show preview
+          if (preparingPollInterval) clearInterval(preparingPollInterval);
+          preparingPollInterval = null;
+
+          gift = {
+            ...data,
+            posts: allPosts,
+            articles: allArticles,
+            suggested_follows: data.suggested_follows || []
+          };
+
+          if (data.status === 'claimed') {
+            error = 'This gift has already been claimed.';
+            step = 'error';
+          } else {
+            step = 'preview';
+            if (gift!.suggested_follows.length > 0) {
+              await fetchSuggestedFollowProfiles(gift!.suggested_follows);
+            }
+          }
+        }
+      } catch {
+        // Ignore poll errors, will retry
+      }
+    }, 3000);
   }
 
   async function fetchSuggestedFollowProfiles(npubs: string[]) {
@@ -781,6 +844,27 @@
         <a href="/" class="secondary-btn">Go to Homepage</a>
       </div>
 
+    {:else if step === 'preparing'}
+      <div class="preparing-step">
+        <div class="spinner-large"></div>
+        <h2>Preparing your content</h2>
+        <p class="subtitle">Your media is being uploaded. You can leave this page and come back later, or wait here.</p>
+        {#if preparingTotal > 0}
+          <div class="preparing-progress">
+            <div class="preparing-bar">
+              <div class="preparing-fill" style="width: {preparingTotal > 0 ? (preparingReady / preparingTotal) * 100 : 0}%"></div>
+            </div>
+            <span class="preparing-count">{preparingReady} of {preparingTotal} items ready</span>
+          </div>
+        {/if}
+        <div class="bookmark-hint">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/>
+          </svg>
+          <span>Bookmark this page to return later</span>
+        </div>
+      </div>
+
     {:else if step === 'preview' && gift}
       <div class="preview-step">
         {#if gift.prepared_by}
@@ -1214,6 +1298,57 @@
 
   @keyframes spin {
     to { transform: rotate(360deg); }
+  }
+
+  .preparing-step {
+    text-align: center;
+    padding: 3rem 0;
+  }
+
+  .preparing-step h2 {
+    margin-bottom: 0.5rem;
+  }
+
+  .preparing-step .subtitle {
+    color: var(--text-secondary);
+    margin-bottom: 2rem;
+    line-height: 1.5;
+  }
+
+  .preparing-progress {
+    margin-bottom: 1.5rem;
+  }
+
+  .preparing-bar {
+    height: 6px;
+    background: var(--bg-tertiary);
+    border-radius: 3px;
+    overflow: hidden;
+    margin-bottom: 0.5rem;
+  }
+
+  .preparing-fill {
+    height: 100%;
+    background: linear-gradient(135deg, #a855f7 0%, #8b5cf6 100%);
+    border-radius: 3px;
+    transition: width 0.5s ease;
+  }
+
+  .preparing-count {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+  }
+
+  .bookmark-hint {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    background: rgba(168, 85, 247, 0.1);
+    border-radius: 0.75rem;
+    color: #a855f7;
+    font-size: 0.875rem;
   }
 
   .error-step {

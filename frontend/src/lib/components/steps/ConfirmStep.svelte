@@ -77,11 +77,10 @@
         const data = await response.json();
         wizard.setProposalToken(data.claimToken, data.claimUrl);
         wizard.setStep('proposal-created');
-      } else if (isArticlesMode) {
-        // Articles are published directly from ProgressStep, no job needed
-        wizard.setStep('progress');
       } else {
-        const posts = $selectedPosts.map(p => ({
+        // Standard flow: create a gift (self-gift) so user can close browser
+        // Worker uploads media server-side, user returns to claim URL to sign client-side
+        const selectedPostsData = $selectedPosts.map(p => ({
           id: p.id,
           post_type: p.post_type,
           caption: p.caption,
@@ -90,26 +89,53 @@
           media_items: p.media_items
         }));
 
-        const response = await fetch('/api/jobs', {
+        const selectedArticlesData = $selectedArticles.map(a => ({
+          title: a.title,
+          summary: a.summary,
+          content_markdown: a.content_markdown,
+          published_at: a.published_at,
+          link: a.link,
+          image_url: a.image_url,
+          hashtags: a.hashtags
+        }));
+
+        // Determine gift type
+        const hasPosts = selectedPostsData.length > 0;
+        const hasArticles = selectedArticlesData.length > 0;
+        let giftType: 'posts' | 'articles' | 'combined' = 'posts';
+        if (hasPosts && hasArticles) {
+          giftType = 'combined';
+        } else if (hasArticles) {
+          giftType = 'articles';
+        }
+
+        const response = await fetch('/api/gifts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             handle: $wizard.handle,
-            publicKey: $wizard.keyPair?.publicKey,
-            secretKey: $wizard.keyPair?.secretKey,
-            posts,
-            profile: $wizard.profile
+            posts: hasPosts ? selectedPostsData : undefined,
+            articles: hasArticles ? selectedArticlesData : undefined,
+            profile: $wizard.profile,
+            gift_type: giftType,
+            feed: $wizard.feedInfo ? {
+              url: $wizard.handle,
+              title: $wizard.feedInfo.title,
+              description: $wizard.feedInfo.description,
+              image_url: $wizard.feedInfo.image_url
+            } : undefined
           })
         });
 
         if (!response.ok) {
           const error = await response.json();
-          throw new Error(error.message || 'Failed to create job');
+          throw new Error(error.message || 'Failed to create gift');
         }
 
         const data = await response.json();
-        wizard.setJobId(data.jobId);
-        wizard.setStep('progress');
+        // Redirect to the gift claim page
+        window.location.href = data.claimUrl;
+        return;
       }
     } catch (err) {
       wizard.setError(err instanceof Error ? err.message : 'An error occurred');
@@ -232,14 +258,21 @@
       <span>What happens next</span>
     </div>
     <ul class="info-list">
-      {#if isArticlesMode}
-        <li>Upload images to Blossom media server</li>
-        <li>Create long-form content events</li>
-        <li>Publish to Nostr relays</li>
+      {#if isNip46Mode}
+        {#if isArticlesMode}
+          <li>Upload images to Blossom media server</li>
+          <li>Create long-form content events</li>
+          <li>Publish to Nostr relays</li>
+        {:else}
+          <li>Content downloads from Instagram</li>
+          <li>Upload to Blossom media server</li>
+          <li>Publish to Nostr relays</li>
+        {/if}
       {:else}
-        <li>Content downloads from Instagram</li>
-        <li>Upload to Blossom media server</li>
-        <li>Publish to Nostr relays</li>
+        <li>We'll upload your media in the background</li>
+        <li>You'll get a link to claim your posts</li>
+        <li>Generate your keys and publish client-side</li>
+        <li>You can close your phone while we prepare</li>
       {/if}
     </ul>
   </div>
