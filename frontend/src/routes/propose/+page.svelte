@@ -545,10 +545,10 @@
               class:active={platform === 'instagram'}
               on:click={() => platform = 'instagram'}
             >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/>
               </svg>
-              Instagram
+              Insta
             </button>
             <button
               type="button"
@@ -556,7 +556,7 @@
               class:active={platform === 'tiktok'}
               on:click={() => platform = 'tiktok'}
             >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-5.2 1.74 2.89 2.89 0 0 1 2.31-4.64 2.93 2.93 0 0 1 .88.13V9.4a6.84 6.84 0 0 0-1-.05A6.33 6.33 0 0 0 5 20.1a6.34 6.34 0 0 0 10.86-4.43v-7a8.16 8.16 0 0 0 4.77 1.52v-3.4a4.85 4.85 0 0 1-1-.1z"/>
               </svg>
               TikTok
@@ -567,10 +567,10 @@
               class:active={platform === 'twitter'}
               on:click={() => platform = 'twitter'}
             >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
               </svg>
-              X
+              Twitter
             </button>
             <button
               type="button"
@@ -578,10 +578,10 @@
               class:active={platform === 'rss'}
               on:click={() => platform = 'rss'}
             >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M6.18 15.64a2.18 2.18 0 0 1 2.18 2.18C8.36 19 7.38 20 6.18 20C5 20 4 19 4 17.82a2.18 2.18 0 0 1 2.18-2.18M4 4.44A15.56 15.56 0 0 1 19.56 20h-2.83A12.73 12.73 0 0 0 4 7.27V4.44m0 5.66a9.9 9.9 0 0 1 9.9 9.9h-2.83A7.07 7.07 0 0 0 4 12.93V10.1z"/>
               </svg>
-              RSS/Blog
+              Blog
             </button>
           </div>
 
@@ -1083,16 +1083,20 @@
   .platform-btn {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.625rem 1rem;
+    gap: 0.375rem;
+    padding: 0.5rem 0.75rem;
     border: 1px solid var(--border);
     border-radius: 0.5rem;
     background: transparent;
     color: var(--text-secondary);
-    font-size: 0.875rem;
+    font-size: 0.8125rem;
     font-weight: 500;
     cursor: pointer;
     transition: all 0.15s ease;
+  }
+
+  .platform-btn svg {
+    flex-shrink: 0;
   }
 
   .platform-btn:hover {
@@ -1937,5 +1941,35 @@
 
   .input-hint.error {
     color: var(--error, #ef4444);
+  }
+
+  @media (max-width: 480px) {
+    .platform-btn {
+      gap: 0.25rem;
+      padding: 0.4rem 0.5rem;
+      font-size: 0.75rem;
+    }
+
+    .platform-btn svg {
+      width: 16px;
+      height: 16px;
+    }
+  }
+
+  @media (max-width: 380px) {
+    .platform-toggle {
+      gap: 0.25rem;
+    }
+
+    .platform-btn {
+      gap: 0.2rem;
+      padding: 0.35rem 0.4rem;
+      font-size: 0.6875rem;
+    }
+
+    .platform-btn svg {
+      width: 14px;
+      height: 14px;
+    }
   }
 </style>
