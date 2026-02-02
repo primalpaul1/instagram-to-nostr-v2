@@ -251,7 +251,7 @@ export const POST: RequestHandler = async ({ request, url }) => {
 
     // Build the claim URL
     const baseUrl = url.origin || 'https://ownyourposts.com';
-    const claimUrl = `${baseUrl}/claim/${claimToken}`;
+    const claimUrl = `${baseUrl}/claim/${encodeURIComponent(proposalHandle)}/${claimToken}`;
 
     // Send DM notification for self-proposals (fire and forget)
     if (preparedByNpub && preparedByNpub === targetNpub) {

@@ -244,7 +244,7 @@ export const POST: RequestHandler = async ({ request, url }) => {
 
     // Build the claim URL
     const baseUrl = url.origin || 'https://ownyourposts.com';
-    const claimUrl = `${baseUrl}/gift-claim/${claimToken}`;
+    const claimUrl = `${baseUrl}/gift-claim/${encodeURIComponent(giftHandle)}/${claimToken}`;
 
     return json({
       giftId,
