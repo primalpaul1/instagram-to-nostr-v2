@@ -137,7 +137,7 @@
               <img src="https://r2.primal.net/cache/d/07/1e/d071efe93be39d551e7d7d0e8437c5fb9d465ad91086c831fa3161591638019e.jpg" alt="Jack Dorsey" class="quote-avatar-img" />
               <div class="quote-info">
                 <strong>Jack Dorsey</strong>
-                <span>Founder of Twitter. Put $21M+ into Nostr.</span>
+                <span>Founder of Twitter. Put $21M+ into Nostr. Primal's first Legend customer.</span>
               </div>
             </a>
             <a href="https://www.youtube.com/watch?v=MaZyXEU5XAg" target="_blank" rel="noopener noreferrer" class="quote-source">
