@@ -2,6 +2,17 @@
   import { onMount } from 'svelte';
 
   let isMobile = false;
+  let activeMeme = 0;
+  let memeGrid: HTMLElement;
+
+  function handleMemeScroll() {
+    if (!memeGrid) return;
+    const cards = memeGrid.querySelectorAll('.meme-card');
+    const scrollLeft = memeGrid.scrollLeft;
+    const cardWidth = (cards[0] as HTMLElement)?.offsetWidth ?? 1;
+    const gap = 12; // 0.75rem
+    activeMeme = Math.round(scrollLeft / (cardWidth + gap));
+  }
 
   onMount(() => {
     isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
@@ -205,7 +216,8 @@
       <h2>Understand Primal in memes</h2>
       <p class="section-sub">Because sometimes a meme explains it better than a whitepaper.</p>
 
-      <div class="meme-grid">
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div class="meme-grid" bind:this={memeGrid} on:scroll={handleMemeScroll}>
         <div class="meme-card">
           <img src="/meme-morpheus.jpg" alt="What if I told you... you never needed permission to post online" class="meme-img-real" loading="lazy" />
         </div>
@@ -229,6 +241,11 @@
         <div class="meme-card">
           <img src="/meme-freedom.jpg" alt="Nostr and Bitcoin fueling freedom" class="meme-img-real" loading="lazy" />
         </div>
+      </div>
+      <div class="swipe-hint">
+        {#each Array(6) as _, i}
+          <span class:active={activeMeme === i}></span>
+        {/each}
       </div>
     </section>
 
@@ -884,6 +901,11 @@
     border-radius: 0.75rem;
   }
 
+  /* ---- SWIPE HINT (mobile only) ---- */
+  .swipe-hint {
+    display: none;
+  }
+
   /* ---- MIGRATE SECTION ---- */
   .migrate-section {
     text-align: center;
@@ -1286,7 +1308,42 @@
     }
 
     .meme-grid {
-      grid-template-columns: 1fr;
+      display: flex;
+      overflow-x: auto;
+      scroll-snap-type: x mandatory;
+      -webkit-overflow-scrolling: touch;
+      gap: 0.75rem;
+      padding-bottom: 0.5rem;
+      scrollbar-width: none;        /* Firefox */
+    }
+
+    .meme-grid::-webkit-scrollbar {
+      display: none;                /* Chrome/Safari */
+    }
+
+    .meme-card {
+      flex: 0 0 75%;
+      scroll-snap-align: center;
+    }
+
+    .swipe-hint {
+      display: flex;
+      justify-content: center;
+      gap: 0.375rem;
+      padding-top: 0.75rem;
+    }
+
+    .swipe-hint span {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--text-muted);
+      opacity: 0.3;
+    }
+
+    .swipe-hint span.active {
+      opacity: 0.8;
+      background: var(--accent);
     }
 
     .migrate-btn {
