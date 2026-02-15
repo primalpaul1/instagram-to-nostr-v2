@@ -654,12 +654,15 @@ ${primalUrl}
     }
 
     .key-actions {
-      flex-direction: column;
+      flex-direction: row;
     }
 
     .key-btn {
-      width: 100%;
+      flex: 1;
       justify-content: center;
+      padding: 0.625rem 0.75rem;
+      font-size: 0.8125rem;
+      white-space: nowrap;
     }
   }
 

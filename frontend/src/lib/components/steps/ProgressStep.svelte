@@ -909,50 +909,52 @@ Store it somewhere safe!
     <div class="whats-next-section">
       <h3>What's Next?</h3>
 
-      <div class="step-card" class:highlight={!keySaved}>
-        <div class="step-number">1</div>
-        <div class="step-content">
-          <h4>Save Your Key</h4>
-          <p>This is your Primal identity - keep it safe!</p>
-          <div class="key-actions">
-            <button class="action-btn" on:click={copyNsec}>
-              {#if nsecCopied}
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M20 6L9 17l-5-5"/>
-                </svg>
-                Copied!
-              {:else}
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-                  <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
-                </svg>
-                Copy Key
-              {/if}
-            </button>
-            <button class="action-btn" on:click={downloadKey}>
-              {#if keyDownloaded}
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M20 6L9 17l-5-5"/>
-                </svg>
-                Downloaded!
-              {:else}
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
-                  <polyline points="7 10 12 15 17 10"/>
-                  <line x1="12" y1="15" x2="12" y2="3"/>
-                </svg>
-                Download Key
-              {/if}
-            </button>
+      <div class="step-card step-card-col" class:highlight={!keySaved}>
+        <div class="step-card-header">
+          <div class="step-number">1</div>
+          <div class="step-content">
+            <h4>Save Your Key</h4>
+            <p>Your key is your password & Primal identity. Keep it safe!</p>
           </div>
+        </div>
+        <div class="key-actions">
+          <button class="action-btn" on:click={copyNsec}>
+            {#if nsecCopied}
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M20 6L9 17l-5-5"/>
+              </svg>
+              Copied!
+            {:else}
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+              </svg>
+              Copy Key
+            {/if}
+          </button>
+          <button class="action-btn" on:click={downloadKey}>
+            {#if keyDownloaded}
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M20 6L9 17l-5-5"/>
+              </svg>
+              Downloaded!
+            {:else}
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                <polyline points="7 10 12 15 17 10"/>
+                <line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+              Download Key
+            {/if}
+          </button>
         </div>
       </div>
 
       <div class="step-card" class:disabled={!keySaved}>
-        <img src="/primal-logo.png" alt="Primal" class="primal-logo" />
+        <div class="step-number">2</div>
         <div class="step-content">
-          <h4>Get Primal App</h4>
-          <p>Access your content anywhere</p>
+          <h4>Get Primal</h4>
+          <p class="one-line">Click here to download from the app store</p>
           <a
             href={getPrimalDownloadUrl()}
             target="_blank"
@@ -961,11 +963,7 @@ Store it somewhere safe!
             class:disabled={!keySaved}
             aria-disabled={!keySaved}
           >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
-              <polyline points="7 10 12 15 17 10"/>
-              <line x1="12" y1="15" x2="12" y2="3"/>
-            </svg>
+            <img src="/primal-logo.png" alt="" class="btn-primal-logo" />
             Get Primal
           </a>
           {#if !keySaved}
@@ -1428,10 +1426,27 @@ Store it somewhere safe!
   }
 
   .step-content p {
-    font-size: 0.8125rem;
+    font-size: 0.75rem;
     color: var(--text-secondary);
-    margin-bottom: 0.75rem;
+    margin-bottom: 0;
     line-height: 1.4;
+  }
+
+  .step-content p.one-line {
+    white-space: nowrap;
+    font-size: 0.6875rem;
+  }
+
+  .step-card-col {
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 1rem;
+  }
+
+  .step-card-header {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
   }
 
   .key-actions {
@@ -1442,6 +1457,7 @@ Store it somewhere safe!
   .key-actions .action-btn {
     flex: 1;
     justify-content: center;
+    white-space: nowrap;
   }
 
   .action-btn {
@@ -1457,6 +1473,7 @@ Store it somewhere safe!
     font-weight: 500;
     cursor: pointer;
     transition: all 0.2s;
+    white-space: nowrap;
   }
 
   .action-btn:hover {
@@ -1465,6 +1482,13 @@ Store it somewhere safe!
   }
 
   .action-btn svg {
+    flex-shrink: 0;
+  }
+
+  .btn-primal-logo {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
     flex-shrink: 0;
   }
 
