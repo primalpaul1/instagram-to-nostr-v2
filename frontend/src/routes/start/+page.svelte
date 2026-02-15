@@ -267,7 +267,7 @@
     <!-- BRING YOUR CONTENT -->
     <section class="section migrate-section">
       <div class="migrate-badge">It takes 2 minutes</div>
-      <h2>Bring your Instagram<br/>content with you</h2>
+      <h2>Bring your content to Primal</h2>
       <p class="section-sub">Your posts don't have to stay trapped. We'll move them to your new Primal profile so you don't start from zero.</p>
 
       <div class="migrate-steps">
@@ -276,6 +276,29 @@
           <div class="migrate-step-text">
             <strong>Enter your handle</strong>
             <span>We find your public Instagram posts</span>
+          </div>
+        </div>
+
+        <!-- Visual mockup of the input UI -->
+        <div class="mockup-input">
+          <div class="mockup-tabs">
+            <div class="mockup-tab mockup-tab-active">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="5"/><circle cx="18" cy="6" r="1.5" fill="currentColor" stroke="none"/></svg>
+              Insta
+            </div>
+            <div class="mockup-tab">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-2.88 2.5 2.89 2.89 0 0 1 0-5.78 2.93 2.93 0 0 1 .88.13V9.4a6.84 6.84 0 0 0-1-.05A5.32 5.32 0 0 0 4.05 15a5.32 5.32 0 0 0 5.32 4.67A5.32 5.32 0 0 0 14.7 14V8.28a8.33 8.33 0 0 0 4.89 1.58V6.69z"/></svg>
+              TikTok
+            </div>
+            <div class="mockup-tab">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+              Twitter
+            </div>
+          </div>
+          <div class="mockup-field">
+            <span class="mockup-at">@</span>
+            <span class="mockup-handle">paulinthejungle</span>
+            <span class="mockup-cursor"></span>
           </div>
         </div>
         <div class="migrate-step">
@@ -932,6 +955,75 @@
     width: 100%;
     display: block;
     border-radius: 0.75rem;
+  }
+
+  /* ---- MOCKUP INPUT ---- */
+  .mockup-input {
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;
+    pointer-events: none;
+    user-select: none;
+    margin-top: -0.25rem;
+    margin-bottom: 0.25rem;
+  }
+
+  .mockup-tabs {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: center;
+  }
+
+  .mockup-tab {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.375rem 0.75rem;
+    border-radius: 2rem;
+    border: 1px solid var(--border-light);
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--text-muted);
+    background: transparent;
+  }
+
+  .mockup-tab-active {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: rgba(250, 60, 131, 0.08);
+  }
+
+  .mockup-field {
+    display: flex;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    border-radius: 0.75rem;
+    border: 1px solid rgba(250, 60, 131, 0.4);
+    background: var(--bg-tertiary);
+  }
+
+  .mockup-at {
+    color: var(--text-muted);
+    font-size: 0.9375rem;
+    margin-right: 0.25rem;
+  }
+
+  .mockup-handle {
+    color: var(--text-primary);
+    font-size: 0.9375rem;
+    font-weight: 500;
+  }
+
+  .mockup-cursor {
+    width: 2px;
+    height: 1.125rem;
+    background: var(--accent);
+    margin-left: 1px;
+    animation: blink 1s step-end infinite;
+  }
+
+  @keyframes blink {
+    50% { opacity: 0; }
   }
 
   /* ---- SWIPE HINT (mobile only) ---- */
