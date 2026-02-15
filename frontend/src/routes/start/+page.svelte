@@ -4,6 +4,7 @@
   let isMobile = false;
   let activeMeme = 0;
   let memeGrid: HTMLElement;
+  let videoPlaying = false;
 
   function handleMemeScroll() {
     if (!memeGrid) return;
@@ -41,15 +42,29 @@
 
     <!-- VIDEO -->
     <section class="video-section">
-      <a href="https://youtu.be/heJ5Iw_UpD8?si=wAzy7TpTIZOZHoe8" target="_blank" rel="noopener noreferrer" class="video-thumbnail">
-        <img src="https://img.youtube.com/vi/heJ5Iw_UpD8/maxresdefault.jpg" alt="Watch: What is Primal?" loading="eager" />
-        <div class="play-button">
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="white">
-            <path d="M8 5v14l11-7z"/>
-          </svg>
+      {#if videoPlaying}
+        <div class="video-embed">
+          <iframe
+            src="https://www.youtube.com/embed/heJ5Iw_UpD8?autoplay=1&rel=0"
+            title="What is Primal?"
+            frameborder="0"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowfullscreen
+          ></iframe>
         </div>
-        <div class="video-label">Watch the overview</div>
-      </a>
+      {:else}
+        <!-- svelte-ignore a11y_click_events_have_key_events -->
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div class="video-thumbnail" on:click={() => videoPlaying = true}>
+          <img src="https://img.youtube.com/vi/heJ5Iw_UpD8/maxresdefault.jpg" alt="Watch: What is Primal?" loading="eager" />
+          <div class="play-button">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="white">
+              <path d="M8 5v14l11-7z"/>
+            </svg>
+          </div>
+          <div class="video-label">Watch the overview</div>
+        </div>
+      {/if}
     </section>
 
     <!-- PLATFORM COMPARISON -->
@@ -483,6 +498,23 @@
     margin-bottom: 0.75rem;
   }
 
+  .video-embed {
+    position: relative;
+    padding-bottom: 56.25%; /* 16:9 */
+    border-radius: 1rem;
+    overflow: hidden;
+    border: 1px solid var(--border-light);
+  }
+
+  .video-embed iframe {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    border: none;
+  }
+
   .video-thumbnail {
     display: block;
     position: relative;
@@ -491,6 +523,7 @@
     border: 1px solid var(--border-light);
     transition: all 0.3s ease;
     text-decoration: none;
+    cursor: pointer;
   }
 
   .video-thumbnail:hover {
