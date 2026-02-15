@@ -308,6 +308,21 @@
             <span>Choose which posts to bring over</span>
           </div>
         </div>
+
+        <!-- Animated post selection mockup -->
+        <div class="mockup-grid" aria-hidden="true">
+          {#each [1,2,3,4,5,6,7,8] as n, i}
+            <div class="mockup-post" style="animation-delay: {0.8 + i * 0.6}s">
+              <img src="/thumb-{n}.jpg" alt="" class="mockup-thumb-img" loading="lazy" />
+              <div class="mockup-check" style="animation-delay: {0.8 + i * 0.6}s">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3.5">
+                  <path d="M20 6L9 17l-5-5"/>
+                </svg>
+              </div>
+            </div>
+          {/each}
+        </div>
+
         <div class="migrate-step">
           <div class="migrate-step-num">3</div>
           <div class="migrate-step-text">
@@ -1024,6 +1039,91 @@
 
   @keyframes blink {
     50% { opacity: 0; }
+  }
+
+  /* ---- MOCKUP GRID (animated post selection) ---- */
+  .mockup-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 2px;
+    border-radius: 0.5rem;
+    overflow: hidden;
+    pointer-events: none;
+    user-select: none;
+    margin-top: -0.25rem;
+    margin-bottom: 0.25rem;
+  }
+
+  .mockup-post {
+    position: relative;
+    aspect-ratio: 1;
+    overflow: hidden;
+  }
+
+  .mockup-thumb-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .mockup-check {
+    position: absolute;
+    top: 0.2rem;
+    right: 0.2rem;
+    width: 1rem;
+    height: 1rem;
+    background: var(--accent);
+    border-radius: 3px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transform: scale(0.5);
+  }
+
+  .mockup-post {
+    animation: mockup-select 4.8s ease infinite;
+  }
+
+  @keyframes mockup-select {
+    0%, 10% {
+      outline: none;
+    }
+    15% {
+      outline: 2px solid var(--accent);
+      outline-offset: -2px;
+    }
+    85% {
+      outline: 2px solid var(--accent);
+      outline-offset: -2px;
+    }
+    90%, 100% {
+      outline: none;
+    }
+  }
+
+  .mockup-post .mockup-check {
+    animation: mockup-check-pop 4.8s ease infinite;
+  }
+
+  @keyframes mockup-check-pop {
+    0%, 10% {
+      opacity: 0;
+      transform: scale(0.5);
+    }
+    18% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    82% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    90%, 100% {
+      opacity: 0;
+      transform: scale(0.5);
+    }
   }
 
   /* ---- SWIPE HINT (mobile only) ---- */

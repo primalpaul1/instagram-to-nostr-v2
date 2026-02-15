@@ -548,9 +548,9 @@
 
   {:else}
     <!-- Posts Selection UI (Instagram/TikTok) -->
-    <div class="header">
-      <h2>Choose posts to own forever</h2>
-      <p class="subtitle">Select the content you want to bring to Primal</p>
+    <div class="header compact">
+      <h2>Own your posts forever</h2>
+      <p class="subtitle">Tap to select, then claim on Primal</p>
     </div>
 
     <div class="tabs">
@@ -580,26 +580,10 @@
       </button>
     </div>
 
-    <div class="toolbar">
-      <div class="selection-badge" class:has-selection={currentSelectedCount > 0}>
-        <span class="count">{currentSelectedCount}</span>
-        <span class="label">of {currentPosts.length} selected</span>
-      </div>
-      <div class="toolbar-actions">
-        <button class="text-btn" on:click={selectAllCurrentTab}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="3" y="3" width="18" height="18" rx="2"/>
-            <path d="M9 12l2 2 4-4"/>
-          </svg>
-          Select All
-        </button>
-        <button class="text-btn" on:click={deselectAllCurrentTab}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="3" y="3" width="18" height="18" rx="2"/>
-          </svg>
-          Clear
-        </button>
-      </div>
+    <div class="toolbar-inline">
+      <span class="selection-inline" class:has-selection={currentSelectedCount > 0}>{currentSelectedCount} of {currentPosts.length}</span>
+      <button class="link-btn" on:click={selectAllCurrentTab}>Select All</button>
+      <button class="link-btn" on:click={deselectAllCurrentTab}>Clear</button>
     </div>
 
     <div class="posts-grid">
@@ -615,11 +599,11 @@
             {:else}
               <div class="placeholder">
                 {#if post.post_type === 'reel'}
-                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                     <polygon points="5 3 19 12 5 21 5 3"/>
                   </svg>
                 {:else}
-                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                     <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
                     <circle cx="8.5" cy="8.5" r="1.5"/>
                     <polyline points="21 15 16 10 5 21"/>
@@ -636,7 +620,7 @@
 
             {#if post.post_type === 'carousel'}
               <span class="carousel-badge">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <rect x="2" y="2" width="16" height="16" rx="2"/>
                   <rect x="6" y="6" width="16" height="16" rx="2"/>
                 </svg>
@@ -646,22 +630,14 @@
 
             <div class="select-indicator" class:checked={post.selected}>
               {#if post.selected}
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5">
                   <path d="M20 6L9 17l-5-5"/>
                 </svg>
               {/if}
             </div>
-            <div class="overlay"></div>
-          </div>
-          <div class="post-meta">
-            {#if post.caption}
-              <p class="caption">{post.caption.slice(0, 50)}{post.caption.length > 50 ? '...' : ''}</p>
-            {:else}
-              <p class="caption empty">No caption</p>
-            {/if}
-            <div class="details">
-              {#if post.original_date}
-                <span>{formatDate(post.original_date)}</span>
+            <div class="caption-overlay">
+              {#if post.caption}
+                <span class="caption-text">{post.caption.split('\n')[0].slice(0, 40)}</span>
               {/if}
             </div>
           </div>
@@ -710,16 +686,24 @@
     margin-bottom: 1.5rem;
   }
 
+  .header.compact {
+    margin-bottom: 0.75rem;
+  }
+
   h2 {
     font-size: 1.5rem;
     font-weight: 600;
-    margin-bottom: 0.5rem;
+    margin-bottom: 0.25rem;
     letter-spacing: -0.02em;
+  }
+
+  .header.compact h2 {
+    font-size: 1.25rem;
   }
 
   .subtitle {
     color: var(--text-secondary);
-    font-size: 0.9375rem;
+    font-size: 0.875rem;
   }
 
   .tabs {
@@ -771,72 +755,47 @@
     color: var(--accent);
   }
 
-  .toolbar {
+  .toolbar-inline {
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    padding: 0.875rem 1rem;
-    background: var(--bg-tertiary);
-    border: 1px solid var(--border);
-    border-radius: 0.75rem;
-    margin-bottom: 1rem;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+    font-size: 0.8125rem;
   }
 
-  .selection-badge {
-    display: flex;
-    align-items: baseline;
-    gap: 0.375rem;
-  }
-
-  .selection-badge .count {
-    font-size: 1.25rem;
-    font-weight: 700;
+  .selection-inline {
     color: var(--text-muted);
-    transition: color 0.2s ease;
+    font-weight: 500;
   }
 
-  .selection-badge.has-selection .count {
+  .selection-inline.has-selection {
     color: var(--accent);
   }
 
-  .selection-badge .label {
-    font-size: 0.875rem;
-    color: var(--text-muted);
-  }
-
-  .toolbar-actions {
-    display: flex;
-    gap: 0.25rem;
-  }
-
-  .text-btn {
-    display: flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0.5rem 0.75rem;
+  .link-btn {
     background: none;
     border: none;
     color: var(--text-secondary);
     font-size: 0.8125rem;
     font-weight: 500;
     cursor: pointer;
-    border-radius: 0.5rem;
-    transition: all 0.2s ease;
+    padding: 0;
+    transition: color 0.15s ease;
   }
 
-  .text-btn:hover {
-    background: var(--bg-primary);
+  .link-btn:hover {
     color: var(--text-primary);
   }
 
   .posts-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-    gap: 0.875rem;
-    max-height: 420px;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1px;
+    max-height: 480px;
     overflow-y: auto;
-    padding: 0.25rem;
     margin-bottom: 1.5rem;
+    border-radius: 0.375rem;
+    overflow-x: hidden;
   }
 
   .posts-grid::-webkit-scrollbar {
@@ -855,23 +814,23 @@
 
   .post-card {
     background: var(--bg-tertiary);
-    border: 2px solid transparent;
-    border-radius: 0.75rem;
+    border: none;
+    border-radius: 0;
     overflow: hidden;
     cursor: pointer;
     text-align: left;
     padding: 0;
-    transition: all 0.2s ease;
+    transition: all 0.15s ease;
+    position: relative;
   }
 
   .post-card:hover {
-    border-color: var(--border-light);
-    transform: translateY(-2px);
+    opacity: 0.85;
   }
 
   .post-card.selected {
-    border-color: var(--accent);
-    background: rgba(var(--accent-rgb), 0.08);
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
   }
 
   .thumbnail-wrapper {
@@ -901,92 +860,75 @@
     color: var(--text-muted);
   }
 
-  .overlay {
+  .caption-overlay {
     position: absolute;
-    inset: 0;
-    background: linear-gradient(to top, rgba(0,0,0,0.6) 0%, transparent 50%);
-    opacity: 0;
-    transition: opacity 0.2s ease;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: rgba(0, 0, 0, 0.45);
+    padding: 0.125rem 0.25rem;
+    pointer-events: none;
   }
 
-  .post-card:hover .overlay {
-    opacity: 1;
+  .caption-text {
+    display: block;
+    font-size: 0.5rem;
+    line-height: 1.2;
+    color: rgba(255, 255, 255, 0.85);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .duration {
     position: absolute;
-    bottom: 0.5rem;
-    right: 0.5rem;
-    padding: 0.25rem 0.5rem;
+    bottom: 0.25rem;
+    right: 0.25rem;
+    padding: 0.125rem 0.375rem;
     background: rgba(0, 0, 0, 0.75);
     backdrop-filter: blur(4px);
     border-radius: 0.25rem;
-    font-size: 0.6875rem;
+    font-size: 0.625rem;
     font-weight: 600;
     color: white;
   }
 
   .carousel-badge {
     position: absolute;
-    bottom: 0.5rem;
-    right: 0.5rem;
+    bottom: 0.25rem;
+    right: 0.25rem;
     display: flex;
     align-items: center;
-    gap: 0.25rem;
-    padding: 0.25rem 0.5rem;
+    gap: 0.125rem;
+    padding: 0.125rem 0.375rem;
     background: rgba(0, 0, 0, 0.75);
     backdrop-filter: blur(4px);
     border-radius: 0.25rem;
-    font-size: 0.6875rem;
+    font-size: 0.625rem;
     font-weight: 600;
     color: white;
   }
 
   .select-indicator {
     position: absolute;
-    top: 0.5rem;
-    right: 0.5rem;
-    width: 1.5rem;
-    height: 1.5rem;
-    background: rgba(0, 0, 0, 0.5);
+    top: 0.2rem;
+    right: 0.2rem;
+    width: 1rem;
+    height: 1rem;
+    background: rgba(0, 0, 0, 0.35);
     backdrop-filter: blur(4px);
-    border: 2px solid rgba(255, 255, 255, 0.5);
-    border-radius: 0.375rem;
+    border: 1.5px solid rgba(255, 255, 255, 0.4);
+    border-radius: 3px;
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: all 0.2s ease;
+    transition: all 0.15s ease;
   }
 
   .select-indicator.checked {
     background: var(--accent);
     border-color: var(--accent);
     color: white;
-  }
-
-  .post-meta {
-    padding: 0.75rem;
-  }
-
-  .caption {
-    font-size: 0.75rem;
-    line-height: 1.4;
-    color: var(--text-primary);
-    margin-bottom: 0.375rem;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
-
-  .caption.empty {
-    color: var(--text-muted);
-    font-style: italic;
-  }
-
-  .details {
-    font-size: 0.6875rem;
-    color: var(--text-muted);
   }
 
   .empty-state {
@@ -1063,21 +1005,8 @@
 
   @media (max-width: 500px) {
     .posts-grid {
-      grid-template-columns: repeat(2, 1fr);
-    }
-
-    .toolbar {
-      flex-direction: column;
-      gap: 0.75rem;
-      align-items: stretch;
-    }
-
-    .selection-badge {
-      justify-content: center;
-    }
-
-    .toolbar-actions {
-      justify-content: center;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1px;
     }
 
     .tabs {
