@@ -14,7 +14,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
-COPY db.py worker.py schema.sql ./
+COPY db.py worker.py email_notify.py schema.sql ./
 
 # Ensure Python output is not buffered (for docker logs)
 ENV PYTHONUNBUFFERED=1
