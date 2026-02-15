@@ -6,6 +6,7 @@
 
   let isCreatingMigration = false;
   let email = '';
+  let showEmailPrompt = false;
 
   // Pre-download state
   const MAX_CONCURRENT_DOWNLOADS = 3;
@@ -92,7 +93,16 @@
       return;
     }
 
-    // For generate mode, create migration and go to progress
+    // For generate mode, show email prompt first
+    showEmailPrompt = true;
+  }
+
+  async function handleEmailSubmit() {
+    handleClaimPosts();
+  }
+
+  async function handleEmailSkip() {
+    email = '';
     handleClaimPosts();
   }
 
@@ -719,25 +729,6 @@
       {/each}
     </div>
 
-    {#if $wizard.authMode !== 'nip46'}
-      <div class="email-notify">
-        <label for="notify-email">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="2" y="4" width="20" height="16" rx="2"/>
-            <path d="M22 7l-10 7L2 7"/>
-          </svg>
-          Get notified when ready (optional)
-        </label>
-        <input
-          id="notify-email"
-          type="email"
-          placeholder="your@email.com"
-          bind:value={email}
-          disabled={isCreatingMigration}
-        />
-      </div>
-    {/if}
-
     <div class="actions">
       <button class="secondary-btn" on:click={handleBack}>
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -761,6 +752,46 @@
           </svg>
         {/if}
       </button>
+    </div>
+  {/if}
+
+  {#if showEmailPrompt}
+    <div class="email-overlay">
+      <div class="email-prompt">
+        <div class="email-icon">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <rect x="2" y="4" width="20" height="16" rx="2"/>
+            <path d="M22 7l-10 7L2 7"/>
+          </svg>
+        </div>
+        <h2>Where should we send your link?</h2>
+        <p class="email-subtitle">We'll email you when your {$wizard.contentType === 'articles' ? 'articles are' : 'posts are'} ready to claim on Primal.</p>
+
+        <form on:submit|preventDefault={handleEmailSubmit}>
+          <input
+            type="email"
+            placeholder="Enter your email"
+            bind:value={email}
+            disabled={isCreatingMigration}
+            autofocus
+          />
+          <button type="submit" class="primary-btn" disabled={!email.trim() || isCreatingMigration}>
+            {#if isCreatingMigration}
+              <span class="btn-spinner"></span>
+              Setting up...
+            {:else}
+              Continue
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M5 12h14M12 5l7 7-7 7"/>
+              </svg>
+            {/if}
+          </button>
+        </form>
+
+        <button class="skip-link" on:click={handleEmailSkip} disabled={isCreatingMigration}>
+          Skip, I'll keep this tab open
+        </button>
+      </div>
     </div>
   {/if}
 </div>
@@ -1027,38 +1058,100 @@
     color: var(--text-muted);
   }
 
-  .email-notify {
-    margin-bottom: 1rem;
-  }
-
-  .email-notify label {
+  .email-overlay {
+    position: fixed;
+    inset: 0;
+    background: var(--bg-primary);
+    z-index: 100;
     display: flex;
     align-items: center;
-    gap: 0.375rem;
-    font-size: 0.8125rem;
-    color: var(--text-secondary);
-    margin-bottom: 0.375rem;
+    justify-content: center;
+    padding: 1.5rem;
   }
 
-  .email-notify input {
+  .email-prompt {
+    max-width: 400px;
     width: 100%;
-    padding: 0.625rem 0.875rem;
+    text-align: center;
+  }
+
+  .email-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 64px;
+    height: 64px;
+    margin: 0 auto 1.5rem;
+    background: rgba(var(--accent-rgb), 0.12);
+    border-radius: 50%;
+    color: var(--accent);
+  }
+
+  .email-prompt h2 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+    letter-spacing: -0.02em;
+  }
+
+  .email-subtitle {
+    color: var(--text-secondary);
+    font-size: 0.9375rem;
+    line-height: 1.5;
+    margin-bottom: 2rem;
+  }
+
+  .email-prompt form {
+    display: flex;
+    flex-direction: column;
+    gap: 0.875rem;
+  }
+
+  .email-prompt input {
+    width: 100%;
+    padding: 0.875rem 1rem;
     background: var(--bg-tertiary);
-    border: 1px solid var(--border);
-    border-radius: 0.5rem;
+    border: 1.5px solid var(--border);
+    border-radius: 0.75rem;
     color: var(--text-primary);
-    font-size: 0.875rem;
+    font-size: 1rem;
     outline: none;
     transition: border-color 0.2s ease;
     box-sizing: border-box;
+    text-align: center;
   }
 
-  .email-notify input:focus {
+  .email-prompt input:focus {
     border-color: var(--accent);
   }
 
-  .email-notify input::placeholder {
+  .email-prompt input::placeholder {
     color: var(--text-muted);
+  }
+
+  .email-prompt .primary-btn {
+    width: 100%;
+  }
+
+  .skip-link {
+    display: inline-block;
+    margin-top: 1rem;
+    padding: 0.5rem;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 0.8125rem;
+    cursor: pointer;
+    transition: color 0.15s ease;
+  }
+
+  .skip-link:hover:not(:disabled) {
+    color: var(--text-secondary);
+  }
+
+  .skip-link:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 
   .actions {
