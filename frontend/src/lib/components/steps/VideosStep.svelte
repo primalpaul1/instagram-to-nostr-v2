@@ -1081,7 +1081,7 @@
     }
 
     .tabs {
-      flex-direction: column;
+      flex-direction: row;
     }
   }
 
