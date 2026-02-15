@@ -5,6 +5,7 @@
   import { hexToNpub } from '$lib/nip46';
 
   let isCreatingMigration = false;
+  let email = '';
 
   // Pre-download state
   const MAX_CONCURRENT_DOWNLOADS = 3;
@@ -169,6 +170,15 @@
     isCreatingMigration = true;
 
     try {
+      const trimmedEmail = email.trim();
+
+      // If user provided an email, use the gift flow (has a stable claim URL for the email link)
+      if (trimmedEmail) {
+        await createGiftWithEmail(trimmedEmail);
+        return;
+      }
+
+      // Otherwise, use the standard migration flow (client-side signing, no stable URL)
       // Determine source type
       const sourceType = $wizard.sourceType || ($wizard.contentType === 'articles' ? 'rss' : 'instagram');
 
@@ -272,6 +282,66 @@
     } finally {
       isCreatingMigration = false;
     }
+  }
+
+  async function createGiftWithEmail(userEmail: string) {
+    // Gift flow: creates a gift with a stable claim URL, worker uploads media,
+    // then sends email with the link so the user can return and claim later.
+    const selectedPostsData = $selectedPosts.map(p => ({
+      id: p.id,
+      post_type: p.post_type,
+      caption: p.caption,
+      original_date: p.original_date,
+      thumbnail_url: p.thumbnail_url,
+      media_items: p.media_items
+    }));
+
+    const selectedArticlesData = $selectedArticles.map(a => ({
+      title: a.title,
+      summary: a.summary,
+      content_markdown: a.content_markdown,
+      published_at: a.published_at,
+      link: a.link,
+      image_url: a.image_url,
+      hashtags: a.hashtags
+    }));
+
+    const hasPosts = selectedPostsData.length > 0;
+    const hasArticles = selectedArticlesData.length > 0;
+    let giftType: 'posts' | 'articles' | 'combined' = 'posts';
+    if (hasPosts && hasArticles) {
+      giftType = 'combined';
+    } else if (hasArticles) {
+      giftType = 'articles';
+    }
+
+    const response = await fetch('/api/gifts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        handle: $wizard.handle,
+        posts: hasPosts ? selectedPostsData : undefined,
+        articles: hasArticles ? selectedArticlesData : undefined,
+        profile: $wizard.profile,
+        gift_type: giftType,
+        feed: $wizard.feedInfo ? {
+          url: $wizard.handle,
+          title: $wizard.feedInfo.title,
+          description: $wizard.feedInfo.description,
+          image_url: $wizard.feedInfo.image_url
+        } : undefined,
+        email: userEmail
+      })
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Failed to create gift');
+    }
+
+    const data = await response.json();
+    // Redirect to the gift claim page (stable URL the email will also link to)
+    window.location.href = data.claimUrl;
   }
 
   function formatDuration(seconds?: number): string {
@@ -649,6 +719,25 @@
       {/each}
     </div>
 
+    {#if $wizard.authMode !== 'nip46'}
+      <div class="email-notify">
+        <label for="notify-email">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="2" y="4" width="20" height="16" rx="2"/>
+            <path d="M22 7l-10 7L2 7"/>
+          </svg>
+          Get notified when ready (optional)
+        </label>
+        <input
+          id="notify-email"
+          type="email"
+          placeholder="your@email.com"
+          bind:value={email}
+          disabled={isCreatingMigration}
+        />
+      </div>
+    {/if}
+
     <div class="actions">
       <button class="secondary-btn" on:click={handleBack}>
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -935,6 +1024,40 @@
     grid-column: 1 / -1;
     text-align: center;
     padding: 3rem;
+    color: var(--text-muted);
+  }
+
+  .email-notify {
+    margin-bottom: 1rem;
+  }
+
+  .email-notify label {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.375rem;
+  }
+
+  .email-notify input {
+    width: 100%;
+    padding: 0.625rem 0.875rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    outline: none;
+    transition: border-color 0.2s ease;
+    box-sizing: border-box;
+  }
+
+  .email-notify input:focus {
+    border-color: var(--accent);
+  }
+
+  .email-notify input::placeholder {
     color: var(--text-muted);
   }
 
