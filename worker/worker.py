@@ -47,6 +47,7 @@ from db import (
     increment_gift_article_attempts,
     cleanup_expired_gifts,
     reset_stale_processing_gifts,
+    mark_gift_email_sent,
     # Migration functions (client-side signing flow)
     claim_next_pending_migration,
     get_migration_posts,
@@ -955,6 +956,17 @@ async def process_gift(gift: dict) -> None:
         # Mark gift as ready
         update_gift_status(gift_id, "ready")
         print(f"Gift {gift_id} is ready for claiming")
+
+        # Send email notification if user provided an email
+        email = gift.get("email")
+        if email and mark_gift_email_sent(gift_id):
+            from email_notify import send_ready_email
+            claim_token = gift.get("claim_token")
+            post_count = len(posts)
+            try:
+                await send_ready_email(email, claim_token, gift["ig_handle"], post_count)
+            except Exception as email_err:
+                print(f"[Email] Failed to send notification for gift {gift_id}: {email_err}")
 
     except Exception as e:
         print(f"Failed to process gift {gift_id}: {e}")

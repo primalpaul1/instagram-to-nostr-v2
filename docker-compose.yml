@@ -44,6 +44,8 @@ services:
       - CONCURRENCY=8
       - MAX_RETRIES=3
       - NOSTR_RELAYS=wss://relay.primal.net,wss://relay.damus.io,wss://nos.lol
+      - RESEND_API_KEY=${RESEND_API_KEY}
+      - BASE_URL=https://ownyourposts.com
     volumes:
       - ./data:/data
     depends_on:

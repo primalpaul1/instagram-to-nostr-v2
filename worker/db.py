@@ -673,6 +673,25 @@ def update_gift_post_status(
             )
 
 
+def mark_gift_email_sent(gift_id: str) -> bool:
+    """Atomically mark a gift's email as sent.
+
+    Returns True if we set email_sent from 0 to 1 (i.e., we won the race),
+    False if it was already sent or no email exists.
+    Prevents duplicate email sends across multiple worker replicas.
+    """
+    with get_connection() as conn:
+        cursor = conn.execute(
+            """
+            UPDATE gifts
+            SET email_sent = 1
+            WHERE id = ? AND email IS NOT NULL AND email_sent = 0
+            """,
+            (gift_id,),
+        )
+        return cursor.rowcount > 0
+
+
 def cleanup_expired_gifts() -> int:
     """
     Delete gifts that:

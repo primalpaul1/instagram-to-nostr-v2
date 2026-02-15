@@ -3,6 +3,7 @@
   import { hexToNpub } from '$lib/nip46';
 
   let loading = false;
+  let email = '';
 
   $: isNip46Mode = $wizard.authMode === 'nip46';
   $: isArticlesMode = $wizard.contentType === 'articles';
@@ -123,7 +124,8 @@
               title: $wizard.feedInfo.title,
               description: $wizard.feedInfo.description,
               image_url: $wizard.feedInfo.image_url
-            } : undefined
+            } : undefined,
+            email: email.trim() || undefined
           })
         });
 
@@ -275,6 +277,18 @@
         <li>You can close your phone while we prepare</li>
       {/if}
     </ul>
+    {#if !isNip46Mode}
+      <div class="email-notify">
+        <label for="notify-email">Get notified when your content is ready (optional)</label>
+        <input
+          id="notify-email"
+          type="email"
+          placeholder="your@email.com"
+          bind:value={email}
+          disabled={loading}
+        />
+      </div>
+    {/if}
   </div>
 
   <div class="actions">
@@ -512,6 +526,40 @@
 
   .info-list li.highlight {
     color: var(--accent);
+  }
+
+  .email-notify {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid rgba(var(--accent-rgb), 0.2);
+  }
+
+  .email-notify label {
+    display: block;
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.5rem;
+  }
+
+  .email-notify input {
+    width: 100%;
+    padding: 0.625rem 0.875rem;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    outline: none;
+    transition: border-color 0.2s ease;
+    box-sizing: border-box;
+  }
+
+  .email-notify input:focus {
+    border-color: var(--accent);
+  }
+
+  .email-notify input::placeholder {
+    color: var(--text-muted);
   }
 
   .warning-note {

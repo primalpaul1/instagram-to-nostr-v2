@@ -131,7 +131,7 @@ async function fetchNostrProfile(npub: string): Promise<{ name: string | null; p
 export const POST: RequestHandler = async ({ request, url }) => {
   try {
     const body = await request.json();
-    const { handle, posts, profile, gift_type, articles, feed, suggested_follows, preparedByNpub } = body as {
+    const { handle, posts, profile, gift_type, articles, feed, suggested_follows, preparedByNpub, email } = body as {
       handle: string;
       posts?: PostInput[];
       profile?: ProfileInput;
@@ -140,6 +140,7 @@ export const POST: RequestHandler = async ({ request, url }) => {
       feed?: FeedInput;
       suggested_follows?: string[];
       preparedByNpub?: string;
+      email?: string;
     };
 
     const giftType = gift_type || 'posts';
@@ -230,6 +231,9 @@ export const POST: RequestHandler = async ({ request, url }) => {
 
     // Create gift with all content atomically - prevents race conditions
     // where the gift or posts could be lost due to concurrent database writes
+    // Validate email format if provided
+    const validEmail = email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : undefined;
+
     await createGiftWithContent(
       giftId,
       claimToken,
@@ -239,7 +243,8 @@ export const POST: RequestHandler = async ({ request, url }) => {
       postsInput,
       articlesInput,
       suggested_follows,
-      preparedByData
+      preparedByData,
+      validEmail
     );
 
     // Build the claim URL

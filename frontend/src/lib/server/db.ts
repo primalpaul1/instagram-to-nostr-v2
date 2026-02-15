@@ -653,6 +653,8 @@ export interface Gift {
   gift_type: 'posts' | 'articles' | 'combined';
   suggested_follows: string | null;  // JSON array of npubs
   prepared_by: string | null;  // JSON string: {npub, name, picture}
+  email: string | null;  // Optional email for notification when gift is ready
+  email_sent: number;  // 0 = not sent, 1 = sent
   status: 'pending' | 'processing' | 'ready' | 'claimed' | 'expired';
   claimed_at: string | null;
   created_at: string;
@@ -767,6 +769,14 @@ export async function ensureGiftTables(): Promise<void> {
 
     if (!columnNames.includes('prepared_by')) {
       database.exec("ALTER TABLE gifts ADD COLUMN prepared_by TEXT");
+    }
+
+    if (!columnNames.includes('email')) {
+      database.exec("ALTER TABLE gifts ADD COLUMN email TEXT");
+    }
+
+    if (!columnNames.includes('email_sent')) {
+      database.exec("ALTER TABLE gifts ADD COLUMN email_sent INTEGER DEFAULT 0");
     }
 
     // Check if gift_articles table exists
@@ -1058,7 +1068,8 @@ export async function createGiftWithContent(
   posts: GiftPostInput[],
   articles: GiftArticleInput[],
   suggestedFollows?: string[],
-  preparedBy?: string  // JSON string: {npub, name, picture}
+  preparedBy?: string,  // JSON string: {npub, name, picture}
+  email?: string
 ): Promise<Gift> {
   await ensureGiftTables();
   const database = getDb();
@@ -1070,9 +1081,9 @@ export async function createGiftWithContent(
 
     // Create the gift
     database.prepare(
-      `INSERT INTO gifts (id, claim_token, ig_handle, salt, profile_data, gift_type, suggested_follows, prepared_by, expires_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(id, claimToken, igHandle, '', profileData || null, giftType, suggestedFollows?.length ? JSON.stringify(suggestedFollows) : null, preparedBy || null, expiration);
+      `INSERT INTO gifts (id, claim_token, ig_handle, salt, profile_data, gift_type, suggested_follows, prepared_by, email, expires_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(id, claimToken, igHandle, '', profileData || null, giftType, suggestedFollows?.length ? JSON.stringify(suggestedFollows) : null, preparedBy || null, email || null, expiration);
 
     // Create all posts
     const insertPost = database.prepare(
