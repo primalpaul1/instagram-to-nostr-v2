@@ -373,64 +373,31 @@
       </a>
     </section>
 
-    <!-- GET STARTED -->
-    <section class="section get-started">
-      <h2>Get started in 3 steps</h2>
-
-      <div class="steps-cards">
-        <div class="step-card">
-          <div class="step-num">1</div>
-          <h3>Download Primal</h3>
-          <p>Available on iPhone, Android, and web.</p>
-          <div class="app-links">
-            <a href="https://apps.apple.com/us/app/primal/id1673134518" target="_blank" rel="noopener noreferrer" class="app-badge">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/>
-              </svg>
-              App Store
-            </a>
-            <a href="https://play.google.com/store/apps/details?id=net.primal.android" target="_blank" rel="noopener noreferrer" class="app-badge">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M3.609 1.814L13.792 12 3.61 22.186a.996.996 0 0 1-.61-.92V2.734a1 1 0 0 1 .609-.92zm10.89 10.893l2.302 2.302-10.937 6.333 8.635-8.635zm3.199-3.199l2.302 2.302-2.302 2.302-2.698-2.302 2.698-2.302zM5.864 2.658L16.8 9.99l-2.302 2.302-8.634-8.634z"/>
-              </svg>
-              Google Play
-            </a>
-            <a href="https://primal.net" target="_blank" rel="noopener noreferrer" class="app-badge web-badge">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="12" cy="12" r="10"/>
-                <path d="M2 12h20"/>
-                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
-              </svg>
-              primal.net
-            </a>
-          </div>
-        </div>
-
-        <div class="step-card">
-          <div class="step-num">2</div>
-          <h3>Move your content</h3>
-          <p>Bring your Instagram posts to your new profile.</p>
-          <a href="/" class="step-cta">
-            Start migration
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M5 12h14M12 5l7 7-7 7"/>
-            </svg>
-          </a>
-        </div>
-
-        <div class="step-card">
-          <div class="step-num">3</div>
-          <h3>Follow us on Primal</h3>
-          <p>Stay connected. We post tips, updates, and help new users get settled.</p>
-          <a href="https://primal.net/ownyourposts" target="_blank" rel="noopener noreferrer" class="step-cta">
-            @ownyourposts
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
-              <polyline points="15 3 21 3 21 9"/>
-              <line x1="10" y1="14" x2="21" y2="3"/>
-            </svg>
-          </a>
-        </div>
+    <!-- DOWNLOAD PRIMAL -->
+    <section class="section download-section">
+      <h2>Want to start fresh?</h2>
+      <p class="section-sub">Download Primal and start posting. You can import your content later.</p>
+      <div class="app-links app-links-center">
+        <a href="https://apps.apple.com/us/app/primal/id1673134518" target="_blank" rel="noopener noreferrer" class="app-badge">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/>
+          </svg>
+          App Store
+        </a>
+        <a href="https://play.google.com/store/apps/details?id=net.primal.android" target="_blank" rel="noopener noreferrer" class="app-badge">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M3.609 1.814L13.792 12 3.61 22.186a.996.996 0 0 1-.61-.92V2.734a1 1 0 0 1 .609-.92zm10.89 10.893l2.302 2.302-10.937 6.333 8.635-8.635zm3.199-3.199l2.302 2.302-2.302 2.302-2.698-2.302 2.698-2.302zM5.864 2.658L16.8 9.99l-2.302 2.302-8.634-8.634z"/>
+          </svg>
+          Google Play
+        </a>
+        <a href="https://primal.net" target="_blank" rel="noopener noreferrer" class="app-badge web-badge">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+            <path d="M2 12h20"/>
+            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+          </svg>
+          primal.net
+        </a>
       </div>
     </section>
 
@@ -468,6 +435,63 @@
           <summary>Can I use both Instagram and Primal?</summary>
           <p>Absolutely. Many people post on both while they transition. There's no pressure to delete Instagram — just start building on something you actually own.</p>
         </details>
+      </div>
+    </section>
+
+    <!-- READS -->
+    <section class="section reads-section">
+      <h2>Want to read more?</h2>
+      <div class="reads-grid">
+        <a href="https://primal.net/e/naddr1qvzqqqr4gupzpqzmxnms3qmalvl87pvpttzhvptyv29434dqe6peejakaumzp7krqy88wumn8ghj7mn0wvhxcmmv9uq3xamnwvaz7tmsw4e8qmr9wpskwtn9wvhsq82wv4mj6ar0948x7um5wgk4yetpvskhg6rfwvkk66rexphny0g5639" target="_blank" rel="noopener noreferrer" class="read-card">
+          <div class="read-img">
+            <img src="/read-nostr.jpg" alt="New to Nostr?" loading="lazy" />
+          </div>
+          <div class="read-body">
+            <strong>New to Nostr? Read this</strong>
+            <span>Your beginner's guide to Nostr. Welcome to freedom.</span>
+            <div class="read-author">
+              <img src="/primal-avatar.jpg" alt="" class="read-author-avatar" />
+              <span>paul keating</span>
+            </div>
+          </div>
+        </a>
+        <a href="https://primal.net/e/naddr1qvzqqqr4gupzpqzmxnms3qmalvl87pvpttzhvptyv29434dqe6peejakaumzp7krqyvhwumn8ghj7urjv4kkjatd9ec8y6tdv9kzumn9wshszrnhwden5te0dehhxtnvdakz7qqsda6hyttnda3kjctv94kk2erfvy4g6k72" target="_blank" rel="noopener noreferrer" class="read-card">
+          <div class="read-img">
+            <img src="/read-social.png" alt="Our Social Media" loading="lazy" />
+          </div>
+          <div class="read-body">
+            <strong>Our Social Media</strong>
+            <span>Learning from our past to create a better future</span>
+            <div class="read-author">
+              <img src="/primal-avatar.jpg" alt="" class="read-author-avatar" />
+              <span>paul keating</span>
+            </div>
+          </div>
+        </a>
+        <a href="https://primal.net/e/naddr1qvzqqqr4gupzpq35r7yzkm4te5460u00jz4djcw0qa90zku7739qn7wj4ralhe4zqqxnzd3cxyerxd3h8qerwwfcvcwa0f" target="_blank" rel="noopener noreferrer" class="read-card">
+          <div class="read-img">
+            <img src="/read-protocol.jpg" alt="A native internet protocol for social media" loading="lazy" />
+          </div>
+          <div class="read-body">
+            <strong>A native internet protocol for social media</strong>
+            <div class="read-author">
+              <img src="/avatar-jack.jpg" alt="" class="read-author-avatar" />
+              <span>jack</span>
+            </div>
+          </div>
+        </a>
+        <a href="https://primal.net/e/naddr1qvzqqqr4gupzqak8r2hr5jglrk0wc37t59lz98x6gyf6pwaku6hpwakhvslznjh6qy08wumn8ghj7mn0wd68yttsw43zuam9d3kx7unyv4ezumn9wshszymhwden5te0wp6hyurvv4cxzeewv4ej7qpnwajj6er9wdjhyan9943x2ar5v4ez6cfddejhwttnda3kjctv94kk2erfvykky6tvdskk7e3dwf5kw6r5wvhwkmd5" target="_blank" rel="noopener noreferrer" class="read-card">
+          <div class="read-img">
+            <img src="/read-rights.jpg" alt="We Deserve Better" loading="lazy" />
+          </div>
+          <div class="read-body">
+            <strong>We Deserve Better: A New Social Media Bill of Rights</strong>
+            <div class="read-author">
+              <img src="/avatar-rabble.jpg" alt="" class="read-author-avatar" />
+              <span>rabble</span>
+            </div>
+          </div>
+        </a>
       </div>
     </section>
 
@@ -1396,53 +1420,9 @@
     padding: 1rem 2.5rem;
   }
 
-  /* ---- GET STARTED STEPS ---- */
-  .steps-cards {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-    margin-top: 1.5rem;
-  }
-
-  .step-card {
-    padding: 1.5rem;
-    background: var(--bg-glass);
-    border: 1px solid var(--border-light);
-    border-radius: 1rem;
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    transition: all 0.2s ease;
-  }
-
-  .step-card:hover {
-    border-color: rgba(250, 60, 131, 0.3);
-  }
-
-  .step-num {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 1.75rem;
-    height: 1.75rem;
-    background: var(--accent-gradient);
-    border-radius: 50%;
-    font-size: 0.8125rem;
-    font-weight: 700;
-    color: white;
-    margin-bottom: 0.75rem;
-  }
-
-  .step-card h3 {
-    font-size: 1.0625rem;
-    font-weight: 600;
-    margin-bottom: 0.25rem;
-  }
-
-  .step-card p {
-    font-size: 0.875rem;
-    color: var(--text-secondary);
-    margin-bottom: 1rem;
-    line-height: 1.5;
+  /* ---- DOWNLOAD SECTION ---- */
+  .download-section {
+    text-align: center;
   }
 
   .app-links {
@@ -1471,27 +1451,93 @@
     color: var(--accent);
   }
 
-  .step-cta {
-    display: inline-flex;
+  .app-links-center {
+    justify-content: center;
+    margin-top: 1.5rem;
+  }
+
+  /* ---- READS ---- */
+  .reads-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 0.875rem;
+    margin-top: 1.5rem;
+  }
+
+  .read-card {
+    display: flex;
+    gap: 1rem;
+    padding: 0.75rem;
+    background: var(--bg-glass);
+    border: 1px solid var(--border-light);
+    border-radius: 1rem;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    text-decoration: none;
+    color: inherit;
+    transition: all 0.2s ease;
+    overflow: hidden;
+  }
+
+  .read-card:hover {
+    border-color: rgba(139, 92, 246, 0.4);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  }
+
+  .read-img {
+    width: 120px;
+    height: 80px;
+    border-radius: 0.625rem;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+
+  .read-img img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .read-body {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 0.25rem;
+    min-width: 0;
+  }
+
+  .read-body strong {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    line-height: 1.3;
+  }
+
+  .read-body span {
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    line-height: 1.4;
+  }
+
+  .read-author {
+    display: flex;
     align-items: center;
     gap: 0.375rem;
-    color: var(--accent);
-    text-decoration: none;
-    font-size: 0.875rem;
-    font-weight: 600;
-    transition: all 0.2s ease;
+    margin-top: 0.25rem;
   }
 
-  .step-cta:hover {
-    color: var(--accent-hover);
+  .read-author-avatar {
+    width: 1.125rem;
+    height: 1.125rem;
+    border-radius: 50%;
+    object-fit: cover;
   }
 
-  .step-cta:hover svg {
-    transform: translateX(2px);
-  }
-
-  .step-cta svg {
-    transition: transform 0.2s ease;
+  .read-author span {
+    font-size: 0.6875rem;
+    color: var(--text-muted);
   }
 
   /* ---- FAQ ---- */
