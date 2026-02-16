@@ -330,6 +330,39 @@
             <span>Your content, permanently yours</span>
           </div>
         </div>
+
+        <!-- Primal profile mockup -->
+        <div class="mockup-profile" aria-hidden="true">
+          <div class="mockup-profile-banner">
+            <img src="/primal-banner.jpg" alt="" class="mockup-banner-img" loading="lazy" />
+            <div class="mockup-profile-banner-fade"></div>
+          </div>
+          <div class="mockup-profile-body">
+            <div class="mockup-profile-header">
+              <img src="/primal-avatar.jpg" alt="" class="mockup-profile-avatar" loading="lazy" />
+              <div class="mockup-profile-info">
+                <div class="mockup-profile-name">
+                  paul keating
+                  <svg class="mockup-verified" width="14" height="14" viewBox="0 0 24 24" fill="#8B5CF6"><path d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" stroke="#8B5CF6" stroke-width="1.5" fill="rgba(139,92,246,0.15)"/><path d="M9 12l2 2 4-4" stroke="#8B5CF6" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </div>
+                <div class="mockup-profile-handle">paul@primal.net</div>
+              </div>
+            </div>
+            <div class="mockup-profile-stats">
+              <div class="mockup-stat"><strong>2,794</strong><span>notes</span></div>
+              <div class="mockup-stat"><strong>3,793</strong><span>replies</span></div>
+              <div class="mockup-stat"><strong>6</strong><span>reads</span></div>
+              <div class="mockup-stat mockup-stat-active"><strong>1,076</strong><span>media</span></div>
+            </div>
+            <div class="mockup-profile-media">
+              {#each [1,2,3,4] as n}
+                <div class="mockup-media-item">
+                  <img src="/thumb-{n}.jpg" alt="" loading="lazy" />
+                </div>
+              {/each}
+            </div>
+          </div>
+        </div>
       </div>
 
       <a href="/" class="primary-btn migrate-btn">
@@ -1124,6 +1157,133 @@
       opacity: 0;
       transform: scale(0.5);
     }
+  }
+
+  /* ---- MOCKUP PROFILE (Primal card) ---- */
+  .mockup-profile {
+    border-radius: 0.75rem;
+    overflow: hidden;
+    border: 1px solid var(--border-light);
+    background: var(--bg-glass);
+    pointer-events: none;
+    user-select: none;
+    margin-top: -0.25rem;
+    margin-bottom: 0.25rem;
+  }
+
+  .mockup-profile-banner {
+    height: 72px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .mockup-banner-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .mockup-profile-banner-fade {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(to bottom, transparent 40%, rgba(13, 13, 13, 0.85));
+  }
+
+  .mockup-profile-body {
+    padding: 0 0.875rem 0.75rem;
+    margin-top: -1.25rem;
+    position: relative;
+  }
+
+  .mockup-profile-header {
+    display: flex;
+    align-items: flex-end;
+    gap: 0.625rem;
+    margin-bottom: 0.625rem;
+  }
+
+  .mockup-profile-avatar {
+    width: 2.75rem;
+    height: 2.75rem;
+    border-radius: 50%;
+    border: 2px solid var(--bg-primary);
+    flex-shrink: 0;
+    object-fit: cover;
+  }
+
+  .mockup-profile-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.0625rem;
+    padding-bottom: 0.125rem;
+  }
+
+  .mockup-profile-name {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: var(--text-primary);
+  }
+
+  .mockup-verified {
+    flex-shrink: 0;
+  }
+
+  .mockup-profile-handle {
+    font-size: 0.6875rem;
+    color: var(--text-muted);
+  }
+
+  .mockup-profile-stats {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 0.625rem;
+    padding-left: 0.125rem;
+  }
+
+  .mockup-stat {
+    display: flex;
+    align-items: baseline;
+    gap: 0.25rem;
+  }
+
+  .mockup-stat strong {
+    font-size: 0.8125rem;
+    font-weight: 700;
+    color: var(--text-primary);
+  }
+
+  .mockup-stat span {
+    font-size: 0.6875rem;
+    color: var(--text-muted);
+  }
+
+  .mockup-stat-active {
+    padding-bottom: 0.375rem;
+    border-bottom: 1px solid #8B5CF6;
+  }
+
+  .mockup-profile-media {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 2px;
+    border-radius: 0.375rem;
+    overflow: hidden;
+  }
+
+  .mockup-media-item {
+    aspect-ratio: 1;
+    overflow: hidden;
+  }
+
+  .mockup-media-item img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
   }
 
   /* ---- SWIPE HINT (mobile only) ---- */
