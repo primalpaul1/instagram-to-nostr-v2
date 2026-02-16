@@ -853,7 +853,7 @@
 
   .quote-card {
     display: block;
-    padding: 1.5rem;
+    padding: 1rem 1.25rem;
     background: var(--bg-glass);
     border: 1px solid var(--border-light);
     border-radius: 1rem;
@@ -871,7 +871,7 @@
 
   .quote-banner {
     position: relative;
-    height: 120px;
+    height: 90px;
     background-size: cover;
     background-position: center;
   }
@@ -905,19 +905,19 @@
   }
 
   .quote-feature-body {
-    padding: 1.5rem;
-    margin-top: -2rem;
+    padding: 1rem 1.25rem;
+    margin-top: -1.5rem;
     position: relative;
   }
 
 
   .quote-card blockquote {
-    font-size: 1.0625rem;
+    font-size: 0.9375rem;
     font-weight: 500;
-    line-height: 1.6;
+    line-height: 1.5;
     color: var(--text-primary);
-    margin: 0 0 1.25rem 0;
-    padding-left: 1rem;
+    margin: 0 0 0.875rem 0;
+    padding-left: 0.875rem;
     border-left: 3px solid var(--accent);
     font-style: italic;
   }
@@ -925,7 +925,7 @@
   .quote-author {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
+    gap: 0.5rem;
   }
 
   .quote-author-link {
@@ -940,8 +940,8 @@
   }
 
   .quote-avatar-img {
-    width: 2.75rem;
-    height: 2.75rem;
+    width: 2.25rem;
+    height: 2.25rem;
     border-radius: 50%;
     flex-shrink: 0;
     object-fit: cover;
@@ -949,8 +949,8 @@
   }
 
   .quote-feature .quote-avatar-img {
-    width: 3rem;
-    height: 3rem;
+    width: 2.5rem;
+    height: 2.5rem;
     border-color: rgba(201, 160, 48, 0.5);
     box-shadow: 0 0 12px rgba(201, 160, 48, 0.25);
   }
@@ -962,12 +962,12 @@
   }
 
   .quote-info strong {
-    font-size: 0.9375rem;
+    font-size: 0.8125rem;
     font-weight: 700;
   }
 
   .quote-info span {
-    font-size: 0.75rem;
+    font-size: 0.6875rem;
     color: var(--text-muted);
     line-height: 1.3;
   }
