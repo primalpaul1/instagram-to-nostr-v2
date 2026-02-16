@@ -1311,6 +1311,39 @@ export async function getRssGiftByTokenWithArticles(claimToken: string): Promise
 }
 
 // ============================================
+// Subscriber functions for email mailing list
+// ============================================
+
+export function ensureSubscribersTable(): void {
+  const database = getDb();
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS subscribers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      email TEXT UNIQUE NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+}
+
+export function addSubscriber(email: string): boolean {
+  ensureSubscribersTable();
+  const database = getDb();
+  const result = database.prepare(
+    'INSERT OR IGNORE INTO subscribers (email) VALUES (?)'
+  ).run(email);
+  return result.changes > 0;
+}
+
+export function getSubscribers(): Array<{ email: string; created_at: string }> {
+  ensureSubscribersTable();
+  const database = getDb();
+  const rows = database.prepare(
+    'SELECT email, created_at FROM subscribers ORDER BY created_at DESC'
+  ).all();
+  return rows as Array<{ email: string; created_at: string }>;
+}
+
+// ============================================
 // Migration functions for client-side signing flow
 // ============================================
 

@@ -9,6 +9,7 @@ services:
       - DATABASE_PATH=/data/instagram.db
       - NODE_ENV=production
       - BODY_SIZE_LIMIT=524288000
+      - ADMIN_KEY=${ADMIN_KEY}
     volumes:
       - ./data:/data
     depends_on:

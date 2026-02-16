@@ -1,5 +1,27 @@
 <script lang="ts">
   import { wizard } from '$lib/stores/wizard';
+
+  let email = '';
+  let subscribeState: 'idle' | 'submitting' | 'success' | 'error' = 'idle';
+
+  async function handleSubscribe() {
+    if (!email.trim()) return;
+    subscribeState = 'submitting';
+    try {
+      const res = await fetch('/api/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim() })
+      });
+      if (res.ok) {
+        subscribeState = 'success';
+      } else {
+        subscribeState = 'error';
+      }
+    } catch {
+      subscribeState = 'error';
+    }
+  }
 </script>
 
 <div class="app-container">
@@ -13,6 +35,29 @@
       <slot />
     </div>
   </main>
+
+  <footer class="signup-footer">
+    {#if subscribeState === 'success'}
+      <p class="signup-success">You're on the list</p>
+    {:else}
+      <p class="signup-heading">Stay updated with Primal</p>
+      <form class="signup-form" on:submit|preventDefault={handleSubscribe}>
+        <input
+          type="email"
+          bind:value={email}
+          placeholder="you@email.com"
+          class="signup-input"
+          required
+        />
+        <button type="submit" class="signup-button" disabled={subscribeState === 'submitting'}>
+          {subscribeState === 'submitting' ? '...' : 'Subscribe'}
+        </button>
+      </form>
+      {#if subscribeState === 'error'}
+        <p class="signup-error">Something went wrong. Try again.</p>
+      {/if}
+    {/if}
+  </footer>
 
   {#if $wizard.error}
     <div class="error-toast">
@@ -162,6 +207,80 @@
 
   .error-dismiss:hover {
     opacity: 1;
+  }
+
+  .signup-footer {
+    text-align: center;
+    margin-top: 2rem;
+    padding-top: 1.5rem;
+  }
+
+  .signup-heading {
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .signup-form {
+    display: flex;
+    gap: 0.5rem;
+    max-width: 400px;
+    margin: 0 auto;
+  }
+
+  .signup-input {
+    flex: 1;
+    padding: 0.5rem 0.75rem;
+    background: var(--bg-glass);
+    border: 1px solid var(--border-light);
+    border-radius: 0.5rem;
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  .signup-input::placeholder {
+    color: var(--text-secondary);
+    opacity: 0.5;
+  }
+
+  .signup-input:focus {
+    border-color: var(--accent);
+  }
+
+  .signup-button {
+    padding: 0.5rem 1rem;
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 0.5rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.2s;
+    white-space: nowrap;
+  }
+
+  .signup-button:hover {
+    opacity: 0.9;
+  }
+
+  .signup-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .signup-success {
+    color: var(--accent);
+    font-size: 0.875rem;
+    font-weight: 500;
+  }
+
+  .signup-error {
+    color: var(--error);
+    font-size: 0.8125rem;
+    margin-top: 0.5rem;
   }
 
   @media (max-width: 640px) {
