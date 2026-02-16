@@ -3,7 +3,9 @@
 
   let isMobile = false;
   let activeMeme = 0;
+  let activeQuote = 0;
   let memeGrid: HTMLElement;
+  let quoteGrid: HTMLElement;
   let videoPlaying = false;
 
   function handleMemeScroll() {
@@ -11,8 +13,17 @@
     const cards = memeGrid.querySelectorAll('.meme-card');
     const scrollLeft = memeGrid.scrollLeft;
     const cardWidth = (cards[0] as HTMLElement)?.offsetWidth ?? 1;
-    const gap = 12; // 0.75rem
+    const gap = 12;
     activeMeme = Math.round(scrollLeft / (cardWidth + gap));
+  }
+
+  function handleQuoteScroll() {
+    if (!quoteGrid) return;
+    const cards = quoteGrid.querySelectorAll('.quote-card');
+    const scrollLeft = quoteGrid.scrollLeft;
+    const cardWidth = (cards[0] as HTMLElement)?.offsetWidth ?? 1;
+    const gap = 12;
+    activeQuote = Math.round(scrollLeft / (cardWidth + gap));
   }
 
   onMount(() => {
@@ -149,87 +160,67 @@
       <h2>Don't take our word for it</h2>
       <p class="section-sub">Some notable people have a lot to say about why this matters.</p>
 
-      <div class="quotes">
-        <!-- Jack Dorsey - Feature card with banner -->
-        <div class="quote-card quote-feature">
-          <div class="quote-banner" style="background-image: url('https://m.primal.net/IBZO.jpg')">
-            <div class="quote-banner-overlay"></div>
-          </div>
-          <div class="quote-feature-body">
-            <blockquote>
-              "To be able to create content and build your identity and move it around under your agency, I think is the most powerful idea."
-            </blockquote>
-            <a href="https://primal.net/jack" target="_blank" rel="noopener noreferrer" class="quote-author quote-author-link">
-              <img src="https://r2.primal.net/cache/d/07/1e/d071efe93be39d551e7d7d0e8437c5fb9d465ad91086c831fa3161591638019e.jpg" alt="Jack Dorsey" class="quote-avatar-img" />
-              <div class="quote-info">
-                <strong>Jack Dorsey</strong>
-                <span>Founder of Twitter. Put $21M+ into Nostr. Primal's first Legend customer.</span>
-              </div>
-            </a>
-            <a href="https://www.youtube.com/watch?v=MaZyXEU5XAg" target="_blank" rel="noopener noreferrer" class="quote-source">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-              Oslo Freedom Forum, 2024
-            </a>
-          </div>
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div class="quotes" bind:this={quoteGrid} on:scroll={handleQuoteScroll}>
+        <div class="quote-card">
+          <a href="https://primal.net/jack" target="_blank" rel="noopener noreferrer" class="quote-author quote-author-link">
+            <img src="https://r2.primal.net/cache/d/07/1e/d071efe93be39d551e7d7d0e8437c5fb9d465ad91086c831fa3161591638019e.jpg" alt="Jack Dorsey" class="quote-avatar-img quote-avatar-legend" />
+            <div class="quote-info">
+              <strong>Jack Dorsey</strong>
+              <span>Founder of Twitter</span>
+            </div>
+          </a>
+          <p class="quote-text">"To be able to create content and build your identity and move it around under your agency, I think is the most powerful idea."</p>
+          <a href="https://www.youtube.com/watch?v=MaZyXEU5XAg" target="_blank" rel="noopener noreferrer" class="quote-source">Oslo Freedom Forum, 2024</a>
         </div>
 
         <div class="quote-card">
-          <blockquote>
-            "If a platform is a silo, a protocol is a river: no one owns it, and everyone is free to swim."
-          </blockquote>
           <a href="https://primal.net/snowden" target="_blank" rel="noopener noreferrer" class="quote-author quote-author-link">
             <img src="https://primaldata.s3.us-east-005.backblazeb2.com/cache/9/cd/c5/9cdc5dba1672dc15baca235eee6d16b51e27c527fe09373e2881a5866ba127d6.jpg" alt="Edward Snowden" class="quote-avatar-img" />
             <div class="quote-info">
               <strong>Edward Snowden</strong>
-              <span>Privacy advocate & whistleblower</span>
+              <span>Privacy advocate</span>
             </div>
           </a>
-          <a href="https://x.com/Snowden/status/1620789340199882752" target="_blank" rel="noopener noreferrer" class="quote-source">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-            Post on X, Feb 2023
-          </a>
+          <p class="quote-text">"If a platform is a silo, a protocol is a river: no one owns it, and everyone is free to swim."</p>
+          <a href="https://x.com/Snowden/status/1620789340199882752" target="_blank" rel="noopener noreferrer" class="quote-source">Post on X, Feb 2023</a>
         </div>
 
         <div class="quote-card">
-          <blockquote>
-            "Bitcoin is freedom of money, and Nostr is freedom of everything else."
-          </blockquote>
           <a href="https://primal.net/p/npub1g53mukxnjkcmr94fhryzkqutdz2ukq4ks0gvy5af25rgmwsl4ngq43drvk" target="_blank" rel="noopener noreferrer" class="quote-author quote-author-link">
             <img src="https://r2.primal.net/cache/9/7f/d7/97fd7c410ed985aad25f81b1bdc0ce7a53bf5240362713e30ce5e7b014022b7f.jpg" alt="Martti Malmi" class="quote-avatar-img" />
             <div class="quote-info">
               <strong>Martti Malmi</strong>
-              <span>One of Bitcoin's original developers with Satoshi</span>
+              <span>Bitcoin's first developer with Satoshi</span>
             </div>
           </a>
-          <a href="https://reason.com/video/2024/09/17/is-nostr-an-antidote-to-social-media-censorship/" target="_blank" rel="noopener noreferrer" class="quote-source">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-            BTC Prague, 2024
-          </a>
+          <p class="quote-text">"Bitcoin is freedom of money, and Nostr is freedom of everything else."</p>
+          <a href="https://reason.com/video/2024/09/17/is-nostr-an-antidote-to-social-media-censorship/" target="_blank" rel="noopener noreferrer" class="quote-source">BTC Prague, 2024</a>
         </div>
 
         <div class="quote-card">
-          <blockquote>
-            "They can cancel my Instagram. They can cancel my TikTok. They can cancel my YT. They'll never cancel my Nostr. Happy to be here."
-          </blockquote>
           <a href="https://primal.net/p/npub14am887cf6kvwkce89nt7dsw3v9qrrn0uppxyvr6a2jd7xdwuwccqwnudp2" target="_blank" rel="noopener noreferrer" class="quote-author quote-author-link">
-            <img src="https://primaldata.s3.us-east-005.backblazeb2.com/cache/0/ed/0d/0ed0de32c81fd9a151c196782d9cc8a927cf73164f1362df910624f216cc2273.jpg" alt="Paul Saladino MD" class="quote-avatar-img" />
+            <img src="https://primaldata.s3.us-east-005.backblazeb2.com/cache/0/ed/0d/0ed0de32c81fd9a151c196782d9cc8a927cf73164f1362df910624f216cc2273.jpg" alt="Paul Saladino MD" class="quote-avatar-img quote-avatar-premium" />
             <div class="quote-info">
               <strong>Paul Saladino MD</strong>
-              <span>Doctor & health creator. 4M+ followers across platforms.</span>
+              <span>4M+ followers across platforms</span>
             </div>
           </a>
-          <a href="https://primal.net/e/nevent1qqs2mctxa090gp9t38x4r4zs9fx6mdv8xqwfamssy2kyedd95p9zdcqm0s7p4" target="_blank" rel="noopener noreferrer" class="quote-source">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-            Post on Nostr, Dec 2024
-          </a>
+          <p class="quote-text">"They can cancel my Instagram. They can cancel my TikTok. They can cancel my YT. They'll never cancel my Nostr. Happy to be here."</p>
+          <a href="https://primal.net/e/nevent1qqs2mctxa090gp9t38x4r4zs9fx6mdv8xqwfamssy2kyedd95p9zdcqm0s7p4" target="_blank" rel="noopener noreferrer" class="quote-source">Post on Nostr, Dec 2024</a>
         </div>
+      </div>
+      <div class="swipe-hint quote-swipe-hint">
+        {#each Array(4) as _, i}
+          <span class:active={activeQuote === i}></span>
+        {/each}
       </div>
     </section>
 
     <!-- UNDERSTAND PRIMAL IN MEMES -->
-    <section class="section">
+    <section class="section section-tight">
       <h2>Understand Primal in memes</h2>
-      <p class="section-sub">Because sometimes a meme explains it better than a whitepaper.</p>
+      <p class="section-sub">Sometimes a meme explains it better than a whitepaper.</p>
 
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div class="meme-grid" bind:this={memeGrid} on:scroll={handleMemeScroll}>
@@ -675,6 +666,10 @@
     border-top: 1px solid var(--border);
   }
 
+  .section-tight {
+    padding-top: 1rem;
+  }
+
   h2 {
     font-size: 1.75rem;
     font-weight: 700;
@@ -852,74 +847,16 @@
   }
 
   .quote-card {
-    display: block;
-    padding: 1rem 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;
+    padding: 0.875rem 1rem;
     background: var(--bg-glass);
     border: 1px solid var(--border-light);
-    border-radius: 1rem;
+    border-radius: 0.875rem;
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
-    transition: all 0.2s ease;
     color: inherit;
-  }
-
-  /* Jack's feature card with banner */
-  .quote-feature {
-    padding: 0;
-    overflow: hidden;
-  }
-
-  .quote-banner {
-    position: relative;
-    height: 90px;
-    background-size: cover;
-    background-position: center;
-  }
-
-  .quote-banner-overlay {
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(to bottom, rgba(0, 0, 0, 0.1), rgba(13, 13, 13, 0.95));
-  }
-
-  .quote-legend-badge {
-    position: absolute;
-    top: 0.75rem;
-    right: 0.75rem;
-    display: flex;
-    align-items: center;
-    gap: 0.3rem;
-    padding: 0.25rem 0.625rem;
-    background: linear-gradient(135deg, #C9A030 0%, #E8C84A 50%, #C9A030 100%);
-    border-radius: 1rem;
-    font-size: 0.6875rem;
-    font-weight: 700;
-    color: #1a1400;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    box-shadow: 0 2px 8px rgba(201, 160, 48, 0.4);
-  }
-
-  .quote-legend-badge svg {
-    color: #1a1400;
-  }
-
-  .quote-feature-body {
-    padding: 1rem 1.25rem;
-    margin-top: -1.5rem;
-    position: relative;
-  }
-
-
-  .quote-card blockquote {
-    font-size: 0.9375rem;
-    font-weight: 500;
-    line-height: 1.5;
-    color: var(--text-primary);
-    margin: 0 0 0.875rem 0;
-    padding-left: 0.875rem;
-    border-left: 3px solid var(--accent);
-    font-style: italic;
   }
 
   .quote-author {
@@ -931,7 +868,6 @@
   .quote-author-link {
     text-decoration: none;
     color: inherit;
-    border-radius: 0.5rem;
     transition: opacity 0.15s ease;
   }
 
@@ -940,64 +876,64 @@
   }
 
   .quote-avatar-img {
-    width: 2.25rem;
-    height: 2.25rem;
+    width: 2rem;
+    height: 2rem;
     border-radius: 50%;
     flex-shrink: 0;
     object-fit: cover;
     border: 2px solid var(--border-light);
   }
 
-  .quote-feature .quote-avatar-img {
-    width: 2.5rem;
-    height: 2.5rem;
-    border-color: rgba(201, 160, 48, 0.5);
-    box-shadow: 0 0 12px rgba(201, 160, 48, 0.25);
+  .quote-avatar-legend {
+    border-color: rgba(201, 160, 48, 0.6);
+    box-shadow: 0 0 6px rgba(201, 160, 48, 0.25);
+  }
+
+  .quote-avatar-premium {
+    border: 2px solid transparent;
+    background-image: linear-gradient(var(--bg-primary), var(--bg-primary)), linear-gradient(135deg, #F77737, #E1306C, #C13584);
+    background-origin: border-box;
+    background-clip: content-box, border-box;
+    box-shadow: 0 0 6px rgba(225, 48, 108, 0.25);
   }
 
   .quote-info {
     display: flex;
     flex-direction: column;
-    gap: 0.125rem;
   }
 
   .quote-info strong {
     font-size: 0.8125rem;
-    font-weight: 700;
+    font-weight: 600;
+    line-height: 1.2;
   }
 
   .quote-info span {
     font-size: 0.6875rem;
     color: var(--text-muted);
-    line-height: 1.3;
+    line-height: 1.2;
+  }
+
+  .quote-text {
+    font-size: 0.875rem;
+    font-weight: 400;
+    line-height: 1.5;
+    color: var(--text-secondary);
+    margin: 0;
   }
 
   .quote-source {
-    display: flex;
-    align-items: center;
-    gap: 0.375rem;
-    margin-top: 1rem;
-    padding-top: 0.75rem;
-    border-top: 1px solid var(--border);
-    font-size: 0.6875rem;
+    font-size: 0.625rem;
     font-weight: 500;
     color: var(--text-muted);
     text-decoration: none;
-    transition: color 0.2s ease;
-  }
-
-  .quote-source svg {
-    flex-shrink: 0;
-    opacity: 0.5;
+    opacity: 0.6;
     transition: opacity 0.2s ease;
   }
 
   .quote-source:hover {
-    color: var(--accent);
-  }
-
-  .quote-source:hover svg {
     opacity: 1;
+    color: var(--accent);
   }
 
   /* ---- MEMES ---- */
@@ -1718,24 +1654,26 @@
       font-size: 0.625rem;
     }
 
+    .quotes {
+      flex-direction: row;
+      overflow-x: auto;
+      scroll-snap-type: x mandatory;
+      -webkit-overflow-scrolling: touch;
+      padding-bottom: 0.5rem;
+      scrollbar-width: none;
+    }
+
+    .quotes::-webkit-scrollbar {
+      display: none;
+    }
+
     .quote-card {
-      padding: 1.125rem;
+      flex: 0 0 80%;
+      scroll-snap-align: center;
     }
 
-    .quote-feature {
-      padding: 0;
-    }
-
-    .quote-feature-body {
-      padding: 1.125rem;
-    }
-
-    .quote-banner {
-      height: 100px;
-    }
-
-    .quote-card blockquote {
-      font-size: 0.9375rem;
+    .quote-swipe-hint {
+      display: flex;
     }
 
     .meme-grid {
