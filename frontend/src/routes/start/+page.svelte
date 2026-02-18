@@ -545,6 +545,7 @@
 
   <footer>
     <p>Built on <a href="https://nostr.com" target="_blank" rel="noopener noreferrer">Nostr</a> — the open protocol for social media</p>
+    <p><a href="https://nostrapps.com" target="_blank" rel="noopener noreferrer">Explore the Nostr ecosystem</a></p>
   </footer>
 </div>
 
