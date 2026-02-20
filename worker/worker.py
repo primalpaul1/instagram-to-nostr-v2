@@ -646,6 +646,7 @@ async def process_proposal_articles(
             updated_content = content
             if url_mapping:
                 updated_content = replace_markdown_images(content, url_mapping)
+            updated_content = strip_image_link_wrappers(updated_content)
 
             # If any upload failed, check if we've hit max attempts
             if upload_failed:
@@ -708,6 +709,12 @@ def replace_markdown_images(markdown: str, url_mapping: dict) -> str:
     # Match URL up to optional space+title or closing paren
     pattern = r'!\[.*?\]\(([^\s\)]+)'
     return re.sub(pattern, replacer, markdown)
+
+
+def strip_image_link_wrappers(markdown: str) -> str:
+    """Remove link wrappers around images: [![alt](url)](link) -> ![alt](url)"""
+    pattern = r'\[!\[([^\]]*)\]\(([^)]+)\)\]\([^)]+\)'
+    return re.sub(pattern, r'![\1](\2)', markdown)
 
 
 async def process_gift_articles(
@@ -796,6 +803,7 @@ async def process_gift_articles(
             if url_mapping:
                 updated_content = replace_markdown_images(content, url_mapping)
                 print(f"Replaced {len(url_mapping)} image URLs in article {article_id}")
+            updated_content = strip_image_link_wrappers(updated_content)
 
             # If any upload failed, check if we've hit max attempts
             if upload_failed:
@@ -1060,6 +1068,7 @@ async def process_migration_articles(
             if url_mapping:
                 updated_content = replace_markdown_images(content, url_mapping)
                 print(f"Replaced {len(url_mapping)} image URLs in article {article_id}")
+            updated_content = strip_image_link_wrappers(updated_content)
 
             # If any upload failed, check if we've hit max attempts
             if upload_failed:
