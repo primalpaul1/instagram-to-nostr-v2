@@ -178,7 +178,7 @@
 
     <!-- WHAT PROMINENT PEOPLE SAY -->
     <section class="section">
-      <h2>Don't take our word for it</h2>
+      <h2>People are paying attention</h2>
       <p class="section-sub">Some notable people have a lot to say about why this matters.</p>
 
       <!-- svelte-ignore a11y_no_static_element_interactions -->
