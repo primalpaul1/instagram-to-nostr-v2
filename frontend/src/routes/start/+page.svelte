@@ -69,7 +69,7 @@
     <!-- HERO -->
     <section class="hero">
       <h1>Social media<br/><span class="gradient-text">you actually own.</span></h1>
-      <p class="hero-sub">No ads. Choose your algorithms. No one can delete your account. Welcome to a more humane social media.</p>
+      <p class="hero-sub">No ads. Choose your algorithms. No one can delete your account. This is what social media should have been.</p>
     </section>
 
     <!-- VIDEO -->
