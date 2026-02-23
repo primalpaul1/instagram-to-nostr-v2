@@ -6,7 +6,6 @@
   let activeQuote = 0;
   let memeGrid: HTMLElement;
   let quoteGrid: HTMLElement;
-  let videoPlaying = false;
   let email = '';
   let subscribeState: 'idle' | 'submitting' | 'success' | 'error' = 'idle';
 
@@ -70,33 +69,6 @@
     <section class="hero">
       <h1>Social media<br/><span class="gradient-text">you actually own.</span></h1>
       <p class="hero-sub">No ads. Choose your algorithms. No one can delete your account. This is what social media should have been.</p>
-    </section>
-
-    <!-- VIDEO -->
-    <section class="video-section">
-      {#if videoPlaying}
-        <div class="video-embed">
-          <iframe
-            src="https://www.youtube.com/embed/heJ5Iw_UpD8?autoplay=1&rel=0"
-            title="What is Primal?"
-            frameborder="0"
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-            allowfullscreen
-          ></iframe>
-        </div>
-      {:else}
-        <!-- svelte-ignore a11y_click_events_have_key_events -->
-        <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div class="video-thumbnail" on:click={() => videoPlaying = true}>
-          <img src="https://img.youtube.com/vi/heJ5Iw_UpD8/maxresdefault.jpg" alt="Watch: What is Primal?" loading="eager" />
-          <div class="play-button">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="white">
-              <path d="M8 5v14l11-7z"/>
-            </svg>
-          </div>
-          <div class="video-label">Watch the overview</div>
-        </div>
-      {/if}
     </section>
 
     <!-- PLATFORM COMPARISON -->
@@ -622,87 +594,6 @@
     line-height: 1.5;
     max-width: 520px;
     margin: 0 auto;
-  }
-
-  /* ---- VIDEO ---- */
-  .video-section {
-    margin-bottom: 0.75rem;
-  }
-
-  .video-embed {
-    position: relative;
-    padding-bottom: 56.25%; /* 16:9 */
-    border-radius: 1rem;
-    overflow: hidden;
-    border: 1px solid var(--border-light);
-  }
-
-  .video-embed iframe {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    border: none;
-  }
-
-  .video-thumbnail {
-    display: block;
-    position: relative;
-    border-radius: 1rem;
-    overflow: hidden;
-    border: 1px solid var(--border-light);
-    transition: all 0.3s ease;
-    text-decoration: none;
-    cursor: pointer;
-  }
-
-  .video-thumbnail:hover {
-    border-color: var(--accent);
-    transform: translateY(-2px);
-    box-shadow: 0 12px 40px rgba(250, 60, 131, 0.2);
-  }
-
-  .video-thumbnail img {
-    width: 100%;
-    display: block;
-    aspect-ratio: 16 / 9;
-    object-fit: cover;
-  }
-
-  .play-button {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: 64px;
-    height: 64px;
-    background: rgba(0, 0, 0, 0.7);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding-left: 3px;
-    transition: all 0.2s ease;
-  }
-
-  .video-thumbnail:hover .play-button {
-    background: var(--accent);
-    transform: translate(-50%, -50%) scale(1.1);
-  }
-
-  .video-label {
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    padding: 1.5rem 1rem 1rem;
-    background: linear-gradient(transparent, rgba(0, 0, 0, 0.8));
-    color: white;
-    font-size: 0.875rem;
-    font-weight: 600;
   }
 
   /* ---- SECTIONS ---- */
@@ -1717,10 +1608,6 @@
 
     .hero-sub {
       font-size: 0.9375rem;
-    }
-
-    .video-section {
-      margin-bottom: 0.5rem;
     }
 
     h1 {
