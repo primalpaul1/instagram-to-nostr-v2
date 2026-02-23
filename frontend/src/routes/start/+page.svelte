@@ -4,8 +4,27 @@
   let isMobile = false;
   let activeMeme = 0;
   let activeQuote = 0;
+  let activeVideo = 0;
   let memeGrid: HTMLElement;
   let quoteGrid: HTMLElement;
+  let videoGrid: HTMLElement;
+  let playingVideo: number | null = null;
+
+  const videos = [
+    { id: '0YDj1QdL2Zs', title: 'What is Nostr?' },
+    { id: 'heJ5Iw_UpD8', title: 'Nostr Crash Course' },
+    { id: 'lp-BlTbTmqA', title: 'Nostr: An Antidote to Censorship?' },
+    { id: 'ButstuTuea8', title: "Jack Dorsey's Biggest Problem with Elon Musk" },
+  ];
+
+  function handleVideoScroll() {
+    if (!videoGrid) return;
+    const cards = videoGrid.querySelectorAll('.video-card');
+    const scrollLeft = videoGrid.scrollLeft;
+    const cardWidth = (cards[0] as HTMLElement)?.offsetWidth ?? 1;
+    const gap = 12;
+    activeVideo = Math.round(scrollLeft / (cardWidth + gap));
+  }
   let email = '';
   let subscribeState: 'idle' | 'submitting' | 'success' | 'error' = 'idle';
 
@@ -74,7 +93,6 @@
     <!-- PLATFORM COMPARISON -->
     <section class="section">
       <h2>How Primal compares</h2>
-      <p class="section-sub">See how the platforms you use stack up on what actually matters.</p>
 
       <div class="chart">
         <div class="chart-header">
@@ -148,10 +166,52 @@
       </div>
     </section>
 
+    <!-- VIDEOS -->
+    <section class="section">
+      <h2>Not a platform. A protocol.</h2>
+      <p class="section-sub">Primal is built on Nostr.</p>
+
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div class="video-carousel" bind:this={videoGrid} on:scroll={handleVideoScroll}>
+        {#each videos as video, i}
+          <div class="video-card">
+            {#if playingVideo === i}
+              <div class="video-embed">
+                <iframe
+                  src="https://www.youtube.com/embed/{video.id}?autoplay=1&rel=0"
+                  title={video.title}
+                  frameborder="0"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowfullscreen
+                ></iframe>
+              </div>
+            {:else}
+              <!-- svelte-ignore a11y_click_events_have_key_events -->
+              <!-- svelte-ignore a11y_no_static_element_interactions -->
+              <div class="video-thumbnail" on:click={() => playingVideo = i}>
+                <img src="https://img.youtube.com/vi/{video.id}/hqdefault.jpg" alt={video.title} loading="lazy" />
+                <div class="play-button">
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="white">
+                    <path d="M8 5v14l11-7z"/>
+                  </svg>
+                </div>
+              </div>
+            {/if}
+            <p class="video-title">{video.title}</p>
+          </div>
+        {/each}
+      </div>
+
+      <div class="swipe-hint video-swipe-hint">
+        {#each videos as _, i}
+          <span class:active={activeVideo === i}></span>
+        {/each}
+      </div>
+    </section>
+
     <!-- WHAT PROMINENT PEOPLE SAY -->
     <section class="section">
       <h2>People are paying attention</h2>
-      <p class="section-sub">Some notable people have a lot to say about why this matters.</p>
 
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div class="quotes" bind:this={quoteGrid} on:scroll={handleQuoteScroll}>
@@ -596,6 +656,89 @@
     margin: 0 auto;
   }
 
+  /* ---- VIDEOS ---- */
+  .video-carousel {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .video-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .video-embed {
+    position: relative;
+    padding-bottom: 56.25%;
+    border-radius: 0.875rem;
+    overflow: hidden;
+    border: 1px solid var(--border-light);
+  }
+
+  .video-embed iframe {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    border: none;
+  }
+
+  .video-thumbnail {
+    position: relative;
+    border-radius: 0.875rem;
+    overflow: hidden;
+    border: 1px solid var(--border-light);
+    cursor: pointer;
+    transition: all 0.3s ease;
+  }
+
+  .video-thumbnail:hover {
+    border-color: var(--accent);
+    transform: translateY(-2px);
+    box-shadow: 0 12px 40px rgba(250, 60, 131, 0.2);
+  }
+
+  .video-thumbnail img {
+    width: 100%;
+    display: block;
+    aspect-ratio: 16 / 9;
+    object-fit: cover;
+  }
+
+  .play-button {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 64px;
+    height: 64px;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding-left: 3px;
+    transition: all 0.2s ease;
+  }
+
+  .video-thumbnail:hover .play-button {
+    background: var(--accent);
+    transform: translate(-50%, -50%) scale(1.1);
+  }
+
+  .video-title {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-align: center;
+    margin: 0;
+  }
+
   /* ---- SECTIONS ---- */
   .section {
     padding: 1.75rem 0;
@@ -874,12 +1017,22 @@
 
   /* ---- MEMES ---- */
   .meme-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
     gap: 0.875rem;
+    padding-bottom: 0.5rem;
+    scrollbar-width: none;
+  }
+
+  .meme-grid::-webkit-scrollbar {
+    display: none;
   }
 
   .meme-card {
+    flex: 0 0 45%;
+    scroll-snap-align: center;
     background: var(--bg-glass);
     border: 1px solid var(--border-light);
     border-radius: 1rem;
@@ -1182,9 +1335,25 @@
     display: block;
   }
 
-  /* ---- SWIPE HINT (mobile only) ---- */
+  /* ---- SWIPE HINT ---- */
   .swipe-hint {
-    display: none;
+    display: flex;
+    justify-content: center;
+    gap: 0.375rem;
+    padding-top: 0.75rem;
+  }
+
+  .swipe-hint span {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--text-muted);
+    opacity: 0.3;
+  }
+
+  .swipe-hint span.active {
+    opacity: 0.8;
+    background: var(--accent);
   }
 
   /* ---- MIGRATE SECTION ---- */
@@ -1683,43 +1852,30 @@
       display: flex;
     }
 
-    .meme-grid {
-      display: flex;
+    .video-carousel {
+      flex-direction: row;
       overflow-x: auto;
       scroll-snap-type: x mandatory;
       -webkit-overflow-scrolling: touch;
-      gap: 0.75rem;
       padding-bottom: 0.5rem;
-      scrollbar-width: none;        /* Firefox */
+      scrollbar-width: none;
     }
 
-    .meme-grid::-webkit-scrollbar {
-      display: none;                /* Chrome/Safari */
+    .video-carousel::-webkit-scrollbar {
+      display: none;
+    }
+
+    .video-card {
+      flex: 0 0 85%;
+      scroll-snap-align: center;
+    }
+
+    .video-swipe-hint {
+      display: flex;
     }
 
     .meme-card {
       flex: 0 0 75%;
-      scroll-snap-align: center;
-    }
-
-    .swipe-hint {
-      display: flex;
-      justify-content: center;
-      gap: 0.375rem;
-      padding-top: 0.75rem;
-    }
-
-    .swipe-hint span {
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      background: var(--text-muted);
-      opacity: 0.3;
-    }
-
-    .swipe-hint span.active {
-      opacity: 0.8;
-      background: var(--accent);
     }
 
     .migrate-btn {
