@@ -27,7 +27,7 @@
 <div class="app-container">
   <header>
     <h1>Own Your Posts</h1>
-    <p class="tagline">Bring your content to Primal. <a href="/start" class="why-link">Why Primal?</a></p>
+    <p class="tagline">Bring your content to Primal. <a href="/whyprimal" class="why-link">Why Primal?</a></p>
   </header>
 
   <main>
