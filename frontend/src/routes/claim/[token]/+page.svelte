@@ -864,7 +864,9 @@
                   class:excluded={isPostExcluded(post)}
                   on:click={() => openPostDetail(i)}
                 >
-                  {#if getMediaPreviewUrl(post)}
+                  {#if post.post_type === 'reel' && post.blossom_urls && post.blossom_urls.length > 0}
+                    <video src={post.blossom_urls[0]} preload="metadata" muted playsinline></video>
+                  {:else if getMediaPreviewUrl(post)}
                     <img src={getMediaPreviewUrl(post)} alt="" loading="lazy" decoding="async" />
                   {:else}
                     <div class="placeholder">
@@ -1944,14 +1946,16 @@
     cursor: pointer;
   }
 
-  .preview-item img {
+  .preview-item img,
+  .preview-item video {
     width: 100%;
     height: 100%;
     object-fit: cover;
     transition: transform 0.2s ease;
   }
 
-  .preview-item:hover img {
+  .preview-item:hover img,
+  .preview-item:hover video {
     transform: scale(1.05);
   }
 
@@ -2097,11 +2101,13 @@
     opacity: 0.5;
   }
 
-  .preview-item.excluded img {
+  .preview-item.excluded img,
+  .preview-item.excluded video {
     filter: grayscale(0.8);
   }
 
-  .preview-item.excluded:hover img {
+  .preview-item.excluded:hover img,
+  .preview-item.excluded:hover video {
     transform: none;
   }
 
