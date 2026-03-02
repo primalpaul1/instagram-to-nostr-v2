@@ -953,7 +953,7 @@
               {#each gift.posts.slice(0, 6) as post}
                 <div class="post-thumb">
                   {#if post.post_type === 'reel' && post.blossom_urls && post.blossom_urls.length > 0}
-                    <video src={post.blossom_urls[0]} preload="metadata" muted playsinline></video>
+                    <video src="{post.blossom_urls[0]}#t=0.1" preload="metadata" muted playsinline></video>
                   {:else if post.thumbnail_url}
                     <img src={post.thumbnail_url} alt="" />
                   {:else if post.blossom_urls && post.blossom_urls.length > 0}
@@ -1020,7 +1020,7 @@
               {#each gift.posts.slice(0, 6) as post}
                 <div class="post-thumb">
                   {#if post.post_type === 'reel' && post.blossom_urls && post.blossom_urls.length > 0}
-                    <video src={post.blossom_urls[0]} preload="metadata" muted playsinline></video>
+                    <video src="{post.blossom_urls[0]}#t=0.1" preload="metadata" muted playsinline></video>
                   {:else if post.thumbnail_url}
                     <img src={post.thumbnail_url} alt="" />
                   {:else if post.blossom_urls && post.blossom_urls.length > 0}

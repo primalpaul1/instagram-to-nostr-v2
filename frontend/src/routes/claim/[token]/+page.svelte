@@ -865,7 +865,7 @@
                   on:click={() => openPostDetail(i)}
                 >
                   {#if post.post_type === 'reel' && post.blossom_urls && post.blossom_urls.length > 0}
-                    <video src={post.blossom_urls[0]} preload="metadata" muted playsinline></video>
+                    <video src="{post.blossom_urls[0]}#t=0.1" preload="metadata" muted playsinline></video>
                   {:else if getMediaPreviewUrl(post)}
                     <img src={getMediaPreviewUrl(post)} alt="" loading="lazy" decoding="async" />
                   {:else}
