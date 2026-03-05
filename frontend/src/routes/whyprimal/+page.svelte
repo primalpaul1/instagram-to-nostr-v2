@@ -423,11 +423,6 @@
         </details>
 
         <details class="faq-item">
-          <summary>What about my followers?</summary>
-          <p>Your Instagram followers won't automatically follow you on Primal — but you can share your new profile with them. The people who care about your content will come. And they'll find a much better experience waiting for them.</p>
-        </details>
-
-        <details class="faq-item">
           <summary>What should my first post be?</summary>
           <p>Introduce yourself. Say what you do and/or what you're interested in. Why you're starting on Nostr. Add a photo if you wish. Definitely add the hashtag <strong>#introductions</strong> at the end. See this <a href="https://primal.net/e/nevent1qqswnssfrlyh97cys6sxzukdfgaf7kttuxtq4r3r69xnay2l5sk2f3cg759j9" target="_blank" rel="noopener noreferrer">example</a>. Also, send <a href="https://primal.net/paulinthejungle" target="_blank" rel="noopener noreferrer">paulinthejungle</a> a DM so he can repost.</p>
         </details>
