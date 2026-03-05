@@ -270,44 +270,6 @@
       </div>
     </section>
 
-    <!-- UNDERSTAND PRIMAL IN MEMES -->
-    <section class="section section-tight">
-      <h2>Understand Primal in memes</h2>
-      <p class="section-sub">Sometimes a meme explains it better than a whitepaper.</p>
-
-      <!-- svelte-ignore a11y_no_static_element_interactions -->
-      <div class="meme-grid" bind:this={memeGrid} on:scroll={handleMemeScroll}>
-        <div class="meme-card">
-          <img src="/meme-morpheus.jpg" alt="What if I told you... you never needed permission to post online" class="meme-img-real" loading="lazy" />
-        </div>
-
-        <div class="meme-card">
-          <img src="/meme-puppet.jpg" alt="Social Network: CEO controls you. Nostr: You control your relays." class="meme-img-real" loading="lazy" />
-        </div>
-
-        <div class="meme-card">
-          <img src="/meme-alligator.jpg" alt="Nostr kicking minimum eligibility requirements for monetizing content" class="meme-img-real" loading="lazy" />
-        </div>
-
-        <div class="meme-card">
-          <img src="/meme-cage.jpg" alt="When Twitter became X - I'm Free! (still in cage)" class="meme-img-real" loading="lazy" />
-        </div>
-
-        <div class="meme-card">
-          <img src="/meme-audience.jpg" alt="Mainstream audience size vs value compared to Nostr audience" class="meme-img-real" loading="lazy" />
-        </div>
-
-        <div class="meme-card">
-          <img src="/meme-freedom.jpg" alt="Nostr and Bitcoin fueling freedom" class="meme-img-real" loading="lazy" />
-        </div>
-      </div>
-      <div class="swipe-hint">
-        {#each Array(6) as _, i}
-          <span class:active={activeMeme === i}></span>
-        {/each}
-      </div>
-    </section>
-
     <!-- BRING YOUR CONTENT -->
     <section class="section migrate-section">
       <div class="migrate-badge">It takes 2 minutes</div>
@@ -536,6 +498,44 @@
             </div>
           </div>
         </a>
+      </div>
+    </section>
+
+    <!-- UNDERSTAND PRIMAL IN MEMES -->
+    <section class="section section-tight">
+      <h2>Understand Primal in memes</h2>
+      <p class="section-sub">Sometimes a meme explains it better than a whitepaper.</p>
+
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div class="meme-grid" bind:this={memeGrid} on:scroll={handleMemeScroll}>
+        <div class="meme-card">
+          <img src="/meme-morpheus.jpg" alt="What if I told you... you never needed permission to post online" class="meme-img-real" loading="lazy" />
+        </div>
+
+        <div class="meme-card">
+          <img src="/meme-puppet.jpg" alt="Social Network: CEO controls you. Nostr: You control your relays." class="meme-img-real" loading="lazy" />
+        </div>
+
+        <div class="meme-card">
+          <img src="/meme-alligator.jpg" alt="Nostr kicking minimum eligibility requirements for monetizing content" class="meme-img-real" loading="lazy" />
+        </div>
+
+        <div class="meme-card">
+          <img src="/meme-cage.jpg" alt="When Twitter became X - I'm Free! (still in cage)" class="meme-img-real" loading="lazy" />
+        </div>
+
+        <div class="meme-card">
+          <img src="/meme-audience.jpg" alt="Mainstream audience size vs value compared to Nostr audience" class="meme-img-real" loading="lazy" />
+        </div>
+
+        <div class="meme-card">
+          <img src="/meme-freedom.jpg" alt="Nostr and Bitcoin fueling freedom" class="meme-img-real" loading="lazy" />
+        </div>
+      </div>
+      <div class="swipe-hint">
+        {#each Array(6) as _, i}
+          <span class:active={activeMeme === i}></span>
+        {/each}
       </div>
     </section>
 
