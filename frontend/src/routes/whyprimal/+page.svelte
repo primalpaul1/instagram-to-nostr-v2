@@ -434,7 +434,7 @@
 
         <details class="faq-item">
           <summary>What are "keys"?</summary>
-          <p>Instead of email/password, Nostr uses cryptographic keys. Think of it as a universal login — one key works across every Nostr app. Primal handles all of this for you when you sign up, so you don't have to think about it.</p>
+          <p>Instead of email/password, Nostr uses cryptographic keys. Think of it as a universal login — one key works across every Nostr app. Find your key in the settings and keep it somewhere safe! It starts with "nsec".</p>
         </details>
 
         <details class="faq-item">
