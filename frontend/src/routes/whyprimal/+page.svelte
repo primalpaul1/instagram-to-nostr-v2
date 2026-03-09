@@ -619,8 +619,8 @@
   .hero-badge {
     display: inline-block;
     padding: 0.375rem 1rem;
-    background: rgba(250, 60, 131, 0.1);
-    border: 1px solid rgba(250, 60, 131, 0.25);
+    background: rgba(46, 155, 240, 0.1);
+    border: 1px solid rgba(46, 155, 240, 0.25);
     border-radius: 2rem;
     font-size: 0.8125rem;
     font-weight: 600;
@@ -693,7 +693,7 @@
   .video-thumbnail:hover {
     border-color: var(--accent);
     transform: translateY(-2px);
-    box-shadow: 0 12px 40px rgba(250, 60, 131, 0.2);
+    box-shadow: 0 12px 40px rgba(46, 155, 240, 0.2);
   }
 
   .video-thumbnail img {
@@ -803,11 +803,11 @@
   }
 
   .chart-primal {
-    background: rgba(250, 60, 131, 0.05);
+    background: rgba(46, 155, 240, 0.05);
   }
 
   .chart-primal:hover {
-    background: rgba(250, 60, 131, 0.08);
+    background: rgba(46, 155, 240, 0.08);
   }
 
   .chart-primal .chart-platform span {
@@ -965,10 +965,10 @@
 
   .quote-avatar-premium {
     border: 2px solid transparent;
-    background-image: linear-gradient(var(--bg-primary), var(--bg-primary)), linear-gradient(135deg, #F77737, #E1306C, #C13584);
+    background-image: linear-gradient(var(--bg-primary), var(--bg-primary)), linear-gradient(135deg, #1A6BF5, #2E9BF0, #4DD8FF);
     background-origin: border-box;
     background-clip: content-box, border-box;
-    box-shadow: 0 0 6px rgba(225, 48, 108, 0.25);
+    box-shadow: 0 0 6px rgba(46, 155, 240, 0.25);
   }
 
   .quote-info {
@@ -1038,7 +1038,7 @@
   }
 
   .meme-card:hover {
-    border-color: rgba(250, 60, 131, 0.3);
+    border-color: rgba(46, 155, 240, 0.3);
     transform: translateY(-2px);
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
   }
@@ -1082,7 +1082,7 @@
   .mockup-tab-active {
     border-color: var(--accent);
     color: var(--accent);
-    background: rgba(250, 60, 131, 0.08);
+    background: rgba(46, 155, 240, 0.08);
   }
 
   .mockup-field {
@@ -1090,7 +1090,7 @@
     align-items: center;
     padding: 0.75rem 1rem;
     border-radius: 0.75rem;
-    border: 1px solid rgba(250, 60, 131, 0.4);
+    border: 1px solid rgba(46, 155, 240, 0.4);
     background: var(--bg-tertiary);
   }
 
@@ -1440,7 +1440,7 @@
 
   .primary-btn:hover {
     transform: translateY(-2px);
-    box-shadow: 0 8px 24px rgba(250, 60, 131, 0.4);
+    box-shadow: 0 8px 24px rgba(46, 155, 240, 0.4);
   }
 
   .primary-btn svg {
@@ -1595,11 +1595,11 @@
   }
 
   .faq-item:hover {
-    border-color: rgba(250, 60, 131, 0.2);
+    border-color: rgba(46, 155, 240, 0.2);
   }
 
   .faq-item[open] {
-    border-color: rgba(250, 60, 131, 0.3);
+    border-color: rgba(46, 155, 240, 0.3);
   }
 
   .faq-item summary {
