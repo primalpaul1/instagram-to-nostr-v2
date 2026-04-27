@@ -922,8 +922,11 @@ async def fetch_twitter_stream(handle: str):
                             has_video = any(m["media_type"] == "video" for m in media_items)
                             post_type = "reel" if has_video else ("carousel" if len(media_items) > 1 else "image")
                             # Strip t.co links from tweets with media (they point to the attached media)
-                            text = re.sub(r'https?://t\.co/\w+', '', text).strip()
-                            text = re.sub(r'\s+', ' ', text).strip()
+                            text = re.sub(r'https?://t\.co/\w+', '', text)
+                            # Preserve newlines: collapse only horizontal whitespace, then trim each line, then cap 3+ blank lines.
+                            text = re.sub(r'[ \t]+', ' ', text)
+                            text = '\n'.join(line.strip() for line in text.split('\n'))
+                            text = re.sub(r'\n{3,}', '\n\n', text).strip()
                         else:
                             # Text-only tweet
                             post_type = "text"
