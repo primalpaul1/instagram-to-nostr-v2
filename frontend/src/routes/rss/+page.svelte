@@ -15,7 +15,7 @@
   import {
     createBlossomAuthEvent,
     createLongFormContentEvent,
-    signWithNIP46,
+    signEvent as signWithMode,
     createBlossomAuthHeader,
     calculateSHA256,
     publishToRelays,
@@ -23,6 +23,7 @@
     NOSTR_RELAYS,
     type ArticleMetadata
   } from '$lib/signing';
+  import { detectNostrExtension, getNIP07Pubkey } from '$lib/nip07';
   import { generateSecretKey, getPublicKey, finalizeEvent, type EventTemplate, type Event } from 'nostr-tools';
 
   type Step = 'input' | 'fetching' | 'select' | 'connect' | 'publishing' | 'done';
@@ -81,6 +82,10 @@
   let nip46Connection: NIP46Connection | null = null;
   let nip46Pubkey: string | null = null;
 
+  // Auth mode for this session — defaults to nip46. Switches to nip07 on extension login.
+  let authMode: 'nip46' | 'nip07' = 'nip46';
+  let nip07Available = false;
+
   // Publishing state
   let tasks: TaskStatus[] = [];
   let isProcessing = false;
@@ -131,11 +136,11 @@
     return result;
   }
 
-  async function signWithRetry(event: Parameters<typeof signWithNIP46>[1]): Promise<Event> {
+  async function signWithRetry(event: Parameters<typeof signWithMode>[2]): Promise<Event> {
     let lastError: Error | null = null;
     for (let attempt = 0; attempt <= SIGN_RETRIES; attempt++) {
       try {
-        return await withTimeout(signWithNIP46(nip46Connection!, event), SIGN_TIMEOUT);
+        return await withTimeout(signWithMode(authMode, nip46Connection, event), SIGN_TIMEOUT);
       } catch (err) {
         lastError = err instanceof Error ? err : new Error('Sign failed');
         console.warn(`Sign attempt ${attempt + 1} failed:`, lastError.message);
@@ -269,8 +274,8 @@
   function proceedToConnect() {
     if (selectedCount === 0) return;
 
-    // If already connected to Primal, skip connect step and go directly to publishing
-    if (connectionStatus === 'connected' && nip46Connection && nip46Pubkey) {
+    // If already connected (nip46 or nip07), skip connect step and go directly to publishing
+    if (connectionStatus === 'connected' && nip46Pubkey && (authMode === 'nip07' || nip46Connection)) {
       startPublishing();
       return;
     }
@@ -355,7 +360,8 @@
   }
 
   function startPublishing() {
-    if (connectionStatus !== 'connected' || !nip46Connection || !nip46Pubkey) return;
+    if (connectionStatus !== 'connected' || !nip46Pubkey) return;
+    if (authMode === 'nip46' && !nip46Connection) return;
     step = 'publishing';
     tasks = selectedArticles.map(article => ({
       article,
@@ -556,7 +562,30 @@
     return `${minutes} min read`;
   }
 
+  async function handleExtensionLogin(autoTriggered = false) {
+    try {
+      const pubkey = await getNIP07Pubkey();
+      authMode = 'nip07';
+      nip46Pubkey = pubkey;
+      connectionStatus = 'connected';
+    } catch (err) {
+      if (autoTriggered) {
+        console.log('[RSS] NIP-07 auto-login skipped:', err);
+        return;
+      }
+      connectionStatus = 'error';
+      connectionError = err instanceof Error ? err.message : 'Extension login failed';
+    }
+  }
+
   onMount(async () => {
+    detectNostrExtension().then(async (available) => {
+      nip07Available = available;
+      if (available && connectionStatus !== 'connected') {
+        await handleExtensionLogin(true);
+      }
+    });
+
     // Check for pending NIP-46 connection from iOS Safari redirect
     const pending = localStorage.getItem('nip46_pending_rss');
 
@@ -692,6 +721,14 @@
                 <button class="retry-btn" on:click={retryConnection}>Try Again</button>
               </div>
             {:else if qrCodeDataUrl}
+              {#if nip07Available}
+                <button type="button" class="extension-btn" on:click={() => handleExtensionLogin(false)}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 0 0 1.946-.806 3.42 3.42 0 0 1 4.438 0 3.42 3.42 0 0 0 1.946.806 3.42 3.42 0 0 1 3.138 3.138 3.42 3.42 0 0 0 .806 1.946 3.42 3.42 0 0 1 0 4.438 3.42 3.42 0 0 0-.806 1.946 3.42 3.42 0 0 1-3.138 3.138 3.42 3.42 0 0 0-1.946.806 3.42 3.42 0 0 1-4.438 0 3.42 3.42 0 0 0-1.946-.806 3.42 3.42 0 0 1-3.138-3.138 3.42 3.42 0 0 0-.806-1.946 3.42 3.42 0 0 1 0-4.438 3.42 3.42 0 0 0 .806-1.946 3.42 3.42 0 0 1 3.138-3.138z"/>
+                  </svg>
+                  Log in with extension
+                </button>
+              {/if}
               <a href={mobileConnectionURI} class="primal-login-btn" >
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
                   <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
@@ -1273,6 +1310,35 @@
     align-items: center;
     gap: 1rem;
     text-align: center;
+  }
+
+  .extension-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0.875rem 1.5rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-light);
+    border-radius: 0.75rem;
+    color: var(--text-primary);
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    margin-bottom: 0.75rem;
+  }
+
+  .extension-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+    transform: translateY(-1px);
+  }
+
+  .extension-btn svg {
+    flex-shrink: 0;
+    color: var(--accent);
   }
 
   .error-text {

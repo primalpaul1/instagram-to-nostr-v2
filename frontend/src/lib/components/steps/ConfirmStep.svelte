@@ -5,10 +5,14 @@
   let loading = false;
   let email = '';
 
-  $: isNip46Mode = $wizard.authMode === 'nip46';
+  $: isRemoteMode = $wizard.authMode === 'nip46' || $wizard.authMode === 'nip07';
+  $: isExtensionMode = $wizard.authMode === 'nip07';
   $: isArticlesMode = $wizard.contentType === 'articles';
-  $: displayNpub = isNip46Mode
-    ? ($wizard.nip46Pubkey ? hexToNpub($wizard.nip46Pubkey) : '')
+  $: displayNpub = isRemoteMode
+    ? (() => {
+        const hex = $wizard.nip46Pubkey || $wizard.nip07Pubkey;
+        return hex ? hexToNpub(hex) : '';
+      })()
     : $wizard.keyPair?.npub || '';
 
   $: reelCount = $selectedReels.length;
@@ -27,7 +31,7 @@
     wizard.setError(null);
 
     try {
-      if (isNip46Mode) {
+      if (isRemoteMode) {
         // Create self-proposal for async flow
         const selectedPostsData = $selectedPosts.map(p => ({
           id: p.id,
@@ -48,7 +52,7 @@
           hashtags: a.hashtags
         }));
 
-        const userNpub = hexToNpub($wizard.nip46Pubkey!);
+        const userNpub = hexToNpub(($wizard.nip46Pubkey || $wizard.nip07Pubkey)!);
 
         const response = await fetch('/api/proposals', {
           method: 'POST',
@@ -159,10 +163,10 @@
       <span class="summary-label">{isArticlesMode ? 'Source' : 'Instagram'}</span>
       <span class="summary-value">{isArticlesMode ? $wizard.handle : `@${$wizard.handle}`}</span>
     </div>
-    {#if isNip46Mode}
+    {#if isRemoteMode}
       <div class="divider"></div>
       <div class="summary-item">
-        <span class="summary-label">Primal Account</span>
+        <span class="summary-label">Nostr Account</span>
         <code class="summary-value mono">{displayNpub.slice(0, 16)}...</code>
       </div>
       <div class="divider"></div>
@@ -172,7 +176,7 @@
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M20 6L9 17l-5-5"/>
           </svg>
-          Primal Connected
+          {isExtensionMode ? 'Extension Connected' : 'Primal Connected'}
         </span>
       </div>
     {/if}
@@ -260,7 +264,7 @@
       <span>What happens next</span>
     </div>
     <ul class="info-list">
-      {#if isNip46Mode}
+      {#if isRemoteMode}
         {#if isArticlesMode}
           <li>Upload images to Blossom media server</li>
           <li>Create long-form content events</li>
@@ -277,7 +281,7 @@
         <li>You can close your phone while we prepare</li>
       {/if}
     </ul>
-    {#if !isNip46Mode}
+    {#if !isRemoteMode}
       <div class="email-notify">
         <label for="notify-email">Get notified when your content is ready (optional)</label>
         <input

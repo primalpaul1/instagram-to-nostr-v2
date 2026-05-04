@@ -11,7 +11,7 @@ export type WizardStep =
   | 'proposal-created'
   | 'complete';
 
-export type AuthMode = 'generate' | 'nip46';
+export type AuthMode = 'generate' | 'nip46' | 'nip07';
 export type PostType = 'reel' | 'image' | 'carousel' | 'text';
 
 export interface MediaItemInfo {
@@ -107,6 +107,7 @@ export interface WizardState {
   authMode: AuthMode;
   nip46Connection: NIP46Connection | null;
   nip46Pubkey: string | null;
+  nip07Pubkey: string | null;
 }
 
 // Media cache for pre-downloaded content (stored outside reactive state for performance)
@@ -143,7 +144,8 @@ const initialState: WizardState = {
   loading: false,
   authMode: 'generate',
   nip46Connection: null,
-  nip46Pubkey: null
+  nip46Pubkey: null,
+  nip07Pubkey: null
 };
 
 function createWizardStore() {
@@ -223,6 +225,15 @@ function createWizardStore() {
     setAuthMode: (authMode: AuthMode) => update(s => ({ ...s, authMode })),
     setNIP46Connection: (nip46Connection: NIP46Connection | null, nip46Pubkey: string | null) =>
       update(s => ({ ...s, nip46Connection, nip46Pubkey })),
+    setNIP07Pubkey: (nip07Pubkey: string | null) =>
+      update(s => ({ ...s, nip07Pubkey })),
+    clearAuth: () => update(s => ({
+      ...s,
+      authMode: 'generate',
+      nip46Connection: null,
+      nip46Pubkey: null,
+      nip07Pubkey: null
+    })),
     clearNIP46: () => update(s => ({
       ...s,
       authMode: 'generate',
@@ -285,4 +296,17 @@ export const selectedArticles = derived(
 export const selectedArticlesCount = derived(
   selectedArticles,
   $selected => $selected.length
+);
+
+// Hex pubkey of the connected user, regardless of which auth mode is active.
+export const userPubkey = derived(
+  wizard,
+  $wizard => $wizard.nip46Pubkey || $wizard.nip07Pubkey || null
+);
+
+// True when the user is signing client-side via a remote signer (nip46 or extension).
+// As opposed to 'generate' mode where we make keys for them.
+export const isRemoteSign = derived(
+  wizard,
+  $wizard => $wizard.authMode === 'nip46' || $wizard.authMode === 'nip07'
 );

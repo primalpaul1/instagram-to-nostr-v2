@@ -12,6 +12,7 @@
     closeConnection,
     type NIP46Connection
   } from '$lib/nip46';
+  import { detectNostrExtension, getNIP07Pubkey } from '$lib/nip07';
 
   export let defaultPlatform: 'instagram' | 'tiktok' | 'twitter' | 'rss' = 'instagram';
 
@@ -39,7 +40,10 @@
   let connectionError = '';
   let pendingConnection: NIP46Connection | null = null;
 
-  // Mobile detection (like ZapTrax)
+  // NIP-07 (browser extension / in-app injected window.nostr) availability
+  let nip07Available = false;
+
+  // Mobile detection — used to swap the QR (desktop) for a Primal deep-link button (mobile).
   let isMobile = false;
 
   function detectMobile(): boolean {
@@ -66,6 +70,35 @@
 
   onMount(async () => {
     isMobile = detectMobile();
+
+    // Detect NIP-07 in parallel with NIP-46 init. Polls briefly so
+    // late-injecting extensions (and in-app browsers like Keychat) are caught.
+    detectNostrExtension().then(async (available) => {
+      nip07Available = available;
+      console.log('[HandleStep] NIP-07 available:', available);
+
+      // Auto-login: if extension is present, try to fetch the pubkey immediately.
+      // For previously-approved sites this is silent. For new sites the extension
+      // shows its own approval prompt — same UX as clicking the button manually.
+      // Failures are non-fatal: button stays visible as a fallback, no error state.
+      if (available && $wizard.authMode === 'generate') {
+        try {
+          const pubkey = await getNIP07Pubkey();
+          if (pendingConnection) {
+            closeConnection(pendingConnection);
+            pendingConnection = null;
+          }
+          wizard.setNIP46Connection(null, null);
+          wizard.setAuthMode('nip07');
+          wizard.setNIP07Pubkey(pubkey);
+          connectionStatus = 'connected';
+          console.log('[HandleStep] NIP-07 auto-login OK, pubkey:', pubkey.slice(0, 16) + '...');
+        } catch (err) {
+          console.log('[HandleStep] Auto-login skipped:', err);
+        }
+      }
+    });
+
     console.log('[HandleStep] onMount, isMobile:', isMobile);
     console.log('[HandleStep] All localStorage keys:', Object.keys(localStorage));
 
@@ -173,6 +206,31 @@
     } catch (err) {
       connectionStatus = 'error';
       connectionError = err instanceof Error ? err.message : 'Connection failed';
+    }
+  }
+
+  async function handleExtensionLogin() {
+    console.log('[HandleStep] Extension login clicked, window.nostr:', !!window.nostr);
+    try {
+      connectionError = '';
+      const pubkey = await getNIP07Pubkey();
+      console.log('[HandleStep] getPublicKey returned:', pubkey?.slice(0, 16) + '...');
+
+      // Tear down any pending NIP-46 attempt — extension wins.
+      if (pendingConnection) {
+        closeConnection(pendingConnection);
+        pendingConnection = null;
+      }
+      wizard.setNIP46Connection(null, null);
+
+      wizard.setAuthMode('nip07');
+      wizard.setNIP07Pubkey(pubkey);
+      connectionStatus = 'connected';
+      console.log('[HandleStep] NIP-07 login OK');
+    } catch (err) {
+      console.error('[HandleStep] NIP-07 login failed:', err);
+      connectionStatus = 'error';
+      connectionError = err instanceof Error ? err.message : 'Extension login failed';
     }
   }
 
@@ -539,39 +597,52 @@
               <path d="M20 6L9 17l-5-5"/>
             </svg>
           </div>
-          <span class="connected-label">Connected</span>
-          <code class="pubkey">{hexToNpub($wizard.nip46Pubkey || '').slice(0, 24)}...</code>
+          <span class="connected-label">
+            {$wizard.authMode === 'nip07' ? 'Connected via extension' : 'Connected'}
+          </span>
+          <code class="pubkey">
+            {hexToNpub($wizard.nip46Pubkey || $wizard.nip07Pubkey || '').slice(0, 24)}...
+          </code>
         </div>
       {:else if connectionStatus === 'error'}
         <div class="error-state">
           <p class="error-text">{connectionError}</p>
           <button class="retry-btn" on:click={retryConnection}>Try Again</button>
         </div>
-      {:else if qrCodeDataUrl}
-        {#if isMobile}
-          <!-- Mobile: Log in with Primal button -->
-          <button
-            type="button"
-            class="primal-login-btn"
-            on:click={handleOpenSignerApp}
-          >
-            <img src="/primal-logo.png" alt="Primal" class="primal-logo" />
-            Log in with Primal
-          </button>
-        {:else}
-          <!-- Desktop: QR code -->
-          <div class="qr-wrapper">
-            <img src={qrCodeDataUrl} alt="Scan with Primal" class="qr-code" />
-          </div>
-          <div class="waiting-indicator">
-            <div class="pulse-dot"></div>
-            <span>Scan with your signer app</span>
-          </div>
-        {/if}
       {:else}
-        <div class="loading-state">
-          <div class="qr-spinner"></div>
-          <span>Generating QR code...</span>
+        <div class="login-options">
+          {#if nip07Available}
+            <button type="button" class="extension-btn" on:click={handleExtensionLogin}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 0 0 1.946-.806 3.42 3.42 0 0 1 4.438 0 3.42 3.42 0 0 0 1.946.806 3.42 3.42 0 0 1 3.138 3.138 3.42 3.42 0 0 0 .806 1.946 3.42 3.42 0 0 1 0 4.438 3.42 3.42 0 0 0-.806 1.946 3.42 3.42 0 0 1-3.138 3.138 3.42 3.42 0 0 0-1.946.806 3.42 3.42 0 0 1-4.438 0 3.42 3.42 0 0 0-1.946-.806 3.42 3.42 0 0 1-3.138-3.138 3.42 3.42 0 0 0-.806-1.946 3.42 3.42 0 0 1 0-4.438 3.42 3.42 0 0 0 .806-1.946 3.42 3.42 0 0 1 3.138-3.138z"/>
+              </svg>
+              Log in with extension
+            </button>
+          {/if}
+
+          {#if qrCodeDataUrl}
+            {#if isMobile}
+              <!-- Mobile: Primal deep-link button, no QR -->
+              <button type="button" class="primal-login-btn" on:click={handleOpenSignerApp}>
+                <img src="/primal-logo.png" alt="Primal" class="primal-logo" />
+                Log in with Primal
+              </button>
+            {:else}
+              <!-- Desktop: QR for cross-device scan -->
+              <div class="qr-wrapper">
+                <img src={qrCodeDataUrl} alt="Scan with Primal" class="qr-code" />
+              </div>
+              <div class="waiting-indicator">
+                <div class="pulse-dot"></div>
+                <span>Scan with your signer app</span>
+              </div>
+            {/if}
+          {:else}
+            <div class="loading-state">
+              <div class="qr-spinner"></div>
+              <span>Generating QR code...</span>
+            </div>
+          {/if}
         </div>
       {/if}
     </div>
@@ -909,6 +980,8 @@
   }
 
   .qr-wrapper {
+    align-self: center;
+    width: fit-content;
     padding: 0.75rem;
     background: white;
     border-radius: 0.75rem;
@@ -923,6 +996,7 @@
   }
 
   .waiting-indicator {
+    align-self: center;
     display: flex;
     align-items: center;
     gap: 0.5rem;
@@ -1071,6 +1145,43 @@
     font-weight: 600;
     color: var(--accent);
     flex-shrink: 0;
+  }
+
+  .login-options {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.75rem;
+    width: 100%;
+  }
+
+  /* Log in with extension button */
+  .extension-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0.875rem 1.5rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-light);
+    border-radius: 0.75rem;
+    color: var(--text-primary);
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .extension-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+    transform: translateY(-1px);
+  }
+
+  .extension-btn svg {
+    flex-shrink: 0;
+    color: var(--accent);
   }
 
   /* Login with Primal button */

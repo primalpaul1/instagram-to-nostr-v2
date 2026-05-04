@@ -3,9 +3,12 @@
   import { hexToNpub } from '$lib/nip46';
   import FollowPacks from '$lib/components/FollowPacks.svelte';
 
-  $: isNip46Mode = $wizard.authMode === 'nip46';
-  $: displayNpub = isNip46Mode
-    ? ($wizard.nip46Pubkey ? hexToNpub($wizard.nip46Pubkey) : '')
+  $: isRemoteMode = $wizard.authMode === 'nip46' || $wizard.authMode === 'nip07';
+  $: displayNpub = isRemoteMode
+    ? (() => {
+        const hex = $wizard.nip46Pubkey || $wizard.nip07Pubkey;
+        return hex ? hexToNpub(hex) : '';
+      })()
     : $wizard.keyPair?.npub || '';
 
   $: primalUrl = displayNpub
@@ -85,7 +88,7 @@ ${primalUrl}
     </svg>
   </a>
 
-  {#if !isNip46Mode}
+  {#if !isRemoteMode}
     <div class="whats-next-section">
       <h3 class="section-title">What's next?</h3>
 
@@ -220,7 +223,7 @@ ${primalUrl}
     </div>
   {/if}
 
-  {#if isNip46Mode}
+  {#if isRemoteMode}
     <div class="freedom-section">
       <div class="freedom-card own-content">
         <div class="freedom-glow"></div>

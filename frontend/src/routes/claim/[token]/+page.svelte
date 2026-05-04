@@ -17,12 +17,13 @@
   import {
     createMultiMediaPostEvent,
     createLongFormContentEvent,
-    signWithNIP46,
+    signEvent as signWithMode,
     publishToRelays,
     importToPrimalCache,
     NOSTR_RELAYS,
     type MediaUpload
   } from '$lib/signing';
+  import { detectNostrExtension, getNIP07Pubkey } from '$lib/nip07';
 
   type PageStep = 'loading' | 'preview' | 'connect' | 'verify_error' | 'publishing' | 'complete' | 'error';
 
@@ -97,6 +98,11 @@
   let nip46Connection: NIP46Connection | null = null;
   let connectedPubkey = '';
 
+  // Auth mode for this session — defaults to nip46 (QR/Primal flow). Switches to nip07
+  // when the user clicks the extension button or auto-login succeeds.
+  let authMode: 'nip46' | 'nip07' = 'nip46';
+  let nip07Available = false;
+
   // Publishing state
   interface PostTaskStatus {
     post: ProposalPost;
@@ -147,8 +153,35 @@
 
   const token = $page.params.token;
 
+  async function handleExtensionLogin(autoTriggered = false) {
+    try {
+      const pubkey = await getNIP07Pubkey();
+      authMode = 'nip07';
+      connectedPubkey = pubkey;
+      connectionStatus = 'connected';
+      step = 'connect';
+      await verifyPubkey();
+    } catch (err) {
+      if (autoTriggered) {
+        // Auto-login failure is silent — extension button stays as fallback.
+        console.log('[Claim] NIP-07 auto-login skipped:', err);
+        return;
+      }
+      connectionStatus = 'error';
+      connectionError = err instanceof Error ? err.message : 'Extension login failed';
+    }
+  }
+
   onMount(async () => {
     await loadProposal();
+
+    // Detect extension. If present, attempt silent auto-login — same UX as HandleStep.
+    detectNostrExtension().then(async (available) => {
+      nip07Available = available;
+      if (available && step === 'preview') {
+        await handleExtensionLogin(true);
+      }
+    });
 
     // Check for successful connection from callback page (mobile flow)
     const connected = localStorage.getItem('nip46_connected');
@@ -394,7 +427,8 @@
   let publishedArticleIds: number[] = [];
 
   async function startPublishing() {
-    if (!nip46Connection || !proposal) return;
+    if (!proposal) return;
+    if (authMode === 'nip46' && !nip46Connection) return;
 
     // Sign sequentially - NIP-46 signers overwrite timestamps when processing
     // multiple concurrent requests. Sequential signing preserves original dates.
@@ -493,7 +527,8 @@
 
   async function publishPost(index: number) {
     const task = postTasks[index];
-    if (!nip46Connection || !proposal) return;
+    if (!proposal) return;
+    if (authMode === 'nip46' && !nip46Connection) return;
 
     try {
       postTasks[index] = { ...task, status: 'signing' };
@@ -518,8 +553,7 @@
         task.post.original_date || undefined
       );
 
-      // Sign with NIP-46
-      const signedPost = await signWithNIP46(nip46Connection, postEvent);
+      const signedPost = await signWithMode(authMode, nip46Connection, postEvent);
 
       // Small delay between signings to help signer preserve timestamps
       await new Promise(resolve => setTimeout(resolve, 100));
@@ -554,7 +588,8 @@
 
   async function publishArticle(index: number) {
     const task = articleTasks[index];
-    if (!nip46Connection || !proposal) return;
+    if (!proposal) return;
+    if (authMode === 'nip46' && !nip46Connection) return;
 
     try {
       articleTasks[index] = { ...task, status: 'signing' };
@@ -580,8 +615,7 @@
         content: task.article.content_markdown
       });
 
-      // Sign with NIP-46
-      const signedArticle = await signWithNIP46(nip46Connection, articleEvent);
+      const signedArticle = await signWithMode(authMode, nip46Connection, articleEvent);
 
       // Small delay between signings
       await new Promise(resolve => setTimeout(resolve, 100));
@@ -1001,6 +1035,15 @@
               <button class="retry-btn" on:click={initNIP46Connection}>Try Again</button>
             </div>
           {:else if qrCodeDataUrl}
+            {#if nip07Available}
+              <button type="button" class="extension-btn" on:click={() => handleExtensionLogin(false)}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 0 0 1.946-.806 3.42 3.42 0 0 1 4.438 0 3.42 3.42 0 0 0 1.946.806 3.42 3.42 0 0 1 3.138 3.138 3.42 3.42 0 0 0 .806 1.946 3.42 3.42 0 0 1 0 4.438 3.42 3.42 0 0 0-.806 1.946 3.42 3.42 0 0 1-3.138 3.138 3.42 3.42 0 0 0-1.946.806 3.42 3.42 0 0 1-4.438 0 3.42 3.42 0 0 0-1.946-.806 3.42 3.42 0 0 1-3.138-3.138 3.42 3.42 0 0 0-.806-1.946 3.42 3.42 0 0 1 0-4.438 3.42 3.42 0 0 0 .806-1.946 3.42 3.42 0 0 1 3.138-3.138z"/>
+                </svg>
+                Log in with extension
+              </button>
+            {/if}
+
             <!-- Login with Primal button for mobile (includes callback for redirect) -->
             <a
               href={mobileConnectionURI}
@@ -2171,6 +2214,35 @@
   }
 
   /* Login with Primal button */
+  .extension-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0.875rem 1.5rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-light);
+    border-radius: 0.75rem;
+    color: var(--text-primary);
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    margin-bottom: 0.75rem;
+  }
+
+  .extension-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+    transform: translateY(-1px);
+  }
+
+  .extension-btn svg {
+    flex-shrink: 0;
+    color: var(--accent);
+  }
+
   .primal-login-btn {
     display: flex;
     align-items: center;

@@ -45,11 +45,15 @@ Store it somewhere safe!
     downloaded = true;
   }
 
-  $: isNip46Mode = $wizard.authMode === 'nip46';
-  $: nip46Npub = $wizard.nip46Pubkey ? hexToNpub($wizard.nip46Pubkey) : '';
+  $: isRemoteMode = $wizard.authMode === 'nip46' || $wizard.authMode === 'nip07';
+  $: isExtensionMode = $wizard.authMode === 'nip07';
+  $: connectedNpub = (() => {
+    const hex = $wizard.nip46Pubkey || $wizard.nip07Pubkey;
+    return hex ? hexToNpub(hex) : '';
+  })();
 
   onMount(() => {
-    if (!isNip46Mode && !keyPair) {
+    if (!isRemoteMode && !keyPair) {
       keyPair = generateKeyPair();
       wizard.setKeyPair(keyPair);
     }
@@ -64,7 +68,7 @@ Store it somewhere safe!
   }
 
   function handleContinue() {
-    if (!isNip46Mode && !downloaded) return;
+    if (!isRemoteMode && !downloaded) return;
     wizard.setStep('videos');
   }
 
@@ -74,21 +78,21 @@ Store it somewhere safe!
 </script>
 
 <div class="keys-step">
-  {#if isNip46Mode}
+  {#if isRemoteMode}
     <div class="hero-section">
       <div class="success-badge">
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
           <path d="M20 6L9 17l-5-5"/>
         </svg>
       </div>
-      <h2>Connected to Primal</h2>
+      <h2>{isExtensionMode ? 'Connected via extension' : 'Connected to Primal'}</h2>
       <p class="subtitle">Your videos will be posted to your existing Nostr identity</p>
     </div>
 
     <div class="identity-card">
       <div class="identity-header">
         <span class="label">Your Public Key</span>
-        <button class="copy-btn" on:click={() => copyToClipboard(nip46Npub, 'npub')}>
+        <button class="copy-btn" on:click={() => copyToClipboard(connectedNpub, 'npub')}>
           {#if copied.npub}
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M20 6L9 17l-5-5"/>
@@ -103,7 +107,7 @@ Store it somewhere safe!
           {/if}
         </button>
       </div>
-      <code class="pubkey">{nip46Npub}</code>
+      <code class="pubkey">{connectedNpub}</code>
     </div>
 
     <div class="info-banner">
@@ -112,8 +116,12 @@ Store it somewhere safe!
         <path d="M12 16v-4M12 8h.01"/>
       </svg>
       <div class="info-content">
-        <strong>Remote Signing</strong>
-        <p>Your secret key stays safely in your Primal app. Keep this browser tab open during publishing.</p>
+        <strong>{isExtensionMode ? 'Extension Signing' : 'Remote Signing'}</strong>
+        <p>
+          {isExtensionMode
+            ? 'Your secret key stays in your browser extension. Keep this tab open during publishing.'
+            : 'Your secret key stays safely in your Primal app. Keep this browser tab open during publishing.'}
+        </p>
       </div>
     </div>
 

@@ -6,7 +6,7 @@
     createMultiMediaPostEvent,
     createLongFormContentEvent,
     createProfileEvent,
-    signWithNIP46,
+    signEvent as signWithMode,
     createBlossomAuthHeader,
     calculateSHA256,
     publishToRelays,
@@ -95,13 +95,16 @@
   }
 
   async function signWithRetry(
-    connection: typeof $wizard.nip46Connection,
-    event: Parameters<typeof signWithNIP46>[1]
-  ): Promise<Awaited<ReturnType<typeof signWithNIP46>>> {
+    event: Parameters<typeof signWithMode>[2]
+  ): Promise<Event> {
+    const mode = $wizard.authMode;
+    if (mode !== 'nip46' && mode !== 'nip07') {
+      throw new Error(`signWithRetry called in unsupported authMode '${mode}'`);
+    }
     let lastError: Error | null = null;
     for (let attempt = 0; attempt <= SIGN_RETRIES; attempt++) {
       try {
-        return await withTimeout(signWithNIP46(connection!, event), SIGN_TIMEOUT);
+        return await withTimeout(signWithMode(mode, $wizard.nip46Connection, event), SIGN_TIMEOUT);
       } catch (err) {
         lastError = err instanceof Error ? err : new Error('Sign failed');
         console.warn(`Sign attempt ${attempt + 1} failed:`, lastError.message);
@@ -263,8 +266,10 @@
 
   async function processPost(index: number, tempKeypair: TempKeypair) {
     const task = tasks[index];
-    if (!$wizard.nip46Connection || !$wizard.nip46Pubkey) {
-      tasks[index] = { ...task, status: 'error', error: 'No NIP-46 connection' };
+    const userPubkey = $wizard.nip46Pubkey || $wizard.nip07Pubkey;
+    const isNip46 = $wizard.authMode === 'nip46';
+    if (!userPubkey || (isNip46 && !$wizard.nip46Connection)) {
+      tasks[index] = { ...task, status: 'error', error: 'No signer connection' };
       return;
     }
 
@@ -309,7 +314,7 @@
 
       // Create post event with all media
       const postEvent = createMultiMediaPostEvent(
-        $wizard.nip46Pubkey,
+        userPubkey,
         mediaUploads,
         task.post.caption,
         task.post.original_date
@@ -317,7 +322,7 @@
 
       // Use signing queue to serialize NIP-46 requests (one at a time) with retry
       const signedPost = await withSigningQueue(() =>
-        signWithRetry($wizard.nip46Connection, postEvent)
+        signWithRetry(postEvent)
       );
 
       tasks[index] = { ...tasks[index], status: 'publishing' };
@@ -354,7 +359,9 @@
   }
 
   async function publishProfile(tempKeypair: TempKeypair) {
-    if (!$wizard.nip46Connection || !$wizard.nip46Pubkey || !$wizard.feedInfo) return;
+    const userPubkey = $wizard.nip46Pubkey || $wizard.nip07Pubkey;
+    const isNip46 = $wizard.authMode === 'nip46';
+    if (!userPubkey || (isNip46 && !$wizard.nip46Connection) || !$wizard.feedInfo) return;
 
     try {
       const feedInfo = $wizard.feedInfo;
@@ -372,11 +379,11 @@
       }
 
       if (name) {
-        const profileEvent = createProfileEvent($wizard.nip46Pubkey, name, bio, picture);
+        const profileEvent = createProfileEvent(userPubkey, name, bio, picture);
 
         // Sign with NIP-46
         const signedProfile = await withSigningQueue(() =>
-          signWithRetry($wizard.nip46Connection, profileEvent)
+          signWithRetry(profileEvent)
         );
 
         // Publish to relays
@@ -447,8 +454,10 @@
 
   async function processArticle(index: number, tempKeypair: TempKeypair) {
     const task = tasks[index] as ArticleTaskStatus;
-    if (!$wizard.nip46Connection || !$wizard.nip46Pubkey) {
-      tasks[index] = { ...task, status: 'error', error: 'No NIP-46 connection' };
+    const userPubkey = $wizard.nip46Pubkey || $wizard.nip07Pubkey;
+    const isNip46 = $wizard.authMode === 'nip46';
+    if (!userPubkey || (isNip46 && !$wizard.nip46Connection)) {
+      tasks[index] = { ...task, status: 'error', error: 'No signer connection' };
       return;
     }
 
@@ -512,11 +521,11 @@
         content
       };
 
-      const articleEvent = createLongFormContentEvent($wizard.nip46Pubkey, articleData);
+      const articleEvent = createLongFormContentEvent(userPubkey, articleData);
 
       // Sign with NIP-46
       const signedArticle = await withSigningQueue(() =>
-        signWithRetry($wizard.nip46Connection, articleEvent)
+        signWithRetry(articleEvent)
       );
 
       // Update status to publishing

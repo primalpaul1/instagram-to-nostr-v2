@@ -87,8 +87,8 @@
     const count = $wizard.contentType === 'articles' ? $selectedArticlesCount : totalSelectedCount;
     if (count === 0) return;
 
-    // For NIP-46 mode, create proposal directly and go to proposal-created
-    if ($wizard.authMode === 'nip46') {
+    // For remote-sign modes (nip46 / nip07), create proposal directly and go to proposal-created
+    if ($wizard.authMode === 'nip46' || $wizard.authMode === 'nip07') {
       await handleCreateProposal();
       return;
     }
@@ -135,7 +135,7 @@
         hashtags: a.hashtags
       }));
 
-      const userNpub = hexToNpub($wizard.nip46Pubkey!);
+      const userNpub = hexToNpub(($wizard.nip46Pubkey || $wizard.nip07Pubkey)!);
 
       const response = await fetch('/api/proposals', {
         method: 'POST',
@@ -505,7 +505,7 @@
         {#if isCreatingMigration}
           <div class="btn-spinner"></div>
           Creating migration...
-        {:else if $wizard.authMode === 'nip46'}
+        {:else if $wizard.authMode === 'nip46' || $wizard.authMode === 'nip07'}
           Prepare {$selectedArticlesCount} Article{$selectedArticlesCount !== 1 ? 's' : ''}
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M5 12h14M12 5l7 7-7 7"/>
@@ -612,7 +612,7 @@
         {#if isCreatingMigration}
           <div class="btn-spinner"></div>
           Creating migration...
-        {:else if $wizard.authMode === 'nip46'}
+        {:else if $wizard.authMode === 'nip46' || $wizard.authMode === 'nip07'}
           Prepare {totalSelectedCount} Tweet{totalSelectedCount !== 1 ? 's' : ''}
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M5 12h14M12 5l7 7-7 7"/>
@@ -740,7 +740,7 @@
         {#if isCreatingMigration}
           <div class="btn-spinner"></div>
           Creating migration...
-        {:else if $wizard.authMode === 'nip46'}
+        {:else if $wizard.authMode === 'nip46' || $wizard.authMode === 'nip07'}
           Prepare {totalSelectedCount} Post{totalSelectedCount !== 1 ? 's' : ''}
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M5 12h14M12 5l7 7-7 7"/>

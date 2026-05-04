@@ -300,6 +300,22 @@ export async function signWithNIP46(
 }
 
 /**
+ * Unified signer router. Pass the active auth mode and (for nip46) the connection.
+ * Throws for 'generate' — that mode signs locally with a stored secret key, not via this path.
+ */
+export async function signEvent(
+  authMode: 'nip46' | 'nip07',
+  connection: NIP46Connection | null,
+  event: Omit<Event, 'sig'>
+): Promise<Event> {
+  if (authMode === 'nip07') {
+    const { signWithNIP07 } = await import('./nip07');
+    return signWithNIP07(event);
+  }
+  return signWithNIP46(connection, event);
+}
+
+/**
  * Generate Authorization header for Blossom upload from signed event.
  */
 export function createBlossomAuthHeader(signedEvent: Event): string {
