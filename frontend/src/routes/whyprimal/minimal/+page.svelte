@@ -89,12 +89,6 @@
   </header>
 
   <main>
-    <!-- HERO -->
-    <section class="hero">
-      <h1>Social media<br/><span class="gradient-text">you actually own.</span></h1>
-      <p class="hero-sub">No ads. Choose your algorithms. No one can delete your account. This is what social media should have been.</p>
-    </section>
-
     <!-- PLATFORM COMPARISON -->
     <section class="section">
       <h2>How Primal compares</h2>
@@ -233,30 +227,6 @@
         </div>
 
         <div class="quote-card">
-          <a href="https://primal.net/snowden" target="_blank" rel="noopener noreferrer" class="quote-author quote-author-link">
-            <img src="https://primaldata.s3.us-east-005.backblazeb2.com/cache/9/cd/c5/9cdc5dba1672dc15baca235eee6d16b51e27c527fe09373e2881a5866ba127d6.jpg" alt="Edward Snowden" class="quote-avatar-img" />
-            <div class="quote-info">
-              <strong>Edward Snowden</strong>
-              <span>Privacy advocate</span>
-            </div>
-          </a>
-          <p class="quote-text">"If a platform is a silo, a protocol is a river: no one owns it, and everyone is free to swim."</p>
-          <a href="https://x.com/Snowden/status/1620789340199882752" target="_blank" rel="noopener noreferrer" class="quote-source">Post on X, Feb 2023</a>
-        </div>
-
-        <div class="quote-card">
-          <a href="https://primal.net/p/npub1g53mukxnjkcmr94fhryzkqutdz2ukq4ks0gvy5af25rgmwsl4ngq43drvk" target="_blank" rel="noopener noreferrer" class="quote-author quote-author-link">
-            <img src="https://r2.primal.net/cache/9/7f/d7/97fd7c410ed985aad25f81b1bdc0ce7a53bf5240362713e30ce5e7b014022b7f.jpg" alt="Martti Malmi" class="quote-avatar-img" />
-            <div class="quote-info">
-              <strong>Martti Malmi</strong>
-              <span>Bitcoin's first developer with Satoshi</span>
-            </div>
-          </a>
-          <p class="quote-text">"Bitcoin is freedom of money, and Nostr is freedom of everything else."</p>
-          <a href="https://reason.com/video/2024/09/17/is-nostr-an-antidote-to-social-media-censorship/" target="_blank" rel="noopener noreferrer" class="quote-source">BTC Prague, 2024</a>
-        </div>
-
-        <div class="quote-card">
           <a href="https://primal.net/p/npub14am887cf6kvwkce89nt7dsw3v9qrrn0uppxyvr6a2jd7xdwuwccqwnudp2" target="_blank" rel="noopener noreferrer" class="quote-author quote-author-link">
             <img src="https://primaldata.s3.us-east-005.backblazeb2.com/cache/0/ed/0d/0ed0de32c81fd9a151c196782d9cc8a927cf73164f1362df910624f216cc2273.jpg" alt="Paul Saladino MD" class="quote-avatar-img quote-avatar-premium" />
             <div class="quote-info">
@@ -269,7 +239,7 @@
         </div>
       </div>
       <div class="swipe-hint quote-swipe-hint">
-        {#each Array(4) as _, i}
+        {#each Array(2) as _, i}
           <span class:active={activeQuote === i}></span>
         {/each}
       </div>
@@ -384,34 +354,6 @@
       </a>
     </section>
 
-    <!-- DOWNLOAD PRIMAL -->
-    <section class="section download-section">
-      <h2>Want to start fresh?</h2>
-      <p class="section-sub">Download Primal and start posting. You can import your content later.</p>
-      <div class="app-links app-links-center">
-        <a href="https://apps.apple.com/us/app/primal/id1673134518" target="_blank" rel="noopener noreferrer" class="app-badge">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/>
-          </svg>
-          App Store
-        </a>
-        <a href="https://play.google.com/store/apps/details?id=net.primal.android" target="_blank" rel="noopener noreferrer" class="app-badge">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M3.609 1.814L13.792 12 3.61 22.186a.996.996 0 0 1-.61-.92V2.734a1 1 0 0 1 .609-.92zm10.89 10.893l2.302 2.302-10.937 6.333 8.635-8.635zm3.199-3.199l2.302 2.302-2.302 2.302-2.698-2.302 2.698-2.302zM5.864 2.658L16.8 9.99l-2.302 2.302-8.634-8.634z"/>
-          </svg>
-          Google Play
-        </a>
-        <a href="https://primal.net" target="_blank" rel="noopener noreferrer" class="app-badge web-badge">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="10"/>
-            <path d="M2 12h20"/>
-            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
-          </svg>
-          primal.net
-        </a>
-      </div>
-    </section>
-
     <!-- FAQ -->
     <section class="section faq-section">
       <h2>Common questions</h2>
@@ -420,6 +362,11 @@
         <details class="faq-item">
           <summary>Is this a crypto thing?</summary>
           <p>Primal has a built-in Bitcoin wallet, but you don't need to understand crypto to use it. Think of it like built-in Venmo — you can send small tips to creators you like, or ignore it entirely. The social experience works the same either way.</p>
+        </details>
+
+        <details class="faq-item">
+          <summary>How does Primal make money?</summary>
+          <p>Primal makes money when users choose to pay for optional services. There are no ads, and we don't sell data. We think it's important that our incentives stay aligned with the people who use the app.</p>
         </details>
 
         <details class="faq-item">
@@ -497,6 +444,34 @@
               <span>rabble</span>
             </div>
           </div>
+        </a>
+      </div>
+    </section>
+
+    <!-- DOWNLOAD PRIMAL -->
+    <section class="section download-section">
+      <h2>Want to start fresh?</h2>
+      <p class="section-sub">Download Primal and start posting. You can import your content later.</p>
+      <div class="app-links app-links-center">
+        <a href="https://apps.apple.com/us/app/primal/id1673134518" target="_blank" rel="noopener noreferrer" class="app-badge">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/>
+          </svg>
+          App Store
+        </a>
+        <a href="https://play.google.com/store/apps/details?id=net.primal.android" target="_blank" rel="noopener noreferrer" class="app-badge">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M3.609 1.814L13.792 12 3.61 22.186a.996.996 0 0 1-.61-.92V2.734a1 1 0 0 1 .609-.92zm10.89 10.893l2.302 2.302-10.937 6.333 8.635-8.635zm3.199-3.199l2.302 2.302-2.302 2.302-2.698-2.302 2.698-2.302zM5.864 2.658L16.8 9.99l-2.302 2.302-8.634-8.634z"/>
+          </svg>
+          Google Play
+        </a>
+        <a href="https://primal.net" target="_blank" rel="noopener noreferrer" class="app-badge web-badge">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+            <path d="M2 12h20"/>
+            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+          </svg>
+          primal.net
         </a>
       </div>
     </section>
