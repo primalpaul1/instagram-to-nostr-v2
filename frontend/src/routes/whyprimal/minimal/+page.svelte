@@ -277,9 +277,9 @@
 
     <!-- BRING YOUR CONTENT -->
     <section class="section migrate-section">
-      <div class="migrate-badge">It takes 2 minutes</div>
+      <div class="migrate-badge">Free · Takes 2 minutes</div>
       <h2>Bring your content to Primal</h2>
-      <p class="section-sub">Your posts don't have to stay trapped. We'll move them to your new Primal profile so you don't start from zero.</p>
+      <p class="section-sub">Your posts don't have to stay trapped. We'll move them to your new Primal profile so you don't start from zero — completely free, no signup required.</p>
 
       <div class="migrate-steps">
         <div class="migrate-step">
@@ -758,6 +758,39 @@
   .mark-yes { color: #111; }
   .mark-no  { color: #ddd; }
   .mark-meh { color: #bbb; }
+
+  /* Chart tooltips */
+  .mark[data-tip] {
+    position: relative;
+    cursor: help;
+  }
+  .mark[data-tip]::after {
+    content: attr(data-tip);
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 0.5rem 0.7rem;
+    background: #111;
+    color: #fff;
+    border-radius: 0.375rem;
+    font-size: 0.7rem;
+    font-weight: 500;
+    line-height: 1.4;
+    white-space: normal;
+    width: max-content;
+    max-width: 200px;
+    text-align: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s ease;
+    z-index: 20;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+  }
+  .mark[data-tip]:hover::after,
+  .mark[data-tip]:focus::after {
+    opacity: 1;
+  }
 
   /* ---- VIDEOS ---- */
   .video-carousel {

@@ -277,9 +277,9 @@
 
     <!-- BRING YOUR CONTENT -->
     <section class="section migrate-section">
-      <div class="migrate-badge">It takes 2 minutes</div>
+      <div class="migrate-badge">Free · Takes 2 minutes</div>
       <h2>Bring your content to Primal</h2>
-      <p class="section-sub">Your posts don't have to stay trapped. We'll move them to your new Primal profile so you don't start from zero.</p>
+      <p class="section-sub">Your posts don't have to stay trapped. We'll move them to your new Primal profile so you don't start from zero — completely free, no signup required.</p>
 
       <div class="migrate-steps">
         <div class="migrate-step">
