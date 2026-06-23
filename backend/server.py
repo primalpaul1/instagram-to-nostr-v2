@@ -802,7 +802,10 @@ async def fetch_tiktok_stream(handle: str):
 # Twitter/X API Endpoints
 # ============================================================================
 
-MAX_TWITTER_POSTS = 100  # Limit Twitter posts
+MAX_TWITTER_POSTS = int(os.getenv("MAX_TWITTER_POSTS", "300"))  # Limit Twitter posts
+# Pause between paginated Twitter requests to stay under the provider's burst
+# rate limit (separate from the generous monthly quota). Seconds; 0 disables.
+TWITTER_PAGE_DELAY = float(os.getenv("TWITTER_PAGE_DELAY", "0.3"))
 
 
 @app.get("/twitter-stream/{handle}")
@@ -999,6 +1002,10 @@ async def fetch_twitter_stream(handle: str):
                     cursor = data.get("next_cursor")
                     if not cursor:
                         break
+
+                    # Throttle between pages to avoid the provider's burst rate limit
+                    if TWITTER_PAGE_DELAY > 0:
+                        await asyncio.sleep(TWITTER_PAGE_DELAY)
 
                 if not posts:
                     yield f"data: {json.dumps({'error': f'No tweets found for @{handle}'})}\n\n"
