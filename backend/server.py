@@ -849,7 +849,12 @@ def _process_twitter_tweet(tweet):
         return None
     if tweet.get("quoted"):
         return None
+    # Skip replies. This provider often leaves in_reply_to_* unset, so also treat
+    # any tweet whose text starts with "@" (a reply / directed-at mention) as a
+    # reply — Twitter itself only surfaces such tweets to mutual followers.
     if tweet.get("in_reply_to_status_id") or tweet.get("in_reply_to_user_id"):
+        return None
+    if text.startswith("@"):
         return None
 
     tweet_id = str(tweet.get("tweet_id", ""))
