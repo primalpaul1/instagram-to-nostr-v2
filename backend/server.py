@@ -803,10 +803,126 @@ async def fetch_tiktok_stream(handle: str):
 # Twitter/X API Endpoints
 # ============================================================================
 
-MAX_TWITTER_POSTS = int(os.getenv("MAX_TWITTER_POSTS", "300"))  # Limit Twitter posts
+MAX_TWITTER_POSTS = int(os.getenv("MAX_TWITTER_POSTS", "100"))  # Limit Twitter posts
 # Pause between paginated Twitter requests to stay under the provider's burst
 # rate limit (separate from the generous monthly quota). Seconds; 0 disables.
 TWITTER_PAGE_DELAY = float(os.getenv("TWITTER_PAGE_DELAY", "0.3"))
+TWITTER_MAX_PAGES = int(os.getenv("TWITTER_MAX_PAGES", "50"))  # Per-endpoint safety cap
+
+
+def _extract_twitter_profile(data, handle):
+    """Build a profile dict from a twitter-api45 response (top-level 'user', else
+    the first tweet's author). Returns None if neither is present."""
+    user_data = data.get("user", {})
+    if user_data:
+        avatar_url = user_data.get("avatar", "")
+        if avatar_url:
+            avatar_url = avatar_url.replace("_normal", "_400x400")
+        return {
+            "username": handle,
+            "display_name": user_data.get("name"),
+            "profile_picture_url": avatar_url,
+        }
+    timeline = data.get("timeline", [])
+    if timeline:
+        author = timeline[0].get("author", {})
+        avatar_url = author.get("avatar", "")
+        if avatar_url:
+            avatar_url = avatar_url.replace("_normal", "_400x400")
+        return {
+            "username": author.get("screen_name", handle),
+            "display_name": author.get("name"),
+            "profile_picture_url": avatar_url,
+        }
+    return None
+
+
+def _process_twitter_tweet(tweet):
+    """Convert a raw twitter-api45 tweet into a post dict, or None if it should be
+    skipped (retweet, quote tweet, or reply — we only migrate original posts).
+    Shared by the timeline.php and usermedia.php fetch paths."""
+    # Coalesce null (some tweets carry "text": null) and unescape HTML entities
+    # (& -> &amp;, < -> &lt;, etc.) that the Twitter API returns in tweet text.
+    text = html.unescape(tweet.get("text") or "")
+
+    if text.startswith("RT @"):
+        return None
+    if tweet.get("quoted"):
+        return None
+    if tweet.get("in_reply_to_status_id") or tweet.get("in_reply_to_user_id"):
+        return None
+
+    tweet_id = str(tweet.get("tweet_id", ""))
+
+    original_date = None
+    created_at = tweet.get("created_at")
+    if created_at:
+        from datetime import datetime
+        try:
+            dt = datetime.strptime(created_at, "%a %b %d %H:%M:%S %z %Y")
+            original_date = dt.isoformat()
+        except (ValueError, TypeError):
+            pass
+
+    # Extract media from the 'media' object (has 'photo' and 'video' arrays)
+    media_obj = tweet.get("media", {}) or {}
+    media_items = []
+    thumbnail_url = None
+
+    photos = media_obj.get("photo", []) if isinstance(media_obj, dict) else []
+    for photo in photos:
+        photo_url = photo.get("media_url_https", "")
+        if photo_url:
+            media_items.append({"url": photo_url, "media_type": "image"})
+            if not thumbnail_url:
+                thumbnail_url = photo_url
+
+    videos = media_obj.get("video", []) if isinstance(media_obj, dict) else []
+    for video in videos:
+        video_thumb = video.get("media_url_https", "")
+        if video_thumb and not thumbnail_url:
+            thumbnail_url = video_thumb
+
+        best_variant = None
+        best_bitrate = -1
+        for v in video.get("variants", []):
+            if v.get("content_type") == "video/mp4":
+                bitrate = v.get("bitrate", 0) or 0
+                if bitrate > best_bitrate:
+                    best_bitrate = bitrate
+                    best_variant = v
+
+        if best_variant:
+            item = {"url": best_variant.get("url"), "media_type": "video"}
+            original_info = video.get("original_info", {})
+            if original_info:
+                item["width"] = original_info.get("width")
+                item["height"] = original_info.get("height")
+            duration_ms = video.get("duration", 0)
+            if duration_ms:
+                item["duration"] = duration_ms / 1000
+            media_items.append(item)
+
+    if media_items:
+        has_video = any(m["media_type"] == "video" for m in media_items)
+        post_type = "reel" if has_video else ("carousel" if len(media_items) > 1 else "image")
+        # Strip t.co links from tweets with media (they point to the attached media)
+        text = re.sub(r'https?://t\.co/\w+', '', text)
+        # Preserve newlines: collapse only horizontal whitespace, trim each line, cap 3+ blanks.
+        text = re.sub(r'[ \t]+', ' ', text)
+        text = '\n'.join(line.strip() for line in text.split('\n'))
+        text = re.sub(r'\n{3,}', '\n\n', text).strip()
+    else:
+        post_type = "text"
+
+    return {
+        "id": tweet_id,
+        "post_type": post_type,
+        "caption": text,
+        "original_date": original_date,
+        "thumbnail_url": thumbnail_url,
+        "media_items": media_items,
+    }
 
 
 @app.get("/twitter-stream/{handle}")
@@ -827,201 +943,92 @@ async def fetch_twitter_stream(handle: str):
             async with httpx.AsyncClient(timeout=60.0) as client:
                 profile = None
                 posts = []
-                cursor = None
+                seen_ids = set()  # dedupe across both endpoints by tweet_id
+
+                async def fetch_endpoint(endpoint, primary):
+                    """Paginate one twitter-api45 endpoint, appending new original
+                    posts (deduped) to `posts`. Yields SSE progress strings.
+
+                    timeline.php deterministically 502s past a fixed depth on some
+                    accounts; usermedia.php uses a different backend that paginates
+                    much deeper but only returns media tweets. We drain timeline.php
+                    first, then top up with usermedia.php. `primary` controls error
+                    handling: only the first endpoint surfaces a hard error to the
+                    user; the second is best-effort (keep what we already have).
+                    """
+                    nonlocal profile
+                    cursor = None
+                    for _ in range(TWITTER_MAX_PAGES):
+                        if len(posts) >= MAX_TWITTER_POSTS:
+                            break
+                        params = {"screenname": handle, "count": "40"}
+                        if cursor:
+                            params["cursor"] = cursor
+
+                        try:
+                            response, data = await get_json_with_retry(
+                                lambda: client.get(
+                                    f"https://twitter-api45.p.rapidapi.com/{endpoint}",
+                                    params=params,
+                                    headers={
+                                        "x-rapidapi-key": RAPIDAPI_KEY,
+                                        "x-rapidapi-host": "twitter-api45.p.rapidapi.com"
+                                    }
+                                ),
+                                source="Twitter",
+                                attempts=3,
+                            )
+                        except UpstreamUnavailable as e:
+                            # Persistent upstream failure (the 502 wall). If this is
+                            # the primary endpoint and we have nothing, surface it;
+                            # otherwise keep what we've gathered and stop here.
+                            if primary and not posts:
+                                yield f"data: {json.dumps({'error': str(e)})}\n\n"
+                            return
+
+                        if response.status_code == 404:
+                            if primary and not posts:
+                                yield f"data: {json.dumps({'error': f'Twitter user @{handle} not found'})}\n\n"
+                            return
+                        if response.status_code != 200 or not data or data.get("status") != "ok":
+                            if primary and not posts:
+                                yield f"data: {json.dumps({'error': f'Twitter user @{handle} not found or is private'})}\n\n"
+                            return
+
+                        if profile is None:
+                            profile = _extract_twitter_profile(data, handle)
+
+                        timeline = data.get("timeline", [])
+                        if not timeline:
+                            break
+
+                        for tweet in timeline:
+                            post = _process_twitter_tweet(tweet)
+                            if not post or post["id"] in seen_ids:
+                                continue
+                            seen_ids.add(post["id"])
+                            posts.append(post)
+                            if len(posts) >= MAX_TWITTER_POSTS:
+                                break
+
+                        yield f"data: {json.dumps({'progress': True, 'count': len(posts), 'posts': posts, 'profile': profile})}\n\n"
+
+                        cursor = data.get("next_cursor")
+                        if not cursor:
+                            break
+                        if TWITTER_PAGE_DELAY > 0:
+                            await asyncio.sleep(TWITTER_PAGE_DELAY)
 
                 yield f"data: {json.dumps({'progress': 'Fetching Twitter timeline...'})}\n\n"
 
-                # Fetch user timeline with pagination
-                while len(posts) < MAX_TWITTER_POSTS:
-                    # Using Twitter API45 timeline endpoint (includes all tweets)
-                    params = {"screenname": handle, "count": "40"}
-                    if cursor:
-                        params["cursor"] = cursor
+                # Phase 1: timeline.php — text + media originals (walls at depth on some accounts)
+                async for event in fetch_endpoint("timeline.php", primary=True):
+                    yield event
 
-                    try:
-                        response, data = await get_json_with_retry(
-                            lambda: client.get(
-                                "https://twitter-api45.p.rapidapi.com/timeline.php",
-                                params=params,
-                                headers={
-                                    "x-rapidapi-key": RAPIDAPI_KEY,
-                                    "x-rapidapi-host": "twitter-api45.p.rapidapi.com"
-                                }
-                            ),
-                            source="Twitter",
-                            attempts=3,
-                        )
-                    except UpstreamUnavailable as e:
-                        # The provider intermittently 502s on deep pagination
-                        # (RapidAPI masks it as a 200 with an HTML body). If we've
-                        # already gathered tweets, return them instead of failing
-                        # the whole fetch; only surface the error if we got nothing.
-                        if posts:
-                            break
-                        yield f"data: {json.dumps({'error': str(e)})}\n\n"
-                        return
-
-                    if response.status_code == 404:
-                        yield f"data: {json.dumps({'error': f'Twitter user @{handle} not found'})}\n\n"
-                        return
-
-                    if response.status_code != 200:
-                        yield f"data: {json.dumps({'error': f'API error: {response.text}'})}\n\n"
-                        return
-
-                    # Check for API error status
-                    if data.get("status") != "ok":
-                        yield f"data: {json.dumps({'error': f'Twitter user @{handle} not found or is private'})}\n\n"
-                        return
-
-                    # Extract profile on first page (from top-level 'user' object or first tweet author)
-                    if profile is None:
-                        user_data = data.get("user", {})
-                        if user_data:
-                            avatar_url = user_data.get("avatar", "")
-                            if avatar_url:
-                                avatar_url = avatar_url.replace("_normal", "_400x400")
-                            profile = {
-                                "username": handle,
-                                "display_name": user_data.get("name"),
-                                "profile_picture_url": avatar_url,
-                            }
-                        else:
-                            # Try to get from first tweet's author
-                            timeline = data.get("timeline", [])
-                            if timeline:
-                                author = timeline[0].get("author", {})
-                                avatar_url = author.get("avatar", "")
-                                if avatar_url:
-                                    avatar_url = avatar_url.replace("_normal", "_400x400")
-                                profile = {
-                                    "username": author.get("screen_name", handle),
-                                    "display_name": author.get("name"),
-                                    "profile_picture_url": avatar_url,
-                                }
-
-                    # Process timeline entries
-                    timeline = data.get("timeline", [])
-                    if not timeline:
-                        break
-
-                    for tweet in timeline:
-                        # Coalesce null: some tweets carry "text": null, and .get's
-                        # default only applies when the key is absent, not null.
-                        # Unescape HTML entities (& -> &amp;, < -> &lt;, etc.) that
-                        # the Twitter API returns in tweet text.
-                        text = html.unescape(tweet.get("text") or "")
-
-                        # Skip retweets (start with "RT @")
-                        if text.startswith("RT @"):
-                            continue
-
-                        # Skip quote tweets (have a "quoted" object)
-                        if tweet.get("quoted"):
-                            continue
-
-                        # Skip replies
-                        if tweet.get("in_reply_to_status_id") or tweet.get("in_reply_to_user_id"):
-                            continue
-
-                        tweet_id = str(tweet.get("tweet_id", ""))
-
-                        # Get original date
-                        original_date = None
-                        created_at = tweet.get("created_at")
-                        if created_at:
-                            from datetime import datetime
-                            try:
-                                dt = datetime.strptime(created_at, "%a %b %d %H:%M:%S %z %Y")
-                                original_date = dt.isoformat()
-                            except (ValueError, TypeError):
-                                pass
-
-                        # Extract media from 'media' object (has 'photo' and 'video' arrays)
-                        media_obj = tweet.get("media", {}) or {}
-                        media_items = []
-                        thumbnail_url = None
-
-                        # Process photos
-                        photos = media_obj.get("photo", []) if isinstance(media_obj, dict) else []
-                        for photo in photos:
-                            photo_url = photo.get("media_url_https", "")
-                            if photo_url:
-                                media_items.append({
-                                    "url": photo_url,
-                                    "media_type": "image",
-                                })
-                                if not thumbnail_url:
-                                    thumbnail_url = photo_url
-
-                        # Process videos
-                        videos = media_obj.get("video", []) if isinstance(media_obj, dict) else []
-                        for video in videos:
-                            video_thumb = video.get("media_url_https", "")
-                            if video_thumb and not thumbnail_url:
-                                thumbnail_url = video_thumb
-
-                            variants = video.get("variants", [])
-                            best_variant = None
-                            best_bitrate = -1
-
-                            for v in variants:
-                                if v.get("content_type") == "video/mp4":
-                                    bitrate = v.get("bitrate", 0) or 0
-                                    if bitrate > best_bitrate:
-                                        best_bitrate = bitrate
-                                        best_variant = v
-
-                            if best_variant:
-                                item = {
-                                    "url": best_variant.get("url"),
-                                    "media_type": "video",
-                                }
-                                original_info = video.get("original_info", {})
-                                if original_info:
-                                    item["width"] = original_info.get("width")
-                                    item["height"] = original_info.get("height")
-
-                                duration_ms = video.get("duration", 0)
-                                if duration_ms:
-                                    item["duration"] = duration_ms / 1000
-
-                                media_items.append(item)
-
-                        # Determine post type
-                        if media_items:
-                            has_video = any(m["media_type"] == "video" for m in media_items)
-                            post_type = "reel" if has_video else ("carousel" if len(media_items) > 1 else "image")
-                            # Strip t.co links from tweets with media (they point to the attached media)
-                            text = re.sub(r'https?://t\.co/\w+', '', text)
-                            # Preserve newlines: collapse only horizontal whitespace, then trim each line, then cap 3+ blank lines.
-                            text = re.sub(r'[ \t]+', ' ', text)
-                            text = '\n'.join(line.strip() for line in text.split('\n'))
-                            text = re.sub(r'\n{3,}', '\n\n', text).strip()
-                        else:
-                            # Text-only tweet
-                            post_type = "text"
-
-                        posts.append({
-                            "id": tweet_id,
-                            "post_type": post_type,
-                            "caption": text,
-                            "original_date": original_date,
-                            "thumbnail_url": thumbnail_url,
-                            "media_items": media_items
-                        })
-
-                    # Send progress
-                    yield f"data: {json.dumps({'progress': True, 'count': len(posts), 'posts': posts, 'profile': profile})}\n\n"
-
-                    # Check for more pages
-                    cursor = data.get("next_cursor")
-                    if not cursor:
-                        break
-
-                    # Throttle between pages to avoid the provider's burst rate limit
-                    if TWITTER_PAGE_DELAY > 0:
-                        await asyncio.sleep(TWITTER_PAGE_DELAY)
+                # Phase 2: usermedia.php — recover deeper media originals past the wall
+                if len(posts) < MAX_TWITTER_POSTS:
+                    async for event in fetch_endpoint("usermedia.php", primary=False):
+                        yield event
 
                 if not posts:
                     yield f"data: {json.dumps({'error': f'No tweets found for @{handle}'})}\n\n"
