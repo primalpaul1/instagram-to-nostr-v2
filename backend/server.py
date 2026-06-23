@@ -33,6 +33,59 @@ RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY", "")
 MAX_INSTAGRAM_POSTS = int(os.getenv("MAX_INSTAGRAM_POSTS", "100"))
 
 
+class UpstreamRateLimited(Exception):
+    """RapidAPI returned a 200 with an empty/non-JSON body.
+
+    This is almost always a transient rate-limit symptom: the provider replies
+    200 with an empty or HTML body instead of a clean 429. Parsing it with
+    response.json() would otherwise raise a cryptic
+    'Expecting value: line 1 column 1 (char 0)'. We surface a clear message
+    instead. The string is user-facing (rendered straight into the UI toast).
+    """
+
+    def __init__(self, source: str):
+        super().__init__(
+            f"{source} is temporarily rate-limiting requests. "
+            "Please wait a moment and try again."
+        )
+
+
+def _parse_json_body(response, decompress_gzip: bool):
+    """Parse an httpx response body as JSON (optionally gzip-decompressing first).
+
+    Raises json.JSONDecodeError / ValueError on an empty or non-JSON body.
+    """
+    if decompress_gzip:
+        try:
+            import gzip
+            return json.loads(gzip.decompress(response.content))
+        except (OSError, EOFError, json.JSONDecodeError):
+            pass  # fall through to plain JSON parsing
+    return response.json()
+
+
+async def get_json_with_retry(send, *, source: str, decompress_gzip: bool = False,
+                              attempts: int = 2):
+    """Run async thunk `send` (returns an httpx.Response) and parse its JSON body,
+    retrying once on an empty/non-JSON 200 — a transient RapidAPI rate-limit symptom.
+
+    Returns (response, data). For non-200 responses `data` is None so callers can
+    handle status codes themselves (404, etc). Raises UpstreamRateLimited if a 200
+    body never parses after all attempts.
+    """
+    for attempt in range(attempts):
+        response = await send()
+        if response.status_code != 200:
+            return response, None
+        try:
+            return response, _parse_json_body(response, decompress_gzip)
+        except (json.JSONDecodeError, ValueError):
+            if attempt + 1 < attempts:
+                await asyncio.sleep(0.5)
+                continue
+    raise UpstreamRateLimited(source)
+
+
 class MediaItem(BaseModel):
     """Individual media item (image or video) within a post."""
     url: str
@@ -169,14 +222,17 @@ async def fetch_videos_stream(handle: str):
                 page = 0
 
                 while page < max_pages:
-                    response = await client.post(
-                        "https://instagram120.p.rapidapi.com/api/instagram/posts",
-                        json={"username": handle, "maxId": max_id},
-                        headers={
-                            "Content-Type": "application/json",
-                            "x-rapidapi-key": RAPIDAPI_KEY,
-                            "x-rapidapi-host": "instagram120.p.rapidapi.com"
-                        }
+                    response, data = await get_json_with_retry(
+                        lambda: client.post(
+                            "https://instagram120.p.rapidapi.com/api/instagram/posts",
+                            json={"username": handle, "maxId": max_id},
+                            headers={
+                                "Content-Type": "application/json",
+                                "x-rapidapi-key": RAPIDAPI_KEY,
+                                "x-rapidapi-host": "instagram120.p.rapidapi.com"
+                            }
+                        ),
+                        source="Instagram",
                     )
 
                     if response.status_code == 404:
@@ -186,8 +242,6 @@ async def fetch_videos_stream(handle: str):
                     if response.status_code != 200:
                         yield f"data: {json.dumps({'error': f'API error: {response.text}'})}\n\n"
                         return
-
-                    data = response.json()
                     result = data.get("result", {})
                     edges = result.get("edges", [])
 
@@ -353,14 +407,17 @@ async def fetch_videos(request: FetchVideosRequest):
 
             while page < max_pages:
                 # Fetch posts from Instagram120 API (POST request)
-                response = await client.post(
-                    "https://instagram120.p.rapidapi.com/api/instagram/posts",
-                    json={"username": handle, "maxId": max_id},
-                    headers={
-                        "Content-Type": "application/json",
-                        "x-rapidapi-key": RAPIDAPI_KEY,
-                        "x-rapidapi-host": "instagram120.p.rapidapi.com"
-                    }
+                response, data = await get_json_with_retry(
+                    lambda: client.post(
+                        "https://instagram120.p.rapidapi.com/api/instagram/posts",
+                        json={"username": handle, "maxId": max_id},
+                        headers={
+                            "Content-Type": "application/json",
+                            "x-rapidapi-key": RAPIDAPI_KEY,
+                            "x-rapidapi-host": "instagram120.p.rapidapi.com"
+                        }
+                    ),
+                    source="Instagram",
                 )
 
                 if response.status_code == 404:
@@ -368,8 +425,6 @@ async def fetch_videos(request: FetchVideosRequest):
 
                 if response.status_code != 200:
                     raise HTTPException(status_code=response.status_code, detail=f"API error: {response.text}")
-
-                data = response.json()
 
                 # Instagram120 API returns: { "result": { "edges": [...], "page_info": {...} } }
                 result = data.get("result", {})
@@ -481,6 +536,8 @@ async def fetch_videos(request: FetchVideosRequest):
 
     except httpx.TimeoutException:
         raise HTTPException(status_code=504, detail="Timeout fetching Instagram data")
+    except UpstreamRateLimited as e:
+        raise HTTPException(status_code=503, detail=str(e))
     except HTTPException:
         raise
     except Exception as e:
@@ -608,24 +665,21 @@ async def fetch_tiktok_stream(handle: str):
                 # First, get user info to get user_id
                 yield f"data: {json.dumps({'progress': 'Looking up TikTok user...'})}\n\n"
 
-                user_response = await client.get(
-                    f"https://scraptik.p.rapidapi.com/get-user?username={handle}",
-                    headers={
-                        "x-rapidapi-key": RAPIDAPI_KEY,
-                        "x-rapidapi-host": "scraptik.p.rapidapi.com"
-                    }
+                user_response, user_data = await get_json_with_retry(
+                    lambda: client.get(
+                        f"https://scraptik.p.rapidapi.com/get-user?username={handle}",
+                        headers={
+                            "x-rapidapi-key": RAPIDAPI_KEY,
+                            "x-rapidapi-host": "scraptik.p.rapidapi.com"
+                        }
+                    ),
+                    source="TikTok",
+                    decompress_gzip=True,
                 )
 
                 if user_response.status_code != 200:
                     yield f"data: {json.dumps({'error': f'TikTok user {handle} not found'})}\n\n"
                     return
-
-                # Decompress if gzipped
-                try:
-                    import gzip
-                    user_data = json.loads(gzip.decompress(user_response.content))
-                except:
-                    user_data = user_response.json()
 
                 user_info = user_data.get("user", {})
                 user_id = user_info.get("uid")
@@ -655,23 +709,20 @@ async def fetch_tiktok_stream(handle: str):
                     if max_cursor:
                         posts_url += f"&max_cursor={max_cursor}"
 
-                    posts_response = await client.get(
-                        posts_url,
-                        headers={
-                            "x-rapidapi-key": RAPIDAPI_KEY,
-                            "x-rapidapi-host": "scraptik.p.rapidapi.com"
-                        }
+                    posts_response, posts_data = await get_json_with_retry(
+                        lambda: client.get(
+                            posts_url,
+                            headers={
+                                "x-rapidapi-key": RAPIDAPI_KEY,
+                                "x-rapidapi-host": "scraptik.p.rapidapi.com"
+                            }
+                        ),
+                        source="TikTok",
+                        decompress_gzip=True,
                     )
 
                     if posts_response.status_code != 200:
                         break
-
-                    # Decompress if gzipped
-                    try:
-                        import gzip
-                        posts_data = json.loads(gzip.decompress(posts_response.content))
-                    except:
-                        posts_data = posts_response.json()
 
                     aweme_list = posts_data.get("aweme_list", [])
                     if not aweme_list:
@@ -783,13 +834,16 @@ async def fetch_twitter_stream(handle: str):
                     if cursor:
                         params["cursor"] = cursor
 
-                    response = await client.get(
-                        "https://twitter-api45.p.rapidapi.com/timeline.php",
-                        params=params,
-                        headers={
-                            "x-rapidapi-key": RAPIDAPI_KEY,
-                            "x-rapidapi-host": "twitter-api45.p.rapidapi.com"
-                        }
+                    response, data = await get_json_with_retry(
+                        lambda: client.get(
+                            "https://twitter-api45.p.rapidapi.com/timeline.php",
+                            params=params,
+                            headers={
+                                "x-rapidapi-key": RAPIDAPI_KEY,
+                                "x-rapidapi-host": "twitter-api45.p.rapidapi.com"
+                            }
+                        ),
+                        source="Twitter",
                     )
 
                     if response.status_code == 404:
@@ -799,8 +853,6 @@ async def fetch_twitter_stream(handle: str):
                     if response.status_code != 200:
                         yield f"data: {json.dumps({'error': f'API error: {response.text}'})}\n\n"
                         return
-
-                    data = response.json()
 
                     # Check for API error status
                     if data.get("status") != "ok":
