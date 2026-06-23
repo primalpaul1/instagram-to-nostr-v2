@@ -5,6 +5,7 @@ Handles Instagram video metadata fetching and streaming uploads to Blossom.
 
 import asyncio
 import hashlib
+import html
 import json
 import os
 import re
@@ -907,7 +908,9 @@ async def fetch_twitter_stream(handle: str):
                     for tweet in timeline:
                         # Coalesce null: some tweets carry "text": null, and .get's
                         # default only applies when the key is absent, not null.
-                        text = tweet.get("text") or ""
+                        # Unescape HTML entities (& -> &amp;, < -> &lt;, etc.) that
+                        # the Twitter API returns in tweet text.
+                        text = html.unescape(tweet.get("text") or "")
 
                         # Skip retweets (start with "RT @")
                         if text.startswith("RT @"):
