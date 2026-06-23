@@ -33,20 +33,20 @@ RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY", "")
 MAX_INSTAGRAM_POSTS = int(os.getenv("MAX_INSTAGRAM_POSTS", "100"))
 
 
-class UpstreamRateLimited(Exception):
+class UpstreamUnavailable(Exception):
     """RapidAPI returned a 200 with an empty/non-JSON body.
 
-    This is almost always a transient rate-limit symptom: the provider replies
-    200 with an empty or HTML body instead of a clean 429. Parsing it with
-    response.json() would otherwise raise a cryptic
+    The provider's upstream intermittently fails (e.g. a 502 Bad Gateway HTML
+    page, or an empty body) and RapidAPI's proxy passes it through as a 200.
+    Parsing it with response.json() would otherwise raise a cryptic
     'Expecting value: line 1 column 1 (char 0)'. We surface a clear message
     instead. The string is user-facing (rendered straight into the UI toast).
     """
 
     def __init__(self, source: str):
         super().__init__(
-            f"{source} is temporarily rate-limiting requests. "
-            "Please wait a moment and try again."
+            f"{source} is temporarily unavailable (upstream error). "
+            "Please try again in a moment."
         )
 
 
@@ -70,7 +70,7 @@ async def get_json_with_retry(send, *, source: str, decompress_gzip: bool = Fals
     retrying once on an empty/non-JSON 200 — a transient RapidAPI rate-limit symptom.
 
     Returns (response, data). For non-200 responses `data` is None so callers can
-    handle status codes themselves (404, etc). Raises UpstreamRateLimited if a 200
+    handle status codes themselves (404, etc). Raises UpstreamUnavailable if a 200
     body never parses after all attempts.
     """
     for attempt in range(attempts):
@@ -83,7 +83,7 @@ async def get_json_with_retry(send, *, source: str, decompress_gzip: bool = Fals
             if attempt + 1 < attempts:
                 await asyncio.sleep(0.5)
                 continue
-    raise UpstreamRateLimited(source)
+    raise UpstreamUnavailable(source)
 
 
 class MediaItem(BaseModel):
@@ -536,7 +536,7 @@ async def fetch_videos(request: FetchVideosRequest):
 
     except httpx.TimeoutException:
         raise HTTPException(status_code=504, detail="Timeout fetching Instagram data")
-    except UpstreamRateLimited as e:
+    except UpstreamUnavailable as e:
         raise HTTPException(status_code=503, detail=str(e))
     except HTTPException:
         raise
@@ -837,17 +837,28 @@ async def fetch_twitter_stream(handle: str):
                     if cursor:
                         params["cursor"] = cursor
 
-                    response, data = await get_json_with_retry(
-                        lambda: client.get(
-                            "https://twitter-api45.p.rapidapi.com/timeline.php",
-                            params=params,
-                            headers={
-                                "x-rapidapi-key": RAPIDAPI_KEY,
-                                "x-rapidapi-host": "twitter-api45.p.rapidapi.com"
-                            }
-                        ),
-                        source="Twitter",
-                    )
+                    try:
+                        response, data = await get_json_with_retry(
+                            lambda: client.get(
+                                "https://twitter-api45.p.rapidapi.com/timeline.php",
+                                params=params,
+                                headers={
+                                    "x-rapidapi-key": RAPIDAPI_KEY,
+                                    "x-rapidapi-host": "twitter-api45.p.rapidapi.com"
+                                }
+                            ),
+                            source="Twitter",
+                            attempts=3,
+                        )
+                    except UpstreamUnavailable as e:
+                        # The provider intermittently 502s on deep pagination
+                        # (RapidAPI masks it as a 200 with an HTML body). If we've
+                        # already gathered tweets, return them instead of failing
+                        # the whole fetch; only surface the error if we got nothing.
+                        if posts:
+                            break
+                        yield f"data: {json.dumps({'error': str(e)})}\n\n"
+                        return
 
                     if response.status_code == 404:
                         yield f"data: {json.dumps({'error': f'Twitter user @{handle} not found'})}\n\n"
