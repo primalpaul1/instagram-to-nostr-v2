@@ -894,7 +894,9 @@ async def fetch_twitter_stream(handle: str):
                         break
 
                     for tweet in timeline:
-                        text = tweet.get("text", "")
+                        # Coalesce null: some tweets carry "text": null, and .get's
+                        # default only applies when the key is absent, not null.
+                        text = tweet.get("text") or ""
 
                         # Skip retweets (start with "RT @")
                         if text.startswith("RT @"):
