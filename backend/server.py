@@ -32,6 +32,7 @@ app.add_middleware(
 BLOSSOM_SERVER = os.getenv("BLOSSOM_SERVER", "https://blossom.primal.net")
 RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY", "")
 MAX_INSTAGRAM_POSTS = int(os.getenv("MAX_INSTAGRAM_POSTS", "100"))
+INSTAGRAM_HOST = os.getenv("INSTAGRAM_HOST", "instagram-scraper-20251.p.rapidapi.com")
 
 
 class UpstreamUnavailable(Exception):
@@ -157,56 +158,121 @@ async def health_check():
     return {"status": "healthy"}
 
 
+def _ig_best_image(node):
+    """Largest image candidate from a node's image_versions.items (this provider's
+    equivalent of image_versions2.candidates). Returns the candidate dict or None."""
+    items = (node.get("image_versions") or {}).get("items") or []
+    if not items:
+        return None
+    return max(items, key=lambda c: (c.get("width") or 0) * (c.get("height") or 0))
+
+
+def _ig_media_from_node(node):
+    """Build a media_item dict (image or video) from an IG media node or a carousel
+    child. Returns None if no usable URL is present."""
+    if node.get("video_versions"):
+        best = max(node["video_versions"],
+                   key=lambda v: (v.get("width") or 0) * (v.get("height") or 0))
+        item = {
+            "url": best.get("url"),
+            "media_type": "video",
+            "width": best.get("width"),
+            "height": best.get("height"),
+        }
+        duration = node.get("video_duration")
+        if duration:
+            item["duration"] = duration
+        thumb = _ig_best_image(node)
+        if thumb:
+            item["thumbnail_url"] = thumb.get("url")
+        return item if item.get("url") else None
+
+    img = _ig_best_image(node)
+    if not img:
+        return None
+    return {
+        "url": img.get("url"),
+        "media_type": "image",
+        "width": img.get("width"),
+        "height": img.get("height"),
+        "thumbnail_url": img.get("url"),
+    }
+
+
+def _extract_instagram_profile(item, handle):
+    """Build a profile dict from an IG post item's embedded 'user' object."""
+    user = item.get("user") or {}
+    if not user:
+        return None
+    pic = user.get("profile_pic_url")
+    hd = user.get("hd_profile_pic_url_info") or {}
+    if hd.get("url"):
+        pic = hd.get("url")
+    return {
+        "username": user.get("username", handle),
+        "display_name": user.get("full_name"),
+        "profile_picture_url": pic,
+    }
+
+
+def _process_instagram_item(item):
+    """Convert an instagram-scraper-20251 media item into a post dict, or None if it
+    has no usable media. Handles images (media_type 1), videos/reels (2) and
+    carousels (8)."""
+    code = str(item.get("code") or item.get("pk") or item.get("id") or "post")
+
+    caption_obj = item.get("caption")
+    caption = caption_obj.get("text") if isinstance(caption_obj, dict) else caption_obj
+
+    original_date = None
+    taken_at = item.get("taken_at")
+    if taken_at:
+        from datetime import datetime
+        try:
+            original_date = datetime.fromtimestamp(int(taken_at)).isoformat()
+        except (ValueError, TypeError, OSError):
+            pass
+
+    media_items = []
+    if item.get("media_type") == 8 or item.get("carousel_media"):
+        for child in item.get("carousel_media") or []:
+            mi = _ig_media_from_node(child)
+            if mi:
+                media_items.append(mi)
+        post_type = "carousel"
+    else:
+        mi = _ig_media_from_node(item)
+        if mi:
+            media_items.append(mi)
+        post_type = "reel" if (mi and mi["media_type"] == "video") else "image"
+
+    if not media_items:
+        return None
+
+    # A carousel that yielded a single usable child collapses to its real type
+    if post_type == "carousel" and len(media_items) == 1:
+        post_type = "reel" if media_items[0]["media_type"] == "video" else "image"
+
+    thumbnail_url = media_items[0].get("thumbnail_url") or media_items[0].get("url")
+
+    return {
+        "id": code,
+        "post_type": post_type,
+        "caption": caption,
+        "original_date": original_date,
+        "thumbnail_url": thumbnail_url,
+        "media_items": media_items,
+    }
+
+
 @app.get("/videos-stream/{handle}")
 async def fetch_videos_stream(handle: str):
     """
-    Stream video fetch progress using Server-Sent Events.
-    Sends progress updates after each page, then final data.
+    Stream Instagram post fetch progress using Server-Sent Events.
+    Uses the instagram-scraper-20251 RapidAPI provider (userposts endpoint with
+    pagination_token paging). Sends progress updates after each page, then final data.
     """
     handle = handle.lstrip("@")
-
-    def extract_caption(node):
-        """Extract caption text from node."""
-        caption_obj = node.get("caption")
-        if caption_obj:
-            return caption_obj.get("text") if isinstance(caption_obj, dict) else caption_obj
-        return None
-
-    def extract_date(node):
-        """Extract and format original date from node."""
-        taken_at = node.get("taken_at")
-        if taken_at:
-            from datetime import datetime
-            try:
-                return datetime.fromtimestamp(int(taken_at)).isoformat()
-            except (ValueError, TypeError):
-                pass
-        return None
-
-    def extract_media_item(item, is_video=False):
-        """Extract media item data from a node or carousel item."""
-        media_item = {"media_type": "video" if is_video else "image"}
-
-        if is_video:
-            video_versions = item.get("video_versions", [])
-            if video_versions:
-                media_item["url"] = video_versions[0].get("url")
-                media_item["width"] = video_versions[0].get("width")
-                media_item["height"] = video_versions[0].get("height")
-            media_item["duration"] = item.get("video_duration")
-        else:
-            image_versions = item.get("image_versions2", {}).get("candidates", [])
-            if image_versions:
-                media_item["url"] = image_versions[0].get("url")
-                media_item["width"] = image_versions[0].get("width")
-                media_item["height"] = image_versions[0].get("height")
-
-        # Thumbnail
-        image_versions = item.get("image_versions2", {}).get("candidates", [])
-        if image_versions:
-            media_item["thumbnail_url"] = image_versions[0].get("url")
-
-        return media_item if media_item.get("url") else None
 
     async def generate():
         if not RAPIDAPI_KEY:
@@ -218,163 +284,78 @@ async def fetch_videos_stream(handle: str):
                 profile = None
                 videos = []  # Backwards compatibility - reels only
                 posts = []   # All posts including images and carousels
-                max_id = ""
+                token = None
                 max_pages = 50
                 page = 0
 
-                while page < max_pages:
-                    response, data = await get_json_with_retry(
-                        lambda: client.post(
-                            "https://instagram120.p.rapidapi.com/api/instagram/posts",
-                            json={"username": handle, "maxId": max_id},
-                            headers={
-                                "Content-Type": "application/json",
-                                "x-rapidapi-key": RAPIDAPI_KEY,
-                                "x-rapidapi-host": "instagram120.p.rapidapi.com"
-                            }
-                        ),
-                        source="Instagram",
-                    )
+                while page < max_pages and len(posts) < MAX_INSTAGRAM_POSTS:
+                    params = {"username_or_id": handle}
+                    if token:
+                        params["pagination_token"] = token
+
+                    try:
+                        response, data = await get_json_with_retry(
+                            lambda: client.get(
+                                f"https://{INSTAGRAM_HOST}/userposts/",
+                                params=params,
+                                headers={
+                                    "x-rapidapi-key": RAPIDAPI_KEY,
+                                    "x-rapidapi-host": INSTAGRAM_HOST,
+                                }
+                            ),
+                            source="Instagram",
+                            attempts=3,
+                        )
+                    except UpstreamUnavailable as e:
+                        if posts:
+                            break
+                        yield f"data: {json.dumps({'error': str(e)})}\n\n"
+                        return
 
                     if response.status_code == 404:
                         yield f"data: {json.dumps({'error': f'Instagram user {handle} not found'})}\n\n"
                         return
-
                     if response.status_code != 200:
-                        yield f"data: {json.dumps({'error': f'API error: {response.text}'})}\n\n"
+                        yield f"data: {json.dumps({'error': 'Instagram is temporarily unavailable. Please try again in a moment.'})}\n\n"
                         return
-                    result = data.get("result", {})
-                    edges = result.get("edges", [])
 
-                    if not edges:
+                    items = (data.get("data") or {}).get("items") or []
+                    if not items:
                         break
 
-                    # Extract profile from posts - check owner first, then coauthors
                     if profile is None:
-                        for edge in edges:
-                            node = edge.get("node", {})
+                        profile = _extract_instagram_profile(items[0], handle)
 
-                            # First check if owner matches
-                            user_data = node.get("user") or node.get("owner") or {}
-                            if user_data.get("username", "").lower() == handle.lower():
-                                profile_pic = user_data.get("profile_pic_url")
-                                hd_pic_info = user_data.get("hd_profile_pic_url_info", {})
-                                if hd_pic_info and hd_pic_info.get("url"):
-                                    profile_pic = hd_pic_info.get("url")
-                                profile = {
-                                    "username": user_data.get("username", handle),
-                                    "display_name": user_data.get("full_name"),
-                                    "profile_picture_url": profile_pic,
-                                }
-                                break
+                    for item in items:
+                        post = _process_instagram_item(item)
+                        if not post:
+                            continue
+                        posts.append(post)
 
-                            # Check coauthors for collab posts
-                            coauthors = node.get("coauthor_producers", [])
-                            for coauthor in coauthors:
-                                if coauthor.get("username", "").lower() == handle.lower():
-                                    profile = {
-                                        "username": coauthor.get("username", handle),
-                                        "display_name": coauthor.get("full_name"),
-                                        "profile_picture_url": coauthor.get("profile_pic_url"),
-                                    }
-                                    break
-                            if profile:
-                                break
+                        # Mirror reels into `videos` for backwards compatibility
+                        if post["post_type"] == "reel":
+                            mi = post["media_items"][0]
+                            videos.append({
+                                "url": mi["url"],
+                                "filename": f"{post['id']}.mp4",
+                                "caption": post["caption"],
+                                "original_date": post["original_date"],
+                                "width": mi.get("width"),
+                                "height": mi.get("height"),
+                                "duration": mi.get("duration"),
+                                "thumbnail_url": post["thumbnail_url"],
+                            })
 
-                    # Process ALL edges (not just videos)
-                    for edge in edges:
-                        node = edge.get("node", {})
-                        code = node.get("code", node.get("pk", "post"))
-                        caption = extract_caption(node)
-                        original_date = extract_date(node)
+                        if len(posts) >= MAX_INSTAGRAM_POSTS:
+                            break
 
-                        # Get thumbnail from main node
-                        thumbnail_url = None
-                        image_versions = node.get("image_versions2", {}).get("candidates", [])
-                        if image_versions:
-                            thumbnail_url = image_versions[0].get("url")
-
-                        # Determine post type and extract media
-                        media_type = node.get("media_type", 0)
-                        carousel_media = node.get("carousel_media", [])
-                        video_versions = node.get("video_versions", [])
-
-                        if carousel_media:
-                            # Carousel post - multiple media items
-                            media_items = []
-                            for item in carousel_media:
-                                item_has_video = bool(item.get("video_versions"))
-                                media_item = extract_media_item(item, is_video=item_has_video)
-                                if media_item:
-                                    media_items.append(media_item)
-
-                            if media_items:
-                                posts.append({
-                                    "id": code,
-                                    "post_type": "carousel",
-                                    "caption": caption,
-                                    "original_date": original_date,
-                                    "thumbnail_url": thumbnail_url,
-                                    "media_items": media_items,
-                                })
-
-                        elif video_versions:
-                            # Video/Reel post
-                            media_item = extract_media_item(node, is_video=True)
-                            if media_item:
-                                posts.append({
-                                    "id": code,
-                                    "post_type": "reel",
-                                    "caption": caption,
-                                    "original_date": original_date,
-                                    "thumbnail_url": thumbnail_url,
-                                    "media_items": [media_item],
-                                })
-
-                                # Also add to videos for backwards compatibility
-                                videos.append({
-                                    "url": media_item["url"],
-                                    "filename": f"{code}.mp4",
-                                    "caption": caption,
-                                    "original_date": original_date,
-                                    "width": media_item.get("width"),
-                                    "height": media_item.get("height"),
-                                    "duration": media_item.get("duration"),
-                                    "thumbnail_url": thumbnail_url,
-                                })
-
-                        else:
-                            # Image post
-                            media_item = extract_media_item(node, is_video=False)
-                            if media_item:
-                                posts.append({
-                                    "id": code,
-                                    "post_type": "image",
-                                    "caption": caption,
-                                    "original_date": original_date,
-                                    "thumbnail_url": thumbnail_url,
-                                    "media_items": [media_item],
-                                })
-
-                    # Send progress update with all content
                     yield f"data: {json.dumps({'progress': True, 'count': len(posts), 'videos': videos, 'posts': posts, 'profile': profile})}\n\n"
 
-                    # Stop if we've hit the post limit
-                    if len(posts) >= MAX_INSTAGRAM_POSTS:
+                    token = data.get("pagination_token")
+                    if not token:
                         break
-
-                    # Check for next page
-                    page_info = result.get("page_info", {})
-                    has_next = page_info.get("has_next_page", False)
-                    end_cursor = page_info.get("end_cursor", "")
-
-                    if not has_next or not end_cursor:
-                        break
-
-                    max_id = end_cursor
                     page += 1
 
-                # Send final result
                 if not profile:
                     profile = {"username": handle}
 
