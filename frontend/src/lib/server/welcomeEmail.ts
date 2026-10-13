@@ -21,6 +21,7 @@ function unsubscribeUrl(email: string): string {
 
 interface WelcomeCopy {
   from: string;
+  replyTo?: string;
   subject: string;
   heading: string;
   paragraphs: string[];
@@ -33,6 +34,7 @@ function copyFor(source: string): WelcomeCopy {
   if (source.startsWith('paulinthejungle')) {
     return {
       from: 'Paul <paul@ownyourposts.com>',
+      replyTo: 'paul@primal.net',
       subject: "You're on the list",
       heading: "Hey, it's Paul",
       paragraphs: [
@@ -126,6 +128,7 @@ export async function sendWelcomeEmail(email: string, source: string): Promise<b
       },
       body: JSON.stringify({
         from: c.from,
+        ...(c.replyTo ? { reply_to: c.replyTo } : {}),
         to: [email],
         subject: c.subject,
         html: renderHtml(c, unsubscribe),
