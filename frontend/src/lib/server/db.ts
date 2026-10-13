@@ -1320,27 +1320,34 @@ export function ensureSubscribersTable(): void {
     CREATE TABLE IF NOT EXISTS subscribers (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       email TEXT UNIQUE NOT NULL,
+      source TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
+
+  // Older databases predate the source column (which site the signup came from)
+  const columns = database.prepare("PRAGMA table_info(subscribers)").all() as Array<{name: string}>;
+  if (!columns.some(col => col.name === 'source')) {
+    database.exec("ALTER TABLE subscribers ADD COLUMN source TEXT");
+  }
 }
 
-export function addSubscriber(email: string): boolean {
+export function addSubscriber(email: string, source: string = 'ownyourposts'): boolean {
   ensureSubscribersTable();
   const database = getDb();
   const result = database.prepare(
-    'INSERT OR IGNORE INTO subscribers (email) VALUES (?)'
-  ).run(email);
+    'INSERT OR IGNORE INTO subscribers (email, source) VALUES (?, ?)'
+  ).run(email, source);
   return result.changes > 0;
 }
 
-export function getSubscribers(): Array<{ email: string; created_at: string }> {
+export function getSubscribers(): Array<{ email: string; source: string | null; created_at: string }> {
   ensureSubscribersTable();
   const database = getDb();
   const rows = database.prepare(
-    'SELECT email, created_at FROM subscribers ORDER BY created_at DESC'
+    'SELECT email, source, created_at FROM subscribers ORDER BY created_at DESC'
   ).all();
-  return rows as Array<{ email: string; created_at: string }>;
+  return rows as Array<{ email: string; source: string | null; created_at: string }>;
 }
 
 // ============================================
