@@ -1,6 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { addSubscriber } from '$lib/server/db';
+import { sendWelcomeEmail } from '$lib/server/welcomeEmail';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PLACEMENT_REGEX = /^[a-z-]{1,24}$/;
@@ -49,6 +50,9 @@ export const POST: RequestHandler = async ({ request }) => {
     source += ':' + body.placement;
   }
 
-  addSubscriber(email, source);
+  // Only brand-new addresses get the welcome email; don't hold up the response for it
+  if (addSubscriber(email, source)) {
+    sendWelcomeEmail(email, source);
+  }
   return json({ success: true }, { headers });
 };

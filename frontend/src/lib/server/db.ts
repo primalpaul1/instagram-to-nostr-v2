@@ -1341,6 +1341,13 @@ export function addSubscriber(email: string, source: string = 'ownyourposts'): b
   return result.changes > 0;
 }
 
+export function removeSubscriber(email: string): boolean {
+  ensureSubscribersTable();
+  const database = getDb();
+  const result = database.prepare('DELETE FROM subscribers WHERE email = ?').run(email);
+  return result.changes > 0;
+}
+
 export function getSubscribers(): Array<{ email: string; source: string | null; created_at: string }> {
   ensureSubscribersTable();
   const database = getDb();
