@@ -23,10 +23,10 @@ interface WelcomeCopy {
   from: string;
   replyTo?: string;
   subject: string;
-  heading: string;
+  heading?: string;
   paragraphs: string[];
-  links: Array<{ label: string; url: string }>;
-  signoff: string;
+  links?: Array<{ label: string; url: string }>;
+  signoff?: string;
   signedUpAt: string;
 }
 
@@ -36,17 +36,11 @@ function copyFor(source: string): WelcomeCopy {
       from: 'Paul <paul@ownyourposts.com>',
       replyTo: 'paul@primal.net',
       subject: "You're on the list",
-      heading: "Hey, it's Paul",
+      // Written by Paul, kept as a plain personal note: no heading, links or sign-off
       paragraphs: [
-        "Thanks for signing up. I'll send you the good stuff: new guides, the bitcoin and freedom tech I actually use, and what I'm learning out here in the jungle.",
-        "No spam, and I'll never share your email."
+        "Hey it's Paul, thanks for subscribing.",
+        "I'll occasionally shoot out a hand written email for things I deem worth your precious time. Feel free to contact me by replying to this email."
       ],
-      links: [
-        { label: 'Start with the Bitcoin Guide', url: 'https://paulinthejungle.com' },
-        { label: 'Watch Hummingbird, our film', url: 'https://hummingbirdfilm.com' },
-        { label: 'Follow me on Primal', url: 'https://primal.net/paul' }
-      ],
-      signoff: 'Paul',
       signedUpAt: 'paulinthejungle.com'
     };
   }
@@ -75,19 +69,19 @@ function renderHtml(c: WelcomeCopy, unsubscribe: string): string {
   const paragraphs = c.paragraphs
     .map((p) => `<p style="color: #444; font-size: 15px; line-height: 1.6; margin: 0 0 14px;">${escapeHtml(p)}</p>`)
     .join('\n  ');
-  const links = c.links
+  const links = (c.links || [])
     .map((l) => `<li style="margin: 0 0 8px;"><a href="${l.url}" style="color: #1b7ff5; text-decoration: none; font-weight: 600;">${escapeHtml(l.label)} &rarr;</a></li>`)
     .join('\n    ');
   return `<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"></head>
 <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px; color: #1a1a1a;">
-  <h2 style="margin: 0 0 14px;">${escapeHtml(c.heading)}</h2>
+  ${c.heading ? `<h2 style="margin: 0 0 14px;">${escapeHtml(c.heading)}</h2>` : ''}
   ${paragraphs}
-  <ul style="list-style: none; padding: 0; margin: 20px 0;">
+  ${links ? `<ul style="list-style: none; padding: 0; margin: 20px 0;">
     ${links}
-  </ul>
-  <p style="color: #444; font-size: 15px; margin: 0;">&mdash; ${escapeHtml(c.signoff)}</p>
+  </ul>` : ''}
+  ${c.signoff ? `<p style="color: #444; font-size: 15px; margin: 0;">&mdash; ${escapeHtml(c.signoff)}</p>` : ''}
   <hr style="border: none; border-top: 1px solid #eee; margin: 24px 0;">
   <p style="color: #999; font-size: 12px; line-height: 1.5;">
     You're getting this because you signed up at ${escapeHtml(c.signedUpAt)}.
@@ -99,13 +93,10 @@ function renderHtml(c: WelcomeCopy, unsubscribe: string): string {
 
 function renderText(c: WelcomeCopy, unsubscribe: string): string {
   return [
-    c.heading,
-    '',
+    ...(c.heading ? [c.heading, ''] : []),
     ...c.paragraphs.flatMap((p) => [p, '']),
-    ...c.links.map((l) => `${l.label}: ${l.url}`),
-    '',
-    `- ${c.signoff}`,
-    '',
+    ...(c.links?.length ? [...c.links.map((l) => `${l.label}: ${l.url}`), ''] : []),
+    ...(c.signoff ? [`- ${c.signoff}`, ''] : []),
     `You're getting this because you signed up at ${c.signedUpAt}.`,
     `Unsubscribe: ${unsubscribe}`
   ].join('\n');
